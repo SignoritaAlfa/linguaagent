@@ -1069,7 +1069,7 @@ let S={
   filmYtInput:"", filmYtId:"",
   filmTranscriptLoading:false, filmTranscriptError:"", filmTranscriptText:"",
   filmTranscriptProcessing:false, filmTranscriptLesson:null,
-  geminiKey:localStorage.getItem("gemini_api_key")||"",
+  geminiKey:localStorage.getItem("lingua_gemini_key")||"",
   claudeKey:localStorage.getItem("lingua_claude_key")||"",
   rapidKey:localStorage.getItem("lingua_rapid_key")||"",
   myLessons:(()=>{try{return JSON.parse(localStorage.getItem("lingua_my_lessons")||"{}")}catch{return {}}})(),
@@ -1226,76 +1226,95 @@ function deleteMyLesson(lang, idx){
 }
 
 async function extractPdfText(file){
-  pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
-  const arrayBuffer = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({data:arrayBuffer}).promise;
-  let fullText = "";
-  for(let i=1;i<=pdf.numPages;i++){
-    const page = await pdf.getPage(i);
-    const tc = await page.getTextContent();
-    fullText += tc.items.map(item=>item.str).join(" ") + "\n";
+  try{
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({data:arrayBuffer}).promise;
+    let text = "";
+    for(let i=1;i<=pdf.numPages;i++){
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      text += content.items.map(item=>item.str).join(" ") + "\n";
+    }
+    return text.trim();
+  }catch(e){
+    throw new Error("Nie można odczytać PDF: "+e.message);
   }
-  return fullText;
+}
+async function callGemini(prompt, geminiKey){
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
+    {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        contents:[{parts:[{text:prompt}]}],
+        generationConfig:{temperature:0.3,maxOutputTokens:4000}
+      })
+    }
+  );
+  if(!res.ok){
+    const err = await res.json().catch(()=>({}));
+    throw new Error("Gemini API błąd "+res.status+": "+(err?.error?.message||"sprawdź klucz API"));
+  }
+  const data = await res.json();
+  const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text
+    || data?.candidates?.[0]?.output
+    || data?.text
+    || "";
+  if(!rawText) throw new Error("Gemini nie zwrócił tekstu — spróbuj ponownie");
+  const jsonMatch = rawText.match(/\{[\s\S]*\}/);
+  if(!jsonMatch) throw new Error("Gemini nie zwrócił poprawnego JSON — spróbuj ponownie");
+  return JSON.parse(jsonMatch[0]);
 }
 
 async function processUpload(){
+  const PROMPT = `Jesteś ekspertem tworzenia materiałów do nauki języków. Przeanalizuj CAŁY poniższy materiał i stwórz KOMPLETNĄ lekcję językową w języku który widzisz w tekście.
+
+WYMAGANIA MINIMALNE (nie można ich zmniejszyć):
+- dialog: minimum 8 kwestii używając treści z materiału
+- vocab: minimum 15 słów i zwrotów z tłumaczeniem na polski
+- fill: minimum 5 ćwiczeń uzupełniania luk ze zdaniami z materiału
+- grammar: minimum 4 zasady gramatyczne widoczne w materiale
+
+Odpowiedz WYŁĄCZNIE czystym JSON, zero tekstu przed ani po, zero markdown:
+{"title":"tytuł lekcji","level":"B1","topic":"temat po polsku","dialog":[{"s":"Imię","l":"zdanie w języku obcym","t":"tłumaczenie po polsku"}],"vocab":[{"w":"słowo","tr":"tłumaczenie PL","ipa":"wymowa IPA","pl":"jak czytać po polsku","ex":"przykład użycia","exT":"tłumaczenie przykładu"}],"fill":[{"s":"zdanie z ___ luką","a":"odpowiedź","h":"wskazówka po polsku"}],"grammar":[{"rule":"nazwa zasady","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie po polsku"}]}`;
+  if(!S.claudeKey){set({uploadError:"Wpisz klucz Anthropic API w Ustawieniach"});return;}
   set({uploadProcessing:true, uploadError:""});
-  const GEMINI_PROMPT = `Przeanalizuj ten material jezykowy. Wyciagnij dialog, slownictwo i gramatyke. Odpowiedz TYLKO czystym JSON bez markdown, schemat: {"title":"tytul","level":"A1","topic":"temat","dialog":[{"s":"rozm","l":"tekst","t":"tlum"}],"vocab":[{"w":"slowo","tr":"tlum","ipa":"","pl":"","ex":"","exT":""}],"fill":[{"s":"zdanie z ___","a":"odp","h":"wskazowka"}],"grammar":[{"rule":"zasada","ex":"przyklad","exT":"tlum","note":"wyjasnienie"}]}`;
-  const PDF_PROMPT = `Jesteś ekspertem tworzenia materiałów do nauki języków. Przeanalizuj CAŁY poniższy tekst z podręcznika i stwórz z niego KOMPLETNĄ lekcję językową.
-
-WAŻNE: Wyciągnij WSZYSTKIE słowa i zwroty z tekstu — minimum 15-20 pozycji vocab. Stwórz dialog który streszcza lub odgrywa temat tekstu (minimum 8 kwestii). Stwórz minimum 5 ćwiczeń fill-in-the-blank używając zdań z tekstu. Stwórz minimum 4 zasady gramatyczne widoczne w tekście.
-
-Odpowiedz TYLKO czystym JSON bez markdown:
-{"title":"tytuł","level":"B1","topic":"temat po polsku","dialog":[{"s":"imię","l":"zdanie z tekstu lub streszczenie","t":"tłumaczenie PL"}],"vocab":[{"w":"słowo/zwrot","tr":"tłumaczenie","ipa":"wymowa IPA","pl":"fonetyka dla Polaka","ex":"przykład z tekstu","exT":"tłumaczenie przykładu"}],"fill":[{"s":"zdanie z ___ luką","a":"odpowiedź","h":"wskazówka po polsku"}],"grammar":[{"rule":"zasada","ex":"przykład z tekstu","exT":"tłumaczenie","note":"wyjaśnienie po polsku"}]}
-
-TEKST DO ANALIZY:
-`;
   try{
-    let responseText;
+    let content;
     if(S.uploadFile && S.uploadFile.type==="application/pdf"){
-      if(!S.claudeKey){throw new Error("Wpisz klucz Anthropic (Claude) API w Ustawieniach");}
-      const pdfText = await extractPdfText(S.uploadFile);
-      const res = await fetch("https://api.anthropic.com/v1/messages",{
-        method:"POST",
-        headers:{
-          "x-api-key":S.claudeKey,
-          "anthropic-version":"2023-06-01",
-          "content-type":"application/json",
-          "anthropic-dangerous-allow-browser":"true"
-        },
-        body:JSON.stringify({
-          model:"claude-opus-4-5-20251101",
-          max_tokens:4000,
-          messages:[{role:"user",content:PDF_PROMPT+pdfText}]
-        })
-      });
-      if(!res.ok){const errBody=await res.json().catch(()=>({}));throw new Error("Claude API błąd "+res.status+": "+(errBody.error?.message||""));}
-      const data=await res.json();
-      responseText=data.content[0].text;
+      const extractedText = await extractPdfText(S.uploadFile);
+      if(!extractedText||extractedText.length<100) throw new Error("PDF jest pusty lub nie można odczytać tekstu");
+      content=[{type:"text",text:PROMPT+"\n\nTEKST:\n"+extractedText}];
+    } else if(S.uploadFile && S.uploadFile.type.startsWith("image/")){
+      const b64=await fileToB64(S.uploadFile);
+      content=[{type:"image",source:{type:"base64",media_type:S.uploadFile.type,data:b64}},{type:"text",text:PROMPT}];
     } else {
-      let parts=[];
-      if(S.uploadFile && S.uploadFile.type.startsWith("image/")){
-        const b64=await fileToB64(S.uploadFile);
-        parts=[{inline_data:{mime_type:S.uploadFile.type,data:b64}},{text:GEMINI_PROMPT}];
-      } else {
-        parts=[{text:GEMINI_PROMPT+"\n\nTEKST:\n"+S.uploadPreview}];
-      }
-      const res=await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash:generateContent?key=${S.geminiKey}`,{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({contents:[{parts}]})
-      });
-      if(!res.ok){const errBody=await res.json().catch(()=>({}));throw new Error("API błąd "+res.status+": "+(errBody.error?.message||""));}
-      const data=await res.json();
-      responseText=data.candidates[0].content.parts[0].text;
+      content=[{type:"text",text:PROMPT+"\n\nTEKST:\n"+S.uploadPreview}];
     }
-    const clean=responseText.replace(/```json|```/g,"").trim();
-    const json=JSON.parse(clean);
+    const res=await fetch("https://api.anthropic.com/v1/messages",{
+      method:"POST",
+      headers:{
+        "x-api-key":S.claudeKey,
+        "anthropic-version":"2023-06-01",
+        "content-type":"application/json",
+        "anthropic-dangerous-allow-browser":"true"
+      },
+      body:JSON.stringify({model:"claude-opus-4-5-20251101",max_tokens:4000,messages:[{role:"user",content}]})
+    });
+    if(!res.ok){const err=await res.json().catch(()=>({}));throw new Error("Anthropic API błąd "+res.status+": "+(err?.error?.message||"sprawdź klucz API"));}
+    const data=await res.json();
+    const rawText=data.content[0].text;
+    const m=rawText.match(/\{[\s\S]*\}/);
+    if(!m) throw new Error("Claude nie zwrócił poprawnego JSON — spróbuj ponownie");
+    const json=JSON.parse(m[0]);
+    if(!json.dialog||!json.vocab) throw new Error("Claude zwrócił niekompletne dane — spróbuj ponownie");
     json.id="my_"+Date.now();
     json.type="dialog";
     set({uploadProcessing:false,uploadStep:2,uploadPreview:json});
-  } catch(e){
-    set({uploadProcessing:false,uploadError:"Błąd: "+e.message});
+  }catch(e){
+    set({uploadProcessing:false,uploadError:e.message});
   }
 }
 function fileToB64(file){
@@ -1989,8 +2008,8 @@ function renderSettings(){
   sw.appendChild(aki);
   if(geminiKey) sw.appendChild(h("div",{class:"msg-ok"},"✓ Gemini API aktywne"));
   const ab=h("div",{class:"row"});
-  ab.appendChild(h("button",{class:"primary",onclick:()=>{localStorage.setItem("gemini_api_key",S.geminiKey.trim());set({geminiKey:S.geminiKey.trim()});}},"Zapisz klucz Gemini"));
-  if(geminiKey) ab.appendChild(h("button",{class:"sbtn danger",onclick:()=>{localStorage.removeItem("gemini_api_key");set({geminiKey:""});}},"Usuń"));
+  ab.appendChild(h("button",{class:"primary",onclick:()=>{localStorage.setItem("lingua_gemini_key",S.geminiKey.trim());set({geminiKey:S.geminiKey.trim()});}},"Zapisz klucz Gemini"));
+  if(geminiKey) ab.appendChild(h("button",{class:"sbtn danger",onclick:()=>{localStorage.removeItem("lingua_gemini_key");set({geminiKey:""});}},"Usuń"));
   sw.appendChild(ab);
   sw.appendChild(h("div",{class:"sec-label",style:"margin-top:24px"},"Klucz RapidAPI — transkrypcje YouTube"));
   sw.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-bottom:8px;line-height:1.6"},"Klucz z rapidapi.com → wyszukaj 'YouTube Transcript' → subskrybuj darmowy plan."));
@@ -2273,18 +2292,18 @@ function renderVocabList(vocab, lang){
 }
 
 function renderUploadPanel(){
-  const{uploadStep,uploadFile,uploadPreview,uploadProcessing,uploadError,uploadLang,geminiKey}=S;
+  const{uploadStep,uploadFile,uploadPreview,uploadProcessing,uploadError,uploadLang,claudeKey}=S;
   const panel=h("div",{class:"upload-panel"});
   const ph=h("div",{style:"display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px"});
   ph.appendChild(h("div",{},
     h("div",{class:"upload-title"},"Wgraj własną lekcję"),
-    h("div",{class:"upload-sub"},"Zdjęcie, PDF lub tekst — Gemini przeanalizuje i stworzy lekcję")
+    h("div",{class:"upload-sub"},"Zdjęcie, PDF lub tekst — Claude przeanalizuje i stworzy lekcję")
   ));
   ph.appendChild(h("button",{style:"background:none;border:none;cursor:pointer;font-size:20px;color:var(--ink3)",onclick:()=>set({showUpload:false})},"✕"));
   panel.appendChild(ph);
 
-  if(!geminiKey){
-    panel.appendChild(h("div",{class:"msg-err",style:"margin-bottom:0"},"⚠️ Potrzebujesz klucza Gemini API — wejdź w Ustawienia lektora."));
+  if(!claudeKey){
+    panel.appendChild(h("div",{class:"msg-err",style:"margin-bottom:0"},"⚠️ Potrzebujesz klucza Anthropic API — wejdź w Ustawienia lektora."));
     return panel;
   }
 
@@ -2311,14 +2330,14 @@ function renderUploadPanel(){
       oninput:(e)=>set({uploadPreview:e.target.value})});
     panel.appendChild(ta);
     if(S.uploadPreview&&typeof S.uploadPreview==="string"&&S.uploadPreview.length>10){
-      panel.appendChild(h("button",{class:"check-btn",style:"margin-top:12px",onclick:()=>{set({uploadStep:1});processUpload();}},"Analizuj z Gemini Flash"));
+      panel.appendChild(h("button",{class:"check-btn",style:"margin-top:12px",onclick:()=>{set({uploadStep:1});processUpload();}},"Analizuj z Claude"));
     }
   }
 
   if(uploadStep===1&&uploadFile){
     panel.appendChild(h("div",{class:"msg-ok"},"✓ "+uploadFile.name+" ("+Math.round(uploadFile.size/1024)+" KB)"));
     if(!uploadProcessing){
-      panel.appendChild(h("button",{class:"check-btn",onclick:processUpload},"Analizuj z Gemini Flash"));
+      panel.appendChild(h("button",{class:"check-btn",onclick:processUpload},"Analizuj z Claude"));
     } else {
       panel.appendChild(h("div",{style:"padding:20px;text-align:center;color:var(--ink3);font-size:13px"},"⏳ Trwa analiza tekstu..."));
     }
@@ -2723,8 +2742,8 @@ function renderSettings(){
   sw.appendChild(aki);
   if(geminiKey) sw.appendChild(h("div",{class:"msg-ok"},"✓ Gemini API aktywne"));
   const ab=h("div",{class:"row"});
-  ab.appendChild(h("button",{class:"primary",onclick:()=>{localStorage.setItem("gemini_api_key",S.geminiKey.trim());set({geminiKey:S.geminiKey.trim()});}},"Zapisz klucz Gemini"));
-  if(geminiKey) ab.appendChild(h("button",{class:"sbtn danger",onclick:()=>{localStorage.removeItem("gemini_api_key");set({geminiKey:""});}},"Usuń"));
+  ab.appendChild(h("button",{class:"primary",onclick:()=>{localStorage.setItem("lingua_gemini_key",S.geminiKey.trim());set({geminiKey:S.geminiKey.trim()});}},"Zapisz klucz Gemini"));
+  if(geminiKey) ab.appendChild(h("button",{class:"sbtn danger",onclick:()=>{localStorage.removeItem("lingua_gemini_key");set({geminiKey:""});}},"Usuń"));
   sw.appendChild(ab);
   sw.appendChild(h("div",{class:"sec-label",style:"margin-top:24px"},"Klucz RapidAPI — transkrypcje YouTube"));
   sw.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-bottom:8px;line-height:1.6"},"Klucz z rapidapi.com → wyszukaj 'YouTube Transcript' → subskrybuj darmowy plan."));
