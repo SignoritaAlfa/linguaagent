@@ -4,9 +4,11 @@
 
 LinguaAgent to aplikacja webowa do nauki języków obcych (angielski, francuski, włoski) zbudowana jako **jeden plik HTML** (`index.html`). Właścicielką projektu jest Aleksandra — osoba nietechniczna. Wszystkie wyjaśnienia po polsku, prostym językiem.
 
-**URL produkcyjny:** https://bosari-lab.github.io/lingua-agent  
-**Repo:** `bosari-lab/lingua-agent`, branch `main`, plik `index.html`  
-**Plik roboczy na Macu:** `/Users/aleksandrabarwasna/Downloads/index.html`
+**URL produkcyjny:** https://signoritaalfa.github.io/linguaagent  
+**Repo:** `SignoritaAlfa/linguaagent`, branch `main`, plik `index.html`  
+**Plik roboczy na Macu:** `/Users/aleksandrabarwasna/lingua-agent/index.html` (lokalny clone repo)
+
+> **Historia:** Projekt powstał na koncie `bosari-lab` (utracony dostęp do maila → utracony dostęp do konta). Migrowany 2026-05-10 na nowe konto `SignoritaAlfa` z pełną historią commitów. Stara apka pod `bosari-lab.github.io/lingua-agent` istnieje jako "ghost" (poza kontrolą), zignorować.
 
 ---
 
@@ -33,7 +35,8 @@ LinguaAgent to aplikacja webowa do nauki języków obcych (angielski, francuski,
 
 ### Modele Anthropic używane w projekcie
 - `claude-haiku-4-5-20251001` — szybkie zadania (analiza tekstu, tłumaczenia słów)
-- `claude-opus-4-5-20251101` — długie/trudne analizy (wideo, długie PDF-y)
+- `claude-opus-4-7` — długie/trudne analizy (wideo, długie PDF-y)
+- `claude-sonnet-4-6` — zaawansowana analiza wideo (Filmoteka)
 
 ### ElevenLabs voice IDs
 - `EXAVITQu4vr4xnSDxMaL` — Sarah (głos żeński, EN)
