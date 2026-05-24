@@ -1079,6 +1079,7 @@ let S={
   claudeKey:localStorage.getItem("lingua_claude_key")||"",
   rapidKey:localStorage.getItem("lingua_rapid_key")||"",
   myLessons:(()=>{try{return JSON.parse(localStorage.getItem("lingua_my_lessons")||"{}")}catch{return {}}})(),
+  lessonFolders:(()=>{try{return JSON.parse(localStorage.getItem("lingua_lesson_folders")||"{}")}catch{return {}}})(),
   myFilms:(()=>{try{return JSON.parse(localStorage.getItem("lingua_my_films")||"{}")}catch{return {}}})(),
   showAddFilm:false,addFilmTitle:"",addFilmType:"serial",addFilmLevel:"A2",
   showAddClip:false,addClipTitle:"",addClipEpisode:"",
@@ -1238,6 +1239,53 @@ function deleteMyLesson(lang, idx){
   set({myLessons:ml});
 }
 
+function createFolder(lang){
+  const name = (prompt("Nazwa nowego folderu:")||"").trim();
+  if(!name) return;
+  const lf = Object.assign({}, S.lessonFolders);
+  if(!lf[lang]) lf[lang]=[];
+  if(lf[lang].includes(name)){alert("Folder \""+name+"\" już istnieje");return;}
+  lf[lang]=lf[lang].concat([name]);
+  localStorage.setItem("lingua_lesson_folders", JSON.stringify(lf));
+  set({lessonFolders:lf});
+}
+
+function renameFolder(lang, oldName){
+  const newName = (prompt("Nowa nazwa folderu:", oldName)||"").trim();
+  if(!newName || newName===oldName) return;
+  const lf = Object.assign({}, S.lessonFolders);
+  const arr = (lf[lang]||[]).slice();
+  const i = arr.indexOf(oldName); if(i<0) return;
+  if(arr.includes(newName)){alert("Folder \""+newName+"\" już istnieje");return;}
+  arr[i]=newName;
+  lf[lang]=arr;
+  const ml = Object.assign({}, S.myLessons);
+  if(ml[lang]) ml[lang] = ml[lang].map(l => l.folder===oldName ? Object.assign({},l,{folder:newName}) : l);
+  localStorage.setItem("lingua_my_lessons", JSON.stringify(ml));
+  localStorage.setItem("lingua_lesson_folders", JSON.stringify(lf));
+  set({lessonFolders:lf, myLessons:ml});
+}
+
+function deleteFolder(lang, name){
+  if(!confirm("Usunąć folder \""+name+"\"? Lekcje w nim wrócą do sekcji bez folderu (lekcje zostaną zachowane)."))return;
+  const lf = Object.assign({}, S.lessonFolders);
+  lf[lang] = (lf[lang]||[]).filter(f=>f!==name);
+  const ml = Object.assign({}, S.myLessons);
+  if(ml[lang]) ml[lang] = ml[lang].map(l => l.folder===name ? Object.assign({},l,{folder:null}) : l);
+  localStorage.setItem("lingua_my_lessons", JSON.stringify(ml));
+  localStorage.setItem("lingua_lesson_folders", JSON.stringify(lf));
+  set({lessonFolders:lf, myLessons:ml});
+}
+
+function moveLessonToFolder(lang, lessonIdx, folderName){
+  const ml = Object.assign({}, S.myLessons);
+  if(!ml[lang]||!ml[lang][lessonIdx]) return;
+  ml[lang] = ml[lang].slice();
+  ml[lang][lessonIdx] = Object.assign({}, ml[lang][lessonIdx], {folder: folderName||null});
+  localStorage.setItem("lingua_my_lessons", JSON.stringify(ml));
+  set({myLessons:ml});
+}
+
 function saveMyFilm(lang, film){
   const mf=Object.assign({},S.myFilms);
   if(!mf[lang]) mf[lang]=[];
@@ -1279,18 +1327,53 @@ function getFilmClips(lang, filmId){
   return {sysClips,userClips,allClips:[...sysClips,...userClips]};
 }
 
+function rawTextToPlain(rawText){
+  if(!rawText) return "";
+  if(!/<[a-z][\s\S]*?>/i.test(rawText)) return rawText;
+  let s = String(rawText)
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(div|p|li|h[1-6]|tr)>/gi, "\n")
+    .replace(/<[^>]+>/g, "");
+  const tmp = document.createElement("div");
+  tmp.innerHTML = s;
+  return (tmp.textContent || "").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 async function extractPdfText(file){
   try{
     pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({data:arrayBuffer}).promise;
-    let text = "";
+    const pages = [];
+    const Y_TOLERANCE = 2;
     for(let i=1;i<=pdf.numPages;i++){
       const page = await pdf.getPage(i);
       const content = await page.getTextContent();
-      text += content.items.map(item=>item.str).join(" ") + "\n";
+      const lines = [];
+      let buf = [];
+      let curY = null;
+      for(const item of content.items){
+        const y = item.transform ? item.transform[5] : null;
+        if(curY === null){
+          curY = y;
+          if(item.str) buf.push(item.str);
+        } else if(y !== null && Math.abs(y - curY) <= Y_TOLERANCE){
+          if(item.str) buf.push(item.str);
+        } else {
+          lines.push(buf.join(" ").trim());
+          buf = item.str ? [item.str] : [];
+          curY = y;
+        }
+        if(item.hasEOL){
+          if(buf.length) lines.push(buf.join(" ").trim());
+          buf = [];
+          curY = null;
+        }
+      }
+      if(buf.length) lines.push(buf.join(" ").trim());
+      pages.push(lines.filter(l=>l).join("\n"));
     }
-    return text.trim();
+    return pages.join("\n\n").trim();
   }catch(e){
     throw new Error("Nie można odczytać PDF: "+e.message);
   }
@@ -1331,14 +1414,21 @@ WYMAGANIA MINIMALNE (nie można ich zmniejszyć):
 - fill: minimum 12 ćwiczeń uzupełniania luk — DWIE KATEGORIE: (1) cat:"text" — zdania bezpośrednio z materiału z brakującym słowem (min 6), (2) cat:"grammar" — ćwiczenia gramatyczne na zasady widoczne w tekście (min 6)
 - grammar: minimum 4 zasady gramatyczne widoczne w materiale
 
+Pole "rawText": jeśli widzisz obraz, przepisz DOSŁOWNIE cały tekst z obrazu — każde słowo, w kolejności w jakiej występuje, ZACHOWUJĄC ORYGINALNE FORMATOWANIE: łamania linii (każda linia widoczna na obrazku = osobna linia, użyj \n), akapity (puste linie między akapitami = \n\n), wcięcia, listy i numerację (1., 2., 3. lub - w nowej linii). Nie sklejaj wszystkiego w jeden ciąg. Jeśli dostałeś już tekst w wiadomości, powtórz go w "rawText" identycznie z zachowaniem łamań linii.
+
 Odpowiedz WYŁĄCZNIE czystym JSON, zero tekstu przed ani po, zero markdown:
-{"title":"tytuł lekcji","level":"B1","topic":"temat po polsku","dialog":[{"s":"Imię","l":"zdanie w języku obcym","t":"tłumaczenie po polsku"}],"vocab":[{"w":"słowo","tr":"tłumaczenie PL","ipa":"wymowa IPA","pl":"jak czytać po polsku","ex":"przykład użycia","exT":"tłumaczenie przykładu"}],"fill":[{"s":"zdanie z ___ luką","a":"odpowiedź","h":"wskazówka po polsku","cat":"text"},{"s":"gramatyczne z ___","a":"odpowiedź","h":"wskazówka","cat":"grammar"}],"grammar":[{"rule":"nazwa zasady","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie po polsku"}]}`;
+{"title":"tytuł lekcji","level":"B1","topic":"temat po polsku","rawText":"oryginalny tekst materiału dosłownie","dialog":[{"s":"Imię","l":"zdanie w języku obcym","t":"tłumaczenie po polsku"}],"vocab":[{"w":"słowo","tr":"tłumaczenie PL","ipa":"wymowa IPA","pl":"jak czytać po polsku","ex":"przykład użycia","exT":"tłumaczenie przykładu"}],"fill":[{"s":"zdanie z ___ luką","a":"odpowiedź","h":"wskazówka po polsku","cat":"text"},{"s":"gramatyczne z ___","a":"odpowiedź","h":"wskazówka","cat":"grammar"}],"grammar":[{"rule":"nazwa zasady","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie po polsku"}]}`;
   if(!S.claudeKey){set({uploadError:"Wpisz klucz Anthropic API w Ustawieniach"});return;}
   set({uploadProcessing:true, uploadError:""});
   try{
     let content;
     let _savedRawText = null;
-    if(S.uploadFile && S.uploadFile.type==="application/pdf"){
+    if(S.uploadFile && (S.uploadFile.type.startsWith("text/") || /\.(md|markdown|txt)$/i.test(S.uploadFile.name))){
+      const textContent = await S.uploadFile.text();
+      if(!textContent||textContent.trim().length<20) throw new Error("Plik tekstowy jest pusty lub za krótki (minimum 20 znaków)");
+      _savedRawText = textContent;
+      content=[{type:"text",text:PROMPT+"\n\nTEKST:\n"+textContent}];
+    } else if(S.uploadFile && S.uploadFile.type==="application/pdf"){
       const extractedText = await extractPdfText(S.uploadFile);
       if(!extractedText||extractedText.length<100) throw new Error("PDF jest pusty lub nie można odczytać tekstu");
       _savedRawText = extractedText;
@@ -1456,8 +1546,10 @@ async function processFilm(){
   const isVideo = file.type.startsWith("video/");
   const PROMPT = `Jesteś ekspertem od nauki języków. Przeanalizuj ten fragment ${isVideo?"wideo":"audio"} w języku ${langName} i stwórz z niego kompletną lekcję językową.
 Transkrybuj DOKŁADNIE wszystkie wypowiedzi które słyszysz. Zidentyfikuj mówców (użyj imion jeśli je znasz, lub Osoba1/Osoba2).
+Pole "rawText": pełna dosłowna transkrypcja całego nagrania w języku oryginału, w kolejności wypowiedzi, bez tłumaczeń i komentarzy. Każda wypowiedź mówcy = osobna linia (użyj \n między wypowiedziami). Nie sklejaj wszystkiego w jeden ciąg. Włącz każde zdanie które słyszysz.
+
 Odpowiedz TYLKO czystym JSON (bez markdown, bez komentarzy):
-{"title":"tytuł sceny np. Friends S01E01 - scena w kawiarni","level":"A2","topic":"temat lekcji po polsku","dialog":[{"s":"imię/nazwa postaci","l":"dokładny tekst w języku obcym","t":"naturalne tłumaczenie po polsku"}],"vocab":[{"w":"ważny zwrot z sceny","tr":"tłumaczenie","ipa":"wymowa IPA","pl":"wymowa dla Polaków","ex":"zdanie z fragmentu","exT":"tłumaczenie"}],"fill":[{"s":"zdanie z ___ luką","a":"brakujące słowo","h":"wskazówka po polsku","cat":"text"},{"s":"gramatyczne z ___","a":"odpowiedź","h":"wskazówka","cat":"grammar"}],"grammar":[{"rule":"zasada gramatyczna widoczna w scenie","ex":"przykład z fragmentu","exT":"tłumaczenie","note":"wyjaśnienie po polsku"}]}`;
+{"title":"tytuł sceny np. Friends S01E01 - scena w kawiarni","level":"A2","topic":"temat lekcji po polsku","rawText":"pełna dosłowna transkrypcja nagrania","dialog":[{"s":"imię/nazwa postaci","l":"dokładny tekst w języku obcym","t":"naturalne tłumaczenie po polsku"}],"vocab":[{"w":"ważny zwrot z sceny","tr":"tłumaczenie","ipa":"wymowa IPA","pl":"wymowa dla Polaków","ex":"zdanie z fragmentu","exT":"tłumaczenie"}],"fill":[{"s":"zdanie z ___ luką","a":"brakujące słowo","h":"wskazówka po polsku","cat":"text"},{"s":"gramatyczne z ___","a":"odpowiedź","h":"wskazówka","cat":"grammar"}],"grammar":[{"rule":"zasada gramatyczna widoczna w scenie","ex":"przykład z fragmentu","exT":"tłumaczenie","note":"wyjaśnienie po polsku"}]}`;
 
   try{
     // Convert file to base64
@@ -1677,6 +1769,8 @@ function renderLang(){
     onclick:()=>set({screen:"filmoteka",filmLang:lang,filmUploadStep:0,filmFile:null,filmError:""})},"🎬 Filmoteka"));
   myBtns.appendChild(h("button",{class:"add-btn",
     onclick:()=>set({showUpload:true,uploadLang:lang,uploadStep:0,uploadFile:null,uploadPreview:null,uploadError:"",uploadProcessing:false})},"+ Wgraj tekst"));
+  myBtns.appendChild(h("button",{class:"add-btn",
+    onclick:()=>createFolder(lang)},"+ Folder"));
   myHead.appendChild(myBtns);
   main.appendChild(myHead);
 
@@ -1687,17 +1781,32 @@ function renderLang(){
       h("div",{class:"empty-sub"},"Wgraj skan, PDF lub wklej tekst z podręcznika")
     ));
   }
-  // Split lessons into folders
-  const videoLessons=[];
-  const textLessons=[];
+  // Split lessons by folder
+  const folders = S.lessonFolders[lang] || [];
+  const byFolder = {};
+  const unfolderedVideo=[];
+  const unfolderedText=[];
   myL.forEach((lesson,i)=>{
     const entry={lesson,idx:i};
-    if(lesson.source==="video"||lesson.youtubeId||lesson.fromFilm||lesson.id?.startsWith("film_")) videoLessons.push(entry);
-    else textLessons.push(entry);
+    if(lesson.folder && folders.includes(lesson.folder)){
+      if(!byFolder[lesson.folder]) byFolder[lesson.folder]=[];
+      byFolder[lesson.folder].push(entry);
+    } else if(lesson.source==="video"||lesson.youtubeId||lesson.fromFilm||lesson.id?.startsWith("film_")){
+      unfolderedVideo.push(entry);
+    } else {
+      unfolderedText.push(entry);
+    }
   });
   function renderLessonRow(lesson,idx){
     const row=h("div",{class:"my-lesson-row"});
-    const info=h("div",{class:"my-lesson-info"});
+    const info=h("div",{
+      class:"my-lesson-info",
+      style:"cursor:pointer;transition:opacity .15s",
+      title:"Otwórz lekcję",
+      onclick:()=>set({screen:"lesson",lesson,mode:"dialog",lessonTab:"dialog",playing:false,playingLine:-1})
+    });
+    info.onmouseover=()=>{info.style.opacity="0.7";};
+    info.onmouseout=()=>{info.style.opacity="1";};
     info.appendChild(h("div",{class:"my-lesson-title"},lesson.title||"Bez tytułu"));
     info.appendChild(h("div",{class:"my-lesson-meta"},(lesson.level||"")+" · "+(lesson.vocab||[]).length+" słówek · "+(lesson.dialog||[]).length+" linii"));
     row.appendChild(info);
@@ -1713,23 +1822,56 @@ function renderLang(){
     }},"Ćwiczenia"));
     acts.appendChild(h("button",{class:"sbtn",onclick:()=>startQuiz(lesson)},"Quiz"));
     acts.appendChild(h("button",{class:"sbtn",onclick:()=>startBuild(lesson)},"Buduj"));
+    // Folder selector
+    const folderSel=h("select",{
+      style:"padding:6px 10px;border:1px solid var(--border);background:var(--surface);font-size:11px;color:var(--text2);cursor:pointer;border-radius:2px;font-family:inherit",
+      title:"Przenieś do folderu",
+      onchange:(e)=>moveLessonToFolder(lang, idx, e.target.value)
+    });
+    const optNone=h("option",{value:""},"📁 Bez folderu");
+    if(!lesson.folder) optNone.selected=true;
+    folderSel.appendChild(optNone);
+    (S.lessonFolders[lang]||[]).forEach(f=>{
+      const opt=h("option",{value:f},f);
+      if(lesson.folder===f) opt.selected=true;
+      folderSel.appendChild(opt);
+    });
+    acts.appendChild(folderSel);
     acts.appendChild(h("button",{class:"sbtn",style:"border-color:#fca5a5;color:#dc2626",onclick:()=>{if(confirm("Usunąć?"))deleteMyLesson(lang,idx);}},"✕"));
     row.appendChild(acts);
     return row;
   }
-  if(videoLessons.length>0){
+  function renderFolderHead(folderName, count){
+    const head=h("div",{style:"display:flex;align-items:center;gap:8px;margin:20px 0 10px 0"});
+    head.appendChild(h("div",{style:"font-size:16px"},"📁"));
+    head.appendChild(h("div",{style:"font-size:13px;color:var(--text2);font-weight:500;letter-spacing:.04em;flex:1"},folderName+" ("+count+")"));
+    head.appendChild(h("button",{class:"sbtn",style:"padding:4px 10px;font-size:11px",onclick:()=>renameFolder(lang,folderName)},"✏ Zmień nazwę"));
+    head.appendChild(h("button",{class:"sbtn",style:"padding:4px 10px;font-size:11px;border-color:#fca5a5;color:#dc2626",onclick:()=>deleteFolder(lang,folderName)},"✕ Usuń folder"));
+    return head;
+  }
+  // User-defined folders
+  folders.forEach(folderName=>{
+    const items=byFolder[folderName]||[];
+    main.appendChild(renderFolderHead(folderName, items.length));
+    if(items.length===0){
+      main.appendChild(h("div",{style:"padding:14px;color:var(--text3);font-size:12px;font-style:italic;text-align:center;border:1px dashed var(--border);border-radius:4px"},"Folder pusty — przenieś tu lekcje wybierając folder w wierszu lekcji"));
+    } else {
+      items.forEach(({lesson,idx})=>main.appendChild(renderLessonRow(lesson,idx)));
+    }
+  });
+  if(unfolderedVideo.length>0){
     const vfHead=h("div",{style:"display:flex;align-items:center;gap:8px;margin:20px 0 10px 0"});
     vfHead.appendChild(h("div",{style:"font-size:16px"},"🎬"));
-    vfHead.appendChild(h("div",{style:"font-size:13px;color:var(--text2);font-weight:500;letter-spacing:.04em"},"Z filmów i YouTube ("+videoLessons.length+")"));
+    vfHead.appendChild(h("div",{style:"font-size:13px;color:var(--text2);font-weight:500;letter-spacing:.04em"},"Z filmów i YouTube ("+unfolderedVideo.length+")"));
     main.appendChild(vfHead);
-    videoLessons.forEach(({lesson,idx})=>main.appendChild(renderLessonRow(lesson,idx)));
+    unfolderedVideo.forEach(({lesson,idx})=>main.appendChild(renderLessonRow(lesson,idx)));
   }
-  if(textLessons.length>0){
+  if(unfolderedText.length>0){
     const tfHead=h("div",{style:"display:flex;align-items:center;gap:8px;margin:20px 0 10px 0"});
     tfHead.appendChild(h("div",{style:"font-size:16px"},"📄"));
-    tfHead.appendChild(h("div",{style:"font-size:13px;color:var(--text2);font-weight:500;letter-spacing:.04em"},"Z plików i tekstów ("+textLessons.length+")"));
+    tfHead.appendChild(h("div",{style:"font-size:13px;color:var(--text2);font-weight:500;letter-spacing:.04em"},"Z plików i tekstów ("+unfolderedText.length+")"));
     main.appendChild(tfHead);
-    textLessons.forEach(({lesson,idx})=>main.appendChild(renderLessonRow(lesson,idx)));
+    unfolderedText.forEach(({lesson,idx})=>main.appendChild(renderLessonRow(lesson,idx)));
   }
 
   if(S.showUpload && S.uploadLang===lang) main.appendChild(renderUploadPanel());
@@ -1941,54 +2083,68 @@ function renderLesson(){
   if(S.lessonTab==="tekst" && lesson.rawText){
     const tw=h("div",{style:"max-width:700px"});
     tw.appendChild(h("div",{class:"sec-label",style:"margin-bottom:12px"},"Oryginalny tekst"));
-    // Edit mode toggle
-    const editBtn=h("button",{class:"sbtn",style:"margin-bottom:14px",onclick:()=>{
-      const ta=document.getElementById("rawtext-editor");
-      const disp=document.getElementById("rawtext-display");
-      const saveRow=document.getElementById("rawtext-save-row");
-      if(ta.style.display==="none"){
-        ta.value=lesson.rawText;
-        ta.style.display="block";
-        disp.style.display="none";
-        saveRow.style.display="flex";
-        editBtn.textContent="✕ Anuluj edycję";
-      } else {
-        ta.style.display="none";
-        disp.style.display="block";
-        saveRow.style.display="none";
-        editBtn.textContent="✏ Edytuj tekst";
-      }
-    }},"✏ Edytuj tekst");
-    tw.appendChild(editBtn);
 
-    // Display view
-    const disp=h("div",{id:"rawtext-display",style:"font-size:15px;line-height:1.9;color:var(--text);white-space:pre-wrap;font-family:'Jost',sans-serif;border:1px solid var(--border);border-radius:8px;padding:20px;margin-bottom:16px"});
-    disp.textContent=lesson.rawText;
-    tw.appendChild(disp);
+    // Toolbar
+    const toolbar=h("div",{style:"display:flex;gap:8px;align-items:center;margin-bottom:10px;padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;flex-wrap:wrap"});
+    const sizeSel=h("select",{
+      style:"padding:6px 10px;border:1px solid var(--border);background:var(--surface);font-size:11px;color:var(--text2);cursor:pointer;border-radius:2px;font-family:inherit",
+      title:"Rozmiar tekstu (zaznacz fragment, potem wybierz)",
+      onchange:(e)=>{document.execCommand("fontSize",false,e.target.value); document.getElementById("rawtext-display").focus();}
+    });
+    [["2","Bardzo mała"],["3","Mała"],["4","Średnia (domyślna)"],["5","Duża"],["6","Bardzo duża"],["7","Ogromna"]].forEach(([v,l])=>{
+      const opt=h("option",{value:v},l);
+      if(v==="4") opt.selected=true;
+      sizeSel.appendChild(opt);
+    });
+    toolbar.appendChild(sizeSel);
+    toolbar.appendChild(h("button",{class:"sbtn",style:"font-weight:700;min-width:32px",title:"Pogrubienie (Ctrl+B)",
+      onclick:()=>{document.execCommand("bold"); document.getElementById("rawtext-display").focus();}},"B"));
+    toolbar.appendChild(h("button",{class:"sbtn",style:"font-style:italic;min-width:32px",title:"Kursywa (Ctrl+I)",
+      onclick:()=>{document.execCommand("italic"); document.getElementById("rawtext-display").focus();}},"I"));
+    toolbar.appendChild(h("button",{class:"sbtn",style:"text-decoration:underline;min-width:32px",title:"Podkreślenie",
+      onclick:()=>{document.execCommand("underline"); document.getElementById("rawtext-display").focus();}},"U"));
+    toolbar.appendChild(h("span",{style:"font-size:11px;color:var(--text3);margin-left:4px"},"Kolor:"));
+    const colorInp=h("input",{type:"color",value:"#1f2937",
+      style:"width:36px;height:32px;border:1px solid var(--border);background:var(--surface);cursor:pointer;border-radius:2px;padding:2px",
+      title:"Kolor tekstu"
+    });
+    colorInp.oninput=(e)=>{document.execCommand("foreColor",false,e.target.value); document.getElementById("rawtext-display").focus();};
+    toolbar.appendChild(colorInp);
+    toolbar.appendChild(h("button",{class:"sbtn",style:"font-size:11px",title:"Wyczyść formatowanie zaznaczonego fragmentu",
+      onclick:()=>{document.execCommand("removeFormat"); document.getElementById("rawtext-display").focus();}},"✕ Wyczyść"));
+    toolbar.appendChild(h("div",{style:"flex:1"}));
+    toolbar.appendChild(h("span",{style:"font-size:11px;color:var(--text3)",id:"rawtext-status"},"Auto-zapis"));
+    tw.appendChild(toolbar);
 
-    // Edit textarea (hidden by default)
-    const ta=h("textarea",{id:"rawtext-editor",style:"display:none;width:100%;min-height:300px;padding:16px;font-size:14px;line-height:1.8;color:var(--text);background:var(--surface);border:1px solid var(--gold);border-radius:8px;font-family:'Jost',sans-serif;resize:vertical;box-sizing:border-box;outline:none"});
-    tw.appendChild(ta);
-
-    // Save row (hidden by default)
-    const saveRow=h("div",{id:"rawtext-save-row",style:"display:none;gap:10px;margin-bottom:20px"});
-    saveRow.appendChild(h("button",{class:"primary",onclick:()=>{
-      const newText=document.getElementById("rawtext-editor").value.trim();
-      if(!newText) return;
-      lesson.rawText=newText;
-      // Update in myLessons localStorage
+    // Inline editor (contenteditable)
+    const disp=h("div",{
+      id:"rawtext-display",
+      contenteditable:"true",
+      spellcheck:"false",
+      style:"font-size:15px;line-height:1.9;color:var(--text);white-space:pre-wrap;font-family:'Jost',sans-serif;border:1px solid var(--border);border-radius:8px;padding:20px;margin-bottom:16px;min-height:240px;outline:none;transition:border-color .15s"
+    });
+    disp.innerHTML = lesson.rawText;
+    disp.onfocus=()=>{disp.style.borderColor="var(--gold)";};
+    let saveTimer=null;
+    const saveNow=()=>{
+      const html=disp.innerHTML;
+      if(html===lesson.rawText) return;
+      lesson.rawText=html;
       const ml=Object.assign({},S.myLessons);
       const idx=(ml[S.lang]||[]).findIndex(l=>l.id===lesson.id);
-      if(idx>=0){ ml[S.lang][idx].rawText=newText; set({myLessons:ml}); localStorage.setItem("lingua_my_lessons",JSON.stringify(ml)); }
-      document.getElementById("rawtext-display").textContent=newText;
-      document.getElementById("rawtext-editor").style.display="none";
-      document.getElementById("rawtext-display").style.display="block";
-      document.getElementById("rawtext-save-row").style.display="none";
-      document.getElementById("rawtext-editor").closest(".lesson-tab-btn");
-      const editBtnEl=tw.querySelector(".sbtn");
-      if(editBtnEl) editBtnEl.textContent="✏ Edytuj tekst";
-    }},"💾 Zapisz zmiany"));
-    tw.appendChild(saveRow);
+      if(idx>=0){ ml[S.lang][idx].rawText=html; S.myLessons=ml; localStorage.setItem("lingua_my_lessons",JSON.stringify(ml)); }
+      const st=document.getElementById("rawtext-status");
+      if(st){st.textContent="✓ Zapisano"; st.style.color="var(--ok-text)";
+        setTimeout(()=>{if(st){st.textContent="Auto-zapis"; st.style.color="";}},1500);}
+    };
+    disp.oninput=()=>{
+      if(saveTimer) clearTimeout(saveTimer);
+      const st=document.getElementById("rawtext-status");
+      if(st){st.textContent="✏ Edytowanie...";}
+      saveTimer=setTimeout(saveNow,800);
+    };
+    disp.onblur=()=>{disp.style.borderColor="var(--border)"; if(saveTimer){clearTimeout(saveTimer); saveTimer=null;} saveNow();};
+    tw.appendChild(disp);
 
     // Generate vocab/phrases buttons
     if(S.claudeKey){
@@ -1998,7 +2154,7 @@ function renderLesson(){
         btn.innerHTML=type==="vocab"?"⏳ Generuję słówka z tekstu...":"⏳ Generuję zwroty z tekstu...";
         btn.disabled=true;
         try{
-          const currentText=lesson.rawText;
+          const currentText=rawTextToPlain(lesson.rawText);
           const prompt=type==="vocab"
             ? `Z poniższego tekstu wyciągnij MINIMUM 30 słów i zwrotów wartych nauki — im więcej tym lepiej. Wybierz słowa kluczowe, idiomy, kolokwializmy, trudniejsze słowa. Dla każdego podaj tłumaczenie PL, wymowę IPA i przykład z tekstu. Odpowiedz TYLKO czystym JSON: {"items":[{"w":"słowo","tr":"tłumaczenie PL","ipa":"IPA","pl":"fonetyka","ex":"przykład","exT":"tłumaczenie przykładu"}]}\n\nTEKST:\n${currentText.slice(0,10000)}`
             : `Z poniższego tekstu wyciągnij MINIMUM 20 użytecznych zwrotów, wyrażeń i kolokacji — im więcej tym lepiej. Szukaj idiomów, wyrażeń potocznych, zwrotów konwersacyjnych. Odpowiedz TYLKO czystym JSON: {"items":[{"w":"zwrot","tr":"tłumaczenie PL","ipa":"IPA","pl":"fonetyka","ex":"przykład użycia","exT":"tłumaczenie"}]}\n\nTEKST:\n${currentText.slice(0,10000)}`;
@@ -2742,7 +2898,7 @@ function renderUploadPanel(){
   const ph=h("div",{style:"display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px"});
   ph.appendChild(h("div",{},
     h("div",{class:"upload-title"},"Wgraj własną lekcję"),
-    h("div",{class:"upload-sub"},"Zdjęcie, PDF lub tekst — Claude przeanalizuje i stworzy lekcję")
+    h("div",{class:"upload-sub"},"Zdjęcie, PDF, plik .md/.txt lub tekst — Claude przeanalizuje i stworzy lekcję")
   ));
   ph.appendChild(h("button",{style:"background:none;border:none;cursor:pointer;font-size:20px;color:var(--ink3)",onclick:()=>set({showUpload:false})},"✕"));
   panel.appendChild(ph);
@@ -2770,7 +2926,15 @@ function renderUploadPanel(){
     const pi=h("input",{type:"file",accept:".pdf",style:"display:none",onchange:(e)=>{if(e.target.files[0])set({uploadFile:e.target.files[0],uploadStep:1});}});
     pdfL.appendChild(pi);
     ug.appendChild(pdfL);
-    // Opcja 3: Własny tekst / notatki
+    // Opcja 3: Plik .md / .txt
+    const mdL=h("label",{class:"upload-opt"});
+    mdL.appendChild(h("div",{class:"uicon"},"📝"));
+    mdL.appendChild(h("div",{class:"ulabel"},"Plik tekstowy"));
+    mdL.appendChild(h("div",{class:"udesc"},"MD, TXT, Markdown"));
+    const mi=h("input",{type:"file",accept:".md,.markdown,.txt,text/plain,text/markdown",style:"display:none",onchange:(e)=>{if(e.target.files[0])set({uploadFile:e.target.files[0],uploadStep:1});}});
+    mdL.appendChild(mi);
+    ug.appendChild(mdL);
+    // Opcja 4: Własny tekst / notatki
     const txtOpt=h("div",{class:"upload-opt",style:"cursor:pointer",onclick:()=>set({uploadStep:"text"})});
     txtOpt.appendChild(h("div",{class:"uicon"},"✏️"));
     txtOpt.appendChild(h("div",{class:"ulabel"},"Własny tekst"));
@@ -3035,54 +3199,68 @@ function renderLesson(){
   if(S.lessonTab==="tekst" && lesson.rawText){
     const tw=h("div",{style:"max-width:700px"});
     tw.appendChild(h("div",{class:"sec-label",style:"margin-bottom:12px"},"Oryginalny tekst"));
-    // Edit mode toggle
-    const editBtn=h("button",{class:"sbtn",style:"margin-bottom:14px",onclick:()=>{
-      const ta=document.getElementById("rawtext-editor");
-      const disp=document.getElementById("rawtext-display");
-      const saveRow=document.getElementById("rawtext-save-row");
-      if(ta.style.display==="none"){
-        ta.value=lesson.rawText;
-        ta.style.display="block";
-        disp.style.display="none";
-        saveRow.style.display="flex";
-        editBtn.textContent="✕ Anuluj edycję";
-      } else {
-        ta.style.display="none";
-        disp.style.display="block";
-        saveRow.style.display="none";
-        editBtn.textContent="✏ Edytuj tekst";
-      }
-    }},"✏ Edytuj tekst");
-    tw.appendChild(editBtn);
 
-    // Display view
-    const disp=h("div",{id:"rawtext-display",style:"font-size:15px;line-height:1.9;color:var(--text);white-space:pre-wrap;font-family:'Jost',sans-serif;border:1px solid var(--border);border-radius:8px;padding:20px;margin-bottom:16px"});
-    disp.textContent=lesson.rawText;
-    tw.appendChild(disp);
+    // Toolbar
+    const toolbar=h("div",{style:"display:flex;gap:8px;align-items:center;margin-bottom:10px;padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;flex-wrap:wrap"});
+    const sizeSel=h("select",{
+      style:"padding:6px 10px;border:1px solid var(--border);background:var(--surface);font-size:11px;color:var(--text2);cursor:pointer;border-radius:2px;font-family:inherit",
+      title:"Rozmiar tekstu (zaznacz fragment, potem wybierz)",
+      onchange:(e)=>{document.execCommand("fontSize",false,e.target.value); document.getElementById("rawtext-display").focus();}
+    });
+    [["2","Bardzo mała"],["3","Mała"],["4","Średnia (domyślna)"],["5","Duża"],["6","Bardzo duża"],["7","Ogromna"]].forEach(([v,l])=>{
+      const opt=h("option",{value:v},l);
+      if(v==="4") opt.selected=true;
+      sizeSel.appendChild(opt);
+    });
+    toolbar.appendChild(sizeSel);
+    toolbar.appendChild(h("button",{class:"sbtn",style:"font-weight:700;min-width:32px",title:"Pogrubienie (Ctrl+B)",
+      onclick:()=>{document.execCommand("bold"); document.getElementById("rawtext-display").focus();}},"B"));
+    toolbar.appendChild(h("button",{class:"sbtn",style:"font-style:italic;min-width:32px",title:"Kursywa (Ctrl+I)",
+      onclick:()=>{document.execCommand("italic"); document.getElementById("rawtext-display").focus();}},"I"));
+    toolbar.appendChild(h("button",{class:"sbtn",style:"text-decoration:underline;min-width:32px",title:"Podkreślenie",
+      onclick:()=>{document.execCommand("underline"); document.getElementById("rawtext-display").focus();}},"U"));
+    toolbar.appendChild(h("span",{style:"font-size:11px;color:var(--text3);margin-left:4px"},"Kolor:"));
+    const colorInp=h("input",{type:"color",value:"#1f2937",
+      style:"width:36px;height:32px;border:1px solid var(--border);background:var(--surface);cursor:pointer;border-radius:2px;padding:2px",
+      title:"Kolor tekstu"
+    });
+    colorInp.oninput=(e)=>{document.execCommand("foreColor",false,e.target.value); document.getElementById("rawtext-display").focus();};
+    toolbar.appendChild(colorInp);
+    toolbar.appendChild(h("button",{class:"sbtn",style:"font-size:11px",title:"Wyczyść formatowanie zaznaczonego fragmentu",
+      onclick:()=>{document.execCommand("removeFormat"); document.getElementById("rawtext-display").focus();}},"✕ Wyczyść"));
+    toolbar.appendChild(h("div",{style:"flex:1"}));
+    toolbar.appendChild(h("span",{style:"font-size:11px;color:var(--text3)",id:"rawtext-status"},"Auto-zapis"));
+    tw.appendChild(toolbar);
 
-    // Edit textarea (hidden by default)
-    const ta=h("textarea",{id:"rawtext-editor",style:"display:none;width:100%;min-height:300px;padding:16px;font-size:14px;line-height:1.8;color:var(--text);background:var(--surface);border:1px solid var(--gold);border-radius:8px;font-family:'Jost',sans-serif;resize:vertical;box-sizing:border-box;outline:none"});
-    tw.appendChild(ta);
-
-    // Save row (hidden by default)
-    const saveRow=h("div",{id:"rawtext-save-row",style:"display:none;gap:10px;margin-bottom:20px"});
-    saveRow.appendChild(h("button",{class:"primary",onclick:()=>{
-      const newText=document.getElementById("rawtext-editor").value.trim();
-      if(!newText) return;
-      lesson.rawText=newText;
-      // Update in myLessons localStorage
+    // Inline editor (contenteditable)
+    const disp=h("div",{
+      id:"rawtext-display",
+      contenteditable:"true",
+      spellcheck:"false",
+      style:"font-size:15px;line-height:1.9;color:var(--text);white-space:pre-wrap;font-family:'Jost',sans-serif;border:1px solid var(--border);border-radius:8px;padding:20px;margin-bottom:16px;min-height:240px;outline:none;transition:border-color .15s"
+    });
+    disp.innerHTML = lesson.rawText;
+    disp.onfocus=()=>{disp.style.borderColor="var(--gold)";};
+    let saveTimer=null;
+    const saveNow=()=>{
+      const html=disp.innerHTML;
+      if(html===lesson.rawText) return;
+      lesson.rawText=html;
       const ml=Object.assign({},S.myLessons);
       const idx=(ml[S.lang]||[]).findIndex(l=>l.id===lesson.id);
-      if(idx>=0){ ml[S.lang][idx].rawText=newText; set({myLessons:ml}); localStorage.setItem("lingua_my_lessons",JSON.stringify(ml)); }
-      document.getElementById("rawtext-display").textContent=newText;
-      document.getElementById("rawtext-editor").style.display="none";
-      document.getElementById("rawtext-display").style.display="block";
-      document.getElementById("rawtext-save-row").style.display="none";
-      document.getElementById("rawtext-editor").closest(".lesson-tab-btn");
-      const editBtnEl=tw.querySelector(".sbtn");
-      if(editBtnEl) editBtnEl.textContent="✏ Edytuj tekst";
-    }},"💾 Zapisz zmiany"));
-    tw.appendChild(saveRow);
+      if(idx>=0){ ml[S.lang][idx].rawText=html; S.myLessons=ml; localStorage.setItem("lingua_my_lessons",JSON.stringify(ml)); }
+      const st=document.getElementById("rawtext-status");
+      if(st){st.textContent="✓ Zapisano"; st.style.color="var(--ok-text)";
+        setTimeout(()=>{if(st){st.textContent="Auto-zapis"; st.style.color="";}},1500);}
+    };
+    disp.oninput=()=>{
+      if(saveTimer) clearTimeout(saveTimer);
+      const st=document.getElementById("rawtext-status");
+      if(st){st.textContent="✏ Edytowanie...";}
+      saveTimer=setTimeout(saveNow,800);
+    };
+    disp.onblur=()=>{disp.style.borderColor="var(--border)"; if(saveTimer){clearTimeout(saveTimer); saveTimer=null;} saveNow();};
+    tw.appendChild(disp);
 
     // Generate vocab/phrases buttons
     if(S.claudeKey){
@@ -3092,7 +3270,7 @@ function renderLesson(){
         btn.innerHTML=type==="vocab"?"⏳ Generuję słówka z tekstu...":"⏳ Generuję zwroty z tekstu...";
         btn.disabled=true;
         try{
-          const currentText=lesson.rawText;
+          const currentText=rawTextToPlain(lesson.rawText);
           const prompt=type==="vocab"
             ? `Z poniższego tekstu wyciągnij MINIMUM 30 słów i zwrotów wartych nauki — im więcej tym lepiej. Wybierz słowa kluczowe, idiomy, kolokwializmy, trudniejsze słowa. Dla każdego podaj tłumaczenie PL, wymowę IPA i przykład z tekstu. Odpowiedz TYLKO czystym JSON: {"items":[{"w":"słowo","tr":"tłumaczenie PL","ipa":"IPA","pl":"fonetyka","ex":"przykład","exT":"tłumaczenie przykładu"}]}\n\nTEKST:\n${currentText.slice(0,10000)}`
             : `Z poniższego tekstu wyciągnij MINIMUM 20 użytecznych zwrotów, wyrażeń i kolokacji — im więcej tym lepiej. Szukaj idiomów, wyrażeń potocznych, zwrotów konwersacyjnych. Odpowiedz TYLKO czystym JSON: {"items":[{"w":"zwrot","tr":"tłumaczenie PL","ipa":"IPA","pl":"fonetyka","ex":"przykład użycia","exT":"tłumaczenie"}]}\n\nTEKST:\n${currentText.slice(0,10000)}`;
@@ -3699,7 +3877,7 @@ async function fetchYouTubeTranscript(videoId){
     if(res.ok){
       const data=await res.json();
       if(data.transcript&&data.transcript.length>0){
-        return data.transcript.map(t=>t.text).join(" ");
+        return data.transcript.map(t=>t.text).join("\n");
       }
     } else {
       const errBody=await res.text().catch(()=>"");
@@ -3719,7 +3897,7 @@ async function fetchYouTubeTranscript(videoId){
         return data[0].transcriptionAsText;
       }
       if(data.transcription){
-        return data.transcription.map(t=>t.subtitle).join(" ");
+        return data.transcription.map(t=>t.subtitle).join("\n");
       }
     } else {
       const errBody=await res.text().catch(()=>"");
@@ -3781,7 +3959,7 @@ ${trimmedTranscript}`;
     const m=rawText.match(/\{[\s\S]*\}/);
     if(!m) throw new Error("Claude nie zwrócił poprawnego JSON — spróbuj ponownie");
     const lesson=JSON.parse(m[0]);
-    lesson.id="film_"+Date.now();lesson.type="dialog";lesson.youtubeId=videoId;
+    lesson.id="film_"+Date.now();lesson.type="dialog";lesson.youtubeId=videoId;lesson.rawText=transcript;
     console.log("[LinguaAgent] Lekcja gotowa: "+lesson.dialog?.length+" kwestii dialogu, "+lesson.vocab?.length+" słówek");
     set({filmTranscriptProcessing:false,filmTranscriptLesson:lesson});
   }catch(e){
@@ -4100,7 +4278,7 @@ function renderMyWords(){
 
 // ── B7: EKSPORT/IMPORT ─────────────────────────────────────────────────────
 function exportAllData(){
-  const data={myLessons:S.myLessons,myFilms:S.myFilms,wordStatus:JSON.parse(localStorage.getItem("lingua_word_status")||"{}"),srs:S.srs};
+  const data={myLessons:S.myLessons,lessonFolders:S.lessonFolders,myFilms:S.myFilms,wordStatus:JSON.parse(localStorage.getItem("lingua_word_status")||"{}"),srs:S.srs};
   const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
   const url=URL.createObjectURL(blob);
   const a=document.createElement("a");a.href=url;a.download="lingua_backup_"+new Date().toISOString().slice(0,10)+".json";a.click();
@@ -4112,6 +4290,7 @@ function importData(file){
     try{
       const data=JSON.parse(r.result);
       if(data.myLessons){const ml=Object.assign({},S.myLessons);Object.entries(data.myLessons).forEach(([lang,lessons])=>{if(!ml[lang])ml[lang]=[];ml[lang].push(...lessons);});localStorage.setItem("lingua_my_lessons",JSON.stringify(ml));S.myLessons=ml;}
+      if(data.lessonFolders){const lf=Object.assign({},S.lessonFolders);Object.entries(data.lessonFolders).forEach(([lang,folders])=>{if(!lf[lang])lf[lang]=[];folders.forEach(f=>{if(!lf[lang].includes(f))lf[lang].push(f);});});localStorage.setItem("lingua_lesson_folders",JSON.stringify(lf));S.lessonFolders=lf;}
       if(data.myFilms){const mf=Object.assign({},S.myFilms);Object.entries(data.myFilms).forEach(([lang,films])=>{if(!mf[lang])mf[lang]=[];mf[lang].push(...films);});localStorage.setItem("lingua_my_films",JSON.stringify(mf));S.myFilms=mf;}
       if(data.wordStatus){const ws=JSON.parse(localStorage.getItem("lingua_word_status")||"{}");Object.assign(ws,data.wordStatus);localStorage.setItem("lingua_word_status",JSON.stringify(ws));}
       if(data.srs){const srs=Object.assign({},S.srs,data.srs);localStorage.setItem("lingua_srs",JSON.stringify(srs));S.srs=srs;}
