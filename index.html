@@ -2305,33 +2305,52 @@ function renderLesson(){
   }
 
   if(S.lessonTab==="vocab"){
-    main.appendChild(renderVocabList(lesson.vocab, lang));
+    const isOwn = (S.myLessons[lang]||[]).some(l=>l.id===lesson.id);
+    const vw = h("div",{});
+    if(isOwn) vw.appendChild(renderAddEntryForm(lesson,"vocab",lang));
+    const onDel = isOwn ? (idx)=>{
+      if(!lesson.vocab) return;
+      lesson.vocab.splice(idx,1);
+      const ml=Object.assign({},S.myLessons);
+      const li=(ml[S.lang]||[]).findIndex(l=>l.id===lesson.id);
+      if(li>=0){ml[S.lang][li].vocab=lesson.vocab;set({myLessons:ml});localStorage.setItem("lingua_my_lessons",JSON.stringify(ml));scheduleDriveSync();}
+    } : null;
+    vw.appendChild(renderVocabList(lesson.vocab||[], lang, onDel));
+    main.appendChild(vw);
   }
 
   if(S.lessonTab==="phrases"){
+    const isOwn = (S.myLessons[lang]||[]).some(l=>l.id===lesson.id);
     const phrases = lesson.phrases || [];
+    const pw = h("div",{});
+    if(isOwn) pw.appendChild(renderAddEntryForm(lesson,"phrases",lang));
     if(phrases.length===0){
-      const empty=h("div",{style:"max-width:600px;margin:40px auto;padding:40px 20px;text-align:center;border:1px dashed var(--border);border-radius:8px"});
+      const empty=h("div",{style:"max-width:600px;margin:20px auto;padding:40px 20px;text-align:center;border:1px dashed var(--border);border-radius:8px"});
       empty.appendChild(h("div",{style:"font-size:36px;opacity:.4;margin-bottom:12px"},"💬"));
       empty.appendChild(h("div",{style:"font-size:14px;color:var(--text2);margin-bottom:8px"},"Brak zwrotów w tej lekcji"));
       if(lesson.rawText){
-        empty.appendChild(h("div",{style:"font-size:12px;color:var(--text3);line-height:1.6;margin-bottom:14px"},"Przejdź do zakładki „Tekst\" i kliknij „💬 Generuj zwroty z tekstu\""));
+        empty.appendChild(h("div",{style:"font-size:12px;color:var(--text3);line-height:1.6;margin-bottom:14px"},isOwn?"Dodaj zwrot ręcznie powyżej albo przejdź do zakładki „Tekst\" i kliknij „💬 Generuj zwroty z tekstu\"":"Przejdź do zakładki „Tekst\" i kliknij „💬 Generuj zwroty z tekstu\""));
         empty.appendChild(h("button",{class:"sbtn",onclick:()=>set({lessonTab:"tekst"})},"→ Przejdź do Tekstu"));
       } else {
-        empty.appendChild(h("div",{style:"font-size:12px;color:var(--text3);line-height:1.6"},"Ta lekcja nie ma oryginalnego tekstu, z którego AI mogłoby wyciągnąć zwroty."));
+        empty.appendChild(h("div",{style:"font-size:12px;color:var(--text3);line-height:1.6"},isOwn?"Dodaj pierwszy zwrot ręcznie używając formularza powyżej.":"Ta lekcja nie ma oryginalnego tekstu, z którego AI mogłoby wyciągnąć zwroty."));
       }
-      main.appendChild(empty);
+      pw.appendChild(empty);
     } else {
-      const pw=h("div",{});
       const head=h("div",{style:"display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;max-width:760px"});
       head.appendChild(h("div",{class:"sec-label",style:"margin:0"},"Zwroty i wyrażenia ("+phrases.length+")"));
       const actBtns=h("div",{style:"display:flex;gap:8px"});
       actBtns.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:phrases}),"flashcard")},"🃏 Fiszki ze zwrotów"));
       head.appendChild(actBtns);
       pw.appendChild(head);
-      pw.appendChild(renderVocabList(phrases, lang));
-      main.appendChild(pw);
+      const onDel = isOwn ? (idx)=>{
+        lesson.phrases.splice(idx,1);
+        const ml=Object.assign({},S.myLessons);
+        const li=(ml[S.lang]||[]).findIndex(l=>l.id===lesson.id);
+        if(li>=0){ml[S.lang][li].phrases=lesson.phrases;set({myLessons:ml});localStorage.setItem("lingua_my_lessons",JSON.stringify(ml));scheduleDriveSync();}
+      } : null;
+      pw.appendChild(renderVocabList(phrases, lang, onDel));
     }
+    main.appendChild(pw);
   }
 
   if(S.lessonTab==="grammar"){
@@ -3226,7 +3245,7 @@ function markWord(key, status, wordClean, lang){
   document.getElementById("word-popup")?.remove();
 }
 
-function renderVocabList(vocab, lang){
+function renderVocabList(vocab, lang, onDelete){
   const wrap = document.createElement("div");
   wrap.className = "vocab-list-wrap";
 
@@ -3244,6 +3263,7 @@ function renderVocabList(vocab, lang){
   vocab.forEach((v, i)=>{
     const row = document.createElement("div");
     row.className = "vocab-list-row";
+    if(onDelete) row.style.gridTemplateColumns = "40px 1fr 1fr auto";
     const isLangToPl = S.vocabDir !== "pl→lang";
 
     const numSpk = document.createElement("div");
@@ -3269,8 +3289,67 @@ function renderVocabList(vocab, lang){
     if(v.ex){ const d=document.createElement("div"); d.className="vocab-list-example"; d.textContent=isLangToPl?(v.ex||""):(v.exT||""); right.appendChild(d); }
     row.appendChild(right);
 
+    if(onDelete){
+      const delBtn = document.createElement("button");
+      delBtn.textContent = "✕";
+      delBtn.title = "Usuń tę pozycję";
+      delBtn.style.cssText = "background:none;border:1px solid var(--border);color:var(--text3);border-radius:4px;width:28px;height:28px;cursor:pointer;font-size:12px;line-height:1;padding:0;align-self:start";
+      delBtn.onmouseover = ()=>{ delBtn.style.borderColor="#fca5a5"; delBtn.style.color="#dc2626"; };
+      delBtn.onmouseout = ()=>{ delBtn.style.borderColor="var(--border)"; delBtn.style.color="var(--text3)"; };
+      delBtn.onclick = (e)=>{ e.stopPropagation(); if(confirm("Usunąć \""+v.w+"\"?")) onDelete(i); };
+      row.appendChild(delBtn);
+    }
+
     wrap.appendChild(row);
   });
+  return wrap;
+}
+
+function renderAddEntryForm(lesson, arrayKey, lang){
+  const label = arrayKey==="phrases" ? "zwrot" : "słówko";
+  const wrap = h("div",{style:"max-width:760px;margin-bottom:20px"});
+  const formBox = h("div",{style:"display:none;margin-top:14px;padding:18px;border:1px solid var(--gold);border-radius:8px;background:var(--surface)"});
+  const toggleBtn = h("button",{class:"sbtn",style:"border-color:var(--gold);color:var(--gold)"},"+ Dodaj "+label+" ręcznie");
+  const mkInp = (ph, marginBottom) => h("input",{type:"text",placeholder:ph,class:"key-inp",style:"margin-bottom:"+marginBottom});
+  const wInp = mkInp(arrayKey==="phrases" ? "Zwrot lub wyrażenie (obcojęzyczne)" : "Słowo (obcojęzyczne)", "8px");
+  const trInp = mkInp("Tłumaczenie po polsku", "8px");
+  const ipaInp = mkInp("Wymowa IPA (opcjonalnie, np. /ˈhɛloʊ/)", "8px");
+  const plInp = mkInp("Jak czytać po polsku (opcjonalnie, np. „helou\")", "8px");
+  const exInp = mkInp("Przykład użycia w zdaniu (opcjonalnie)", "8px");
+  const exTInp = mkInp("Tłumaczenie przykładu (opcjonalnie)", "14px");
+  formBox.appendChild(h("div",{class:"sec-label",style:"margin-bottom:12px"},"Nowy "+label));
+  formBox.appendChild(wInp);
+  formBox.appendChild(trInp);
+  formBox.appendChild(ipaInp);
+  formBox.appendChild(plInp);
+  formBox.appendChild(exInp);
+  formBox.appendChild(exTInp);
+  const btnRow = h("div",{style:"display:flex;gap:10px"});
+  const clearForm = ()=>{ [wInp,trInp,ipaInp,plInp,exInp,exTInp].forEach(i=>i.value=""); };
+  const closeForm = ()=>{ formBox.style.display="none"; toggleBtn.textContent="+ Dodaj "+label+" ręcznie"; };
+  btnRow.appendChild(h("button",{class:"primary",onclick:()=>{
+    const w=(wInp.value||"").trim(), tr=(trInp.value||"").trim();
+    if(!w||!tr){ alert("Wpisz minimum "+(arrayKey==="phrases"?"zwrot i jego tłumaczenie":"słowo i jego tłumaczenie")); return; }
+    if(!lesson[arrayKey]) lesson[arrayKey]=[];
+    if(lesson[arrayKey].some(v=>v.w===w)){ if(!confirm("\""+w+"\" już istnieje w tej lekcji. Dodać duplikat?")) return; }
+    lesson[arrayKey].push({w,tr,ipa:(ipaInp.value||"").trim(),pl:(plInp.value||"").trim(),ex:(exInp.value||"").trim(),exT:(exTInp.value||"").trim()});
+    const ml=Object.assign({},S.myLessons);
+    const li=(ml[S.lang]||[]).findIndex(l=>l.id===lesson.id);
+    if(li>=0){ ml[S.lang][li][arrayKey]=lesson[arrayKey]; set({myLessons:ml}); localStorage.setItem("lingua_my_lessons",JSON.stringify(ml)); scheduleDriveSync(); }
+    clearForm();
+    setTimeout(()=>wInp.focus(),50);
+  }},"💾 Zapisz i dodaj kolejny"));
+  btnRow.appendChild(h("button",{class:"sbtn",onclick:closeForm},"Zamknij"));
+  formBox.appendChild(btnRow);
+  toggleBtn.onclick = ()=>{
+    if(formBox.style.display==="none"){
+      formBox.style.display="block";
+      toggleBtn.textContent="✕ Zamknij formularz";
+      setTimeout(()=>wInp.focus(),50);
+    } else closeForm();
+  };
+  wrap.appendChild(toggleBtn);
+  wrap.appendChild(formBox);
   return wrap;
 }
 
@@ -3523,33 +3602,52 @@ function renderLesson(){
   }
 
   if(S.lessonTab==="vocab"){
-    main.appendChild(renderVocabList(lesson.vocab, lang));
+    const isOwn = (S.myLessons[lang]||[]).some(l=>l.id===lesson.id);
+    const vw = h("div",{});
+    if(isOwn) vw.appendChild(renderAddEntryForm(lesson,"vocab",lang));
+    const onDel = isOwn ? (idx)=>{
+      if(!lesson.vocab) return;
+      lesson.vocab.splice(idx,1);
+      const ml=Object.assign({},S.myLessons);
+      const li=(ml[S.lang]||[]).findIndex(l=>l.id===lesson.id);
+      if(li>=0){ml[S.lang][li].vocab=lesson.vocab;set({myLessons:ml});localStorage.setItem("lingua_my_lessons",JSON.stringify(ml));scheduleDriveSync();}
+    } : null;
+    vw.appendChild(renderVocabList(lesson.vocab||[], lang, onDel));
+    main.appendChild(vw);
   }
 
   if(S.lessonTab==="phrases"){
+    const isOwn = (S.myLessons[lang]||[]).some(l=>l.id===lesson.id);
     const phrases = lesson.phrases || [];
+    const pw = h("div",{});
+    if(isOwn) pw.appendChild(renderAddEntryForm(lesson,"phrases",lang));
     if(phrases.length===0){
-      const empty=h("div",{style:"max-width:600px;margin:40px auto;padding:40px 20px;text-align:center;border:1px dashed var(--border);border-radius:8px"});
+      const empty=h("div",{style:"max-width:600px;margin:20px auto;padding:40px 20px;text-align:center;border:1px dashed var(--border);border-radius:8px"});
       empty.appendChild(h("div",{style:"font-size:36px;opacity:.4;margin-bottom:12px"},"💬"));
       empty.appendChild(h("div",{style:"font-size:14px;color:var(--text2);margin-bottom:8px"},"Brak zwrotów w tej lekcji"));
       if(lesson.rawText){
-        empty.appendChild(h("div",{style:"font-size:12px;color:var(--text3);line-height:1.6;margin-bottom:14px"},"Przejdź do zakładki „Tekst\" i kliknij „💬 Generuj zwroty z tekstu\""));
+        empty.appendChild(h("div",{style:"font-size:12px;color:var(--text3);line-height:1.6;margin-bottom:14px"},isOwn?"Dodaj zwrot ręcznie powyżej albo przejdź do zakładki „Tekst\" i kliknij „💬 Generuj zwroty z tekstu\"":"Przejdź do zakładki „Tekst\" i kliknij „💬 Generuj zwroty z tekstu\""));
         empty.appendChild(h("button",{class:"sbtn",onclick:()=>set({lessonTab:"tekst"})},"→ Przejdź do Tekstu"));
       } else {
-        empty.appendChild(h("div",{style:"font-size:12px;color:var(--text3);line-height:1.6"},"Ta lekcja nie ma oryginalnego tekstu, z którego AI mogłoby wyciągnąć zwroty."));
+        empty.appendChild(h("div",{style:"font-size:12px;color:var(--text3);line-height:1.6"},isOwn?"Dodaj pierwszy zwrot ręcznie używając formularza powyżej.":"Ta lekcja nie ma oryginalnego tekstu, z którego AI mogłoby wyciągnąć zwroty."));
       }
-      main.appendChild(empty);
+      pw.appendChild(empty);
     } else {
-      const pw=h("div",{});
       const head=h("div",{style:"display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;max-width:760px"});
       head.appendChild(h("div",{class:"sec-label",style:"margin:0"},"Zwroty i wyrażenia ("+phrases.length+")"));
       const actBtns=h("div",{style:"display:flex;gap:8px"});
       actBtns.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:phrases}),"flashcard")},"🃏 Fiszki ze zwrotów"));
       head.appendChild(actBtns);
       pw.appendChild(head);
-      pw.appendChild(renderVocabList(phrases, lang));
-      main.appendChild(pw);
+      const onDel = isOwn ? (idx)=>{
+        lesson.phrases.splice(idx,1);
+        const ml=Object.assign({},S.myLessons);
+        const li=(ml[S.lang]||[]).findIndex(l=>l.id===lesson.id);
+        if(li>=0){ml[S.lang][li].phrases=lesson.phrases;set({myLessons:ml});localStorage.setItem("lingua_my_lessons",JSON.stringify(ml));scheduleDriveSync();}
+      } : null;
+      pw.appendChild(renderVocabList(phrases, lang, onDel));
     }
+    main.appendChild(pw);
   }
 
   if(S.lessonTab==="grammar"){
