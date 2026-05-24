@@ -595,6 +595,20 @@ async function deleteVideo(key){
 
 const LANGS={EN:{name:"English",flag:"🇬🇧"},FR:{name:"Français",flag:"🇫🇷"},IT:{name:"Italiano",flag:"🇮🇹"}};
 const LANG_BCP={EN:"en-GB",FR:"fr-FR",IT:"it-IT"};
+
+// Palety kolorów akcentu — zmieniają tylko --gold (główny kolor podświetleń, przycisków).
+// Tło i tekst zostają neutralne. --red (dla akcji destrukcyjnych) pozostaje stały.
+const PALETTES = {
+  green:  { name:"Zielony",       emoji:"🟢", group:"flag", light:{gold:"#2e7d4f", gold2:"#256640", goldDim:"#e6f0ea"}, dark:{gold:"#5aab76", gold2:"#7dc296", goldDim:"#1a3522"} },
+  red:    { name:"Czerwony",      emoji:"🔴", group:"flag", light:{gold:"#c1272d", gold2:"#9d0208", goldDim:"#fce4e4"}, dark:{gold:"#e63946", gold2:"#ff5a68", goldDim:"#3a1a1c"} },
+  blue:   { name:"Niebieski",     emoji:"🔵", group:"flag", light:{gold:"#1d4ed8", gold2:"#1e3a8a", goldDim:"#dbeafe"}, dark:{gold:"#60a5fa", gold2:"#93c5fd", goldDim:"#1e3a5c"} },
+  navy:   { name:"Granat",        emoji:"🌊", group:"extra",light:{gold:"#0c4a6e", gold2:"#075985", goldDim:"#e0f2fe"}, dark:{gold:"#38bdf8", gold2:"#7dd3fc", goldDim:"#0c4a6e"} },
+  purple: { name:"Fiolet",        emoji:"🟣", group:"extra",light:{gold:"#6b21a8", gold2:"#581c87", goldDim:"#f3e8ff"}, dark:{gold:"#a78bfa", gold2:"#c4b5fd", goldDim:"#4c1d95"} },
+  orange: { name:"Pomarańczowy",  emoji:"🟠", group:"extra",light:{gold:"#c2410c", gold2:"#9a3412", goldDim:"#ffedd5"}, dark:{gold:"#fb923c", gold2:"#fdba74", goldDim:"#7c2d12"} },
+  mint:   { name:"Mięta",         emoji:"🌿", group:"extra",light:{gold:"#0d9488", gold2:"#0f766e", goldDim:"#ccfbf1"}, dark:{gold:"#5eead4", gold2:"#99f6e4", goldDim:"#134e4a"} },
+  gold:   { name:"Złoto klasyczne",emoji:"🟡", group:"extra",light:{gold:"#9a7b4f", gold2:"#7a6040", goldDim:"#f0e8d8"}, dark:{gold:"#c9a96e", gold2:"#e8c990", goldDim:"#3d2e18"} },
+  rose:   { name:"Róż",           emoji:"🌸", group:"extra",light:{gold:"#be185d", gold2:"#9d174d", goldDim:"#fce7f3"}, dark:{gold:"#f472b6", gold2:"#f9a8d4", goldDim:"#831843"} }
+};
 // ElevenLabs voice IDs
 // eleven_multilingual_v2 works with all languages using same voice IDs
 // Female: Sarah (young, soft, conversational) | Male: Daniel (british, deep, natural)
@@ -1105,7 +1119,8 @@ let S={
   lessonTab:"dialog",
   vocabDir:"lang→pl",
   srs:(()=>{try{return JSON.parse(localStorage.getItem("lingua_srs")||"{}")}catch{return {}}})(),
-  theme:localStorage.getItem("lingua_theme")||"light"
+  theme:localStorage.getItem("lingua_theme")||"light",
+  palette:localStorage.getItem("lingua_palette")||"green"
 };
 // ── GOOGLE DRIVE SYNC ────────────────────────────────────────────────────────
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.appdata";
@@ -1154,7 +1169,9 @@ function buildSyncPayload(){
     oaiKey: S.oaiKey || "",
     elKey: S.elKey || "",
     lessonAudio: S.lessonAudio,
-    lessonVideos: S.lessonVideos
+    lessonVideos: S.lessonVideos,
+    palette: S.palette || "green",
+    theme: S.theme || "light"
   };
 }
 
@@ -1172,6 +1189,8 @@ function applyDriveData(remote){
   if(remote.rapidKey){ S.rapidKey=remote.rapidKey; localStorage.setItem("lingua_rapid_key", remote.rapidKey); }
   if(remote.oaiKey){ S.oaiKey=remote.oaiKey; localStorage.setItem("lingua_oai_key", remote.oaiKey); }
   if(remote.elKey){ S.elKey=remote.elKey; localStorage.setItem("lingua_el_key", remote.elKey); }
+  if(remote.palette && PALETTES[remote.palette]){ S.palette=remote.palette; localStorage.setItem("lingua_palette", remote.palette); applyTheme(S.theme); }
+  if(remote.theme && (remote.theme==="dark"||remote.theme==="light")){ S.theme=remote.theme; localStorage.setItem("lingua_theme", remote.theme); applyTheme(remote.theme); }
 }
 
 async function driveFindFile(){
@@ -2909,7 +2928,31 @@ function renderSettings(){
   sw.appendChild(h("div",{class:"settings-title"},"Ustawienia lektora"));
   sw.appendChild(h("div",{class:"settings-sub"},"Wybierz silnik głosowy i skonfiguruj klucze API."));
 
+  // ── Paleta kolorów ──
+  sw.appendChild(h("div",{class:"sec-label",style:"margin-top:8px"},"🎨 Kolor akcentu"));
+  sw.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-bottom:12px;line-height:1.6"},"Wybierz kolor dla przycisków, podświetleń i akcentów. Tło i tekst pozostają neutralne. Czerwony przy usuwaniu jest stały."));
+  const mkPalCard = (id, p) => {
+    const isCurrent = (S.palette||"green") === id;
+    const card = h("button",{
+      style:"padding:14px 10px;background:"+(isCurrent?"var(--surface2)":"var(--surface)")+";border:2px solid "+(isCurrent?p.light.gold:"var(--border)")+";cursor:pointer;border-radius:8px;display:flex;flex-direction:column;align-items:center;gap:6px;font-family:inherit;transition:all .15s",
+      title: p.name,
+      onclick:()=>{ applyPalette(id); render(); }
+    });
+    card.appendChild(h("div",{style:"width:36px;height:36px;border-radius:50%;background:"+p.light.gold+";border:2px solid #fff;box-shadow:0 0 0 1px var(--border)"}));
+    card.appendChild(h("div",{style:"font-size:11px;color:var(--text);font-weight:500;text-align:center"},p.emoji+" "+p.name));
+    if(isCurrent) card.appendChild(h("div",{style:"font-size:9px;color:var(--ok-text);letter-spacing:.1em;text-transform:uppercase"},"✓ Aktywna"));
+    return card;
+  };
+  const palFlag = h("div",{style:"display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px"});
+  Object.entries(PALETTES).filter(([id,p])=>p.group==="flag").forEach(([id,p])=>palFlag.appendChild(mkPalCard(id,p)));
+  sw.appendChild(palFlag);
+  sw.appendChild(h("div",{style:"font-size:10px;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;margin:14px 0 8px 0"},"Pozostałe kolory"));
+  const palExtra = h("div",{style:"display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-bottom:24px"});
+  Object.entries(PALETTES).filter(([id,p])=>p.group==="extra").forEach(([id,p])=>palExtra.appendChild(mkPalCard(id,p)));
+  sw.appendChild(palExtra);
+
   // Engine selector
+  sw.appendChild(h("hr",{class:"settings-divider"}));
   sw.appendChild(h("div",{class:"sec-label"},"Silnik głosowy"));
   const eg=h("div",{class:"eng-grid"});
   [["oai","OpenAI TTS","naturalne głosy"],["el","ElevenLabs","bardzo realistyczne"],["browser","Systemowy","darmowy"]].forEach(([eng,name,desc])=>{
@@ -4307,7 +4350,31 @@ function renderSettings(){
   sw.appendChild(h("div",{class:"settings-title"},"Ustawienia lektora"));
   sw.appendChild(h("div",{class:"settings-sub"},"Wybierz silnik głosowy i skonfiguruj klucze API."));
 
+  // ── Paleta kolorów ──
+  sw.appendChild(h("div",{class:"sec-label",style:"margin-top:8px"},"🎨 Kolor akcentu"));
+  sw.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-bottom:12px;line-height:1.6"},"Wybierz kolor dla przycisków, podświetleń i akcentów. Tło i tekst pozostają neutralne. Czerwony przy usuwaniu jest stały."));
+  const mkPalCard = (id, p) => {
+    const isCurrent = (S.palette||"green") === id;
+    const card = h("button",{
+      style:"padding:14px 10px;background:"+(isCurrent?"var(--surface2)":"var(--surface)")+";border:2px solid "+(isCurrent?p.light.gold:"var(--border)")+";cursor:pointer;border-radius:8px;display:flex;flex-direction:column;align-items:center;gap:6px;font-family:inherit;transition:all .15s",
+      title: p.name,
+      onclick:()=>{ applyPalette(id); render(); }
+    });
+    card.appendChild(h("div",{style:"width:36px;height:36px;border-radius:50%;background:"+p.light.gold+";border:2px solid #fff;box-shadow:0 0 0 1px var(--border)"}));
+    card.appendChild(h("div",{style:"font-size:11px;color:var(--text);font-weight:500;text-align:center"},p.emoji+" "+p.name));
+    if(isCurrent) card.appendChild(h("div",{style:"font-size:9px;color:var(--ok-text);letter-spacing:.1em;text-transform:uppercase"},"✓ Aktywna"));
+    return card;
+  };
+  const palFlag = h("div",{style:"display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px"});
+  Object.entries(PALETTES).filter(([id,p])=>p.group==="flag").forEach(([id,p])=>palFlag.appendChild(mkPalCard(id,p)));
+  sw.appendChild(palFlag);
+  sw.appendChild(h("div",{style:"font-size:10px;color:var(--text3);letter-spacing:.06em;text-transform:uppercase;margin:14px 0 8px 0"},"Pozostałe kolory"));
+  const palExtra = h("div",{style:"display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px;margin-bottom:24px"});
+  Object.entries(PALETTES).filter(([id,p])=>p.group==="extra").forEach(([id,p])=>palExtra.appendChild(mkPalCard(id,p)));
+  sw.appendChild(palExtra);
+
   // Engine selector
+  sw.appendChild(h("hr",{class:"settings-divider"}));
   sw.appendChild(h("div",{class:"sec-label"},"Silnik głosowy"));
   const eg=h("div",{class:"eng-grid"});
   [["oai","OpenAI TTS","naturalne głosy"],["el","ElevenLabs","bardzo realistyczne"],["browser","Systemowy","darmowy"]].forEach(([eng,name,desc])=>{
@@ -5078,12 +5145,14 @@ function importData(file){
 // ── B8: DARK/LIGHT THEME ───────────────────────────────────────────────────
 function applyTheme(theme){
   const r=document.documentElement;
+  const paletteId = S.palette || "green";
+  const palette = PALETTES[paletteId] || PALETTES.green;
+  const accent = theme==="dark" ? palette.dark : palette.light;
   if(theme==="dark"){
     r.style.setProperty("--bg","#0e1117");r.style.setProperty("--bg2","#161b22");r.style.setProperty("--bg3","#1c2330");
     r.style.setProperty("--surface","#161b22");r.style.setProperty("--surface2","#1c2330");
     r.style.setProperty("--border","#2a3142");r.style.setProperty("--border2","#3a4254");
     r.style.setProperty("--text","#e8eaed");r.style.setProperty("--text2","#b0b7c2");r.style.setProperty("--text3","#7a8190");
-    r.style.setProperty("--gold","#5aab76");r.style.setProperty("--gold2","#7dc296");r.style.setProperty("--gold-dim","#1a3522");
     r.style.setProperty("--green-light","#7dc296");
     r.style.setProperty("--red","#e63946");r.style.setProperty("--red2","#ff5a68");r.style.setProperty("--red-dim","#3a1a1c");
     r.style.setProperty("--ok","#1a3522");r.style.setProperty("--ok-text","#7dc296");
@@ -5094,14 +5163,25 @@ function applyTheme(theme){
     r.style.setProperty("--surface","#ffffff");r.style.setProperty("--surface2","#f7f9fc");
     r.style.setProperty("--border","#e4e7eb");r.style.setProperty("--border2","#d4d8df");
     r.style.setProperty("--text","#0e1117");r.style.setProperty("--text2","#3a3f4b");r.style.setProperty("--text3","#6b7280");
-    r.style.setProperty("--gold","#2e7d4f");r.style.setProperty("--gold2","#256640");r.style.setProperty("--gold-dim","#e6f0ea");
     r.style.setProperty("--green-light","#5aab76");
     r.style.setProperty("--red","#d62828");r.style.setProperty("--red2","#9d0208");r.style.setProperty("--red-dim","#fce4e4");
     r.style.setProperty("--ok","#e6f5ec");r.style.setProperty("--ok-text","#2a7a48");
     r.style.setProperty("--err","#fdeaea");r.style.setProperty("--err-text","#c53030");
     document.body.style.background="#ffffff";document.documentElement.style.background="#ffffff";
   }
+  // Accent (paleta wybrana przez użytkownika)
+  r.style.setProperty("--gold", accent.gold);
+  r.style.setProperty("--gold2", accent.gold2);
+  r.style.setProperty("--gold-dim", accent.goldDim);
   localStorage.setItem("lingua_theme",theme);S.theme=theme;
+}
+
+function applyPalette(paletteId){
+  if(!PALETTES[paletteId]) return;
+  S.palette = paletteId;
+  localStorage.setItem("lingua_palette", paletteId);
+  applyTheme(S.theme);
+  scheduleDriveSync();
 }
 applyTheme(S.theme);
 
