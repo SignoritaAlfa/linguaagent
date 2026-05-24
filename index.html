@@ -3385,27 +3385,37 @@ function renderVocabList(vocab, lang, onDelete, listType){
     const trDiv = document.createElement("div"); trDiv.className="vocab-list-translation"; trDiv.textContent=isLangToPl?v.tr:v.w;
     right.appendChild(trDiv);
     if(v.ex){
-      const exRow=document.createElement("div");
-      exRow.style.cssText="display:flex;align-items:flex-start;gap:6px;margin-top:4px";
+      // Foreign-language example with ♪ button — goes with the foreign word
+      const foreignExBox=document.createElement("div");
+      foreignExBox.style.cssText="display:flex;align-items:flex-start;gap:6px;margin-top:6px";
       const exSpk=document.createElement("button");
       exSpk.textContent="♪";
       exSpk.title="Posłuchaj przykładu";
       exSpk.style.cssText="width:20px;height:20px;flex-shrink:0;padding:0;line-height:1;border-radius:50%;border:1px solid var(--border);background:var(--surface);color:var(--text3);cursor:pointer;font-size:10px";
       exSpk.onmouseover=()=>{exSpk.style.borderColor="var(--gold)";exSpk.style.color="var(--gold)";};
       exSpk.onmouseout=()=>{exSpk.style.borderColor="var(--border)";exSpk.style.color="var(--text3)";};
-      exSpk.onclick=(e)=>{e.stopPropagation();speak(isLangToPl?(v.ex||""):(v.exT||v.ex||""),lang,"");};
+      exSpk.onclick=(e)=>{e.stopPropagation();speak(v.ex,lang,"");};
       const exTxt=document.createElement("div");
       exTxt.className="vocab-list-example";
       exTxt.style.flex="1";
-      exTxt.textContent=isLangToPl?(v.ex||""):(v.exT||"");
-      exRow.appendChild(exSpk);
-      exRow.appendChild(exTxt);
-      right.appendChild(exRow);
-      if(isLangToPl && v.exT){
-        const exTr=document.createElement("div");
-        exTr.style.cssText="font-size:11px;color:var(--text3);margin-top:2px;padding-left:26px";
-        exTr.textContent=v.exT;
-        right.appendChild(exTr);
+      exTxt.textContent=v.ex;
+      foreignExBox.appendChild(exSpk);
+      foreignExBox.appendChild(exTxt);
+      // PL translation of example — goes with the PL translation
+      let plExBox=null;
+      if(v.exT){
+        plExBox=document.createElement("div");
+        plExBox.style.cssText="font-size:12px;color:var(--text3);font-style:italic;margin-top:6px;line-height:1.5";
+        plExBox.textContent=v.exT;
+      }
+      if(isLangToPl){
+        // foreign on left, PL on right
+        left.appendChild(foreignExBox);
+        if(plExBox) right.appendChild(plExBox);
+      } else {
+        // PL on left, foreign on right
+        if(plExBox) left.appendChild(plExBox);
+        right.appendChild(foreignExBox);
       }
     }
     row.appendChild(right);
