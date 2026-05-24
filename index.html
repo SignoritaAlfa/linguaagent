@@ -1071,6 +1071,7 @@ let S={
   // Per-lesson audio: { lessonId: { full: dataUrl, female: dataUrl, male: dataUrl } }
   lessonAudio:(()=>{try{return JSON.parse(localStorage.getItem("lingua_audio")||"{}")}catch{return {}}})(),
   audioPlaying:false, audioObj:null, audioMgrLesson:null,
+  vocabPlaying:false, vocabPlayingIdx:-1, vocabPlayingList:null, vocabAbort:null,
   showFilmoteka:false, filmUploadStep:0, filmFile:null, filmProcessing:false, filmError:"", filmLang:"FR",
   filmSeries:null, filmClipId:null,
   filmYtInput:"", filmYtId:"",
@@ -1457,6 +1458,33 @@ async function playDialog(dialog,lang){
   set({playing:false,playingLine:-1});
 }
 function stopDialog(){S.abort.v=true;window.speechSynthesis.cancel();set({playing:false,playingLine:-1});}
+
+async function playVocabList(vocab, lang, listType){
+  if(!vocab || vocab.length===0) return;
+  if(S.vocabAbort) S.vocabAbort.v = true;
+  window.speechSynthesis.cancel();
+  await new Promise(r=>setTimeout(r,80));
+  const flag = {v:false};
+  set({vocabPlaying:true, vocabAbort:flag, vocabPlayingIdx:0, vocabPlayingList:listType});
+  for(let i=0; i<vocab.length; i++){
+    if(flag.v) break;
+    set({vocabPlayingIdx:i, vocabPlayingList:listType});
+    const item = vocab[i];
+    const rowEl = document.getElementById("vocab-row-"+listType+"-"+i);
+    if(rowEl) rowEl.scrollIntoView({behavior:"smooth", block:"center"});
+    try{ await speak(item.w, lang, ""); }
+    catch(e){ console.log("[Lingua] vocab speak err:", e); }
+    if(flag.v) break;
+    await new Promise(r=>setTimeout(r,600));
+  }
+  set({vocabPlaying:false, vocabPlayingIdx:-1, vocabPlayingList:null});
+}
+
+function stopVocabPlayback(){
+  if(S.vocabAbort) S.vocabAbort.v = true;
+  window.speechSynthesis.cancel();
+  set({vocabPlaying:false, vocabPlayingIdx:-1, vocabPlayingList:null});
+}
 
 // ── HELPERS ──────────────────────────────────────────────────────────────────
 function saveMyLesson(lang, lesson){
@@ -2308,6 +2336,16 @@ function renderLesson(){
     const isOwn = (S.myLessons[lang]||[]).some(l=>l.id===lesson.id);
     const vw = h("div",{});
     if(isOwn) vw.appendChild(renderAddEntryForm(lesson,"vocab",lang));
+    const v = lesson.vocab||[];
+    if(v.length>0){
+      const head=h("div",{style:"display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;max-width:760px;gap:10px;flex-wrap:wrap"});
+      head.appendChild(h("div",{class:"sec-label",style:"margin:0"},"Słownictwo ("+v.length+")"));
+      const playing = S.vocabPlaying && S.vocabPlayingList==="vocab";
+      head.appendChild(playing
+        ? h("button",{class:"sbtn",style:"border-color:var(--err-text);color:var(--err-text)",onclick:stopVocabPlayback},"⏹ Zatrzymaj ("+(S.vocabPlayingIdx+1)+"/"+v.length+")")
+        : h("button",{class:"sbtn",style:"border-color:var(--gold);color:var(--gold)",onclick:()=>playVocabList(v, lang, "vocab")},"▶ Odtwórz wszystkie ("+v.length+")"));
+      vw.appendChild(head);
+    }
     const onDel = isOwn ? (idx)=>{
       if(!lesson.vocab) return;
       lesson.vocab.splice(idx,1);
@@ -2315,7 +2353,7 @@ function renderLesson(){
       const li=(ml[S.lang]||[]).findIndex(l=>l.id===lesson.id);
       if(li>=0){ml[S.lang][li].vocab=lesson.vocab;set({myLessons:ml});localStorage.setItem("lingua_my_lessons",JSON.stringify(ml));scheduleDriveSync();}
     } : null;
-    vw.appendChild(renderVocabList(lesson.vocab||[], lang, onDel));
+    vw.appendChild(renderVocabList(v, lang, onDel, "vocab"));
     main.appendChild(vw);
   }
 
@@ -2336,9 +2374,13 @@ function renderLesson(){
       }
       pw.appendChild(empty);
     } else {
-      const head=h("div",{style:"display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;max-width:760px"});
+      const head=h("div",{style:"display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;max-width:760px;gap:10px;flex-wrap:wrap"});
       head.appendChild(h("div",{class:"sec-label",style:"margin:0"},"Zwroty i wyrażenia ("+phrases.length+")"));
-      const actBtns=h("div",{style:"display:flex;gap:8px"});
+      const actBtns=h("div",{style:"display:flex;gap:8px;flex-wrap:wrap"});
+      const playingPh = S.vocabPlaying && S.vocabPlayingList==="phrases";
+      actBtns.appendChild(playingPh
+        ? h("button",{class:"sbtn",style:"border-color:var(--err-text);color:var(--err-text)",onclick:stopVocabPlayback},"⏹ Zatrzymaj ("+(S.vocabPlayingIdx+1)+"/"+phrases.length+")")
+        : h("button",{class:"sbtn",style:"border-color:var(--gold);color:var(--gold)",onclick:()=>playVocabList(phrases, lang, "phrases")},"▶ Odtwórz wszystkie ("+phrases.length+")"));
       actBtns.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:phrases}),"flashcard")},"🃏 Fiszki ze zwrotów"));
       head.appendChild(actBtns);
       pw.appendChild(head);
@@ -2348,7 +2390,7 @@ function renderLesson(){
         const li=(ml[S.lang]||[]).findIndex(l=>l.id===lesson.id);
         if(li>=0){ml[S.lang][li].phrases=lesson.phrases;set({myLessons:ml});localStorage.setItem("lingua_my_lessons",JSON.stringify(ml));scheduleDriveSync();}
       } : null;
-      pw.appendChild(renderVocabList(phrases, lang, onDel));
+      pw.appendChild(renderVocabList(phrases, lang, onDel, "phrases"));
     }
     main.appendChild(pw);
   }
@@ -3245,7 +3287,7 @@ function markWord(key, status, wordClean, lang){
   document.getElementById("word-popup")?.remove();
 }
 
-function renderVocabList(vocab, lang, onDelete){
+function renderVocabList(vocab, lang, onDelete, listType){
   const wrap = document.createElement("div");
   wrap.className = "vocab-list-wrap";
 
@@ -3263,7 +3305,13 @@ function renderVocabList(vocab, lang, onDelete){
   vocab.forEach((v, i)=>{
     const row = document.createElement("div");
     row.className = "vocab-list-row";
+    if(listType) row.id = "vocab-row-"+listType+"-"+i;
     if(onDelete) row.style.gridTemplateColumns = "40px 1fr 1fr auto";
+    if(listType && S.vocabPlaying && S.vocabPlayingList===listType && S.vocabPlayingIdx===i){
+      row.style.background = "var(--gold-dim)";
+      row.style.borderLeft = "3px solid var(--gold)";
+      row.style.paddingLeft = "12px";
+    }
     const isLangToPl = S.vocabDir !== "pl→lang";
 
     const numSpk = document.createElement("div");
@@ -3653,6 +3701,16 @@ function renderLesson(){
     const isOwn = (S.myLessons[lang]||[]).some(l=>l.id===lesson.id);
     const vw = h("div",{});
     if(isOwn) vw.appendChild(renderAddEntryForm(lesson,"vocab",lang));
+    const v = lesson.vocab||[];
+    if(v.length>0){
+      const head=h("div",{style:"display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;max-width:760px;gap:10px;flex-wrap:wrap"});
+      head.appendChild(h("div",{class:"sec-label",style:"margin:0"},"Słownictwo ("+v.length+")"));
+      const playing = S.vocabPlaying && S.vocabPlayingList==="vocab";
+      head.appendChild(playing
+        ? h("button",{class:"sbtn",style:"border-color:var(--err-text);color:var(--err-text)",onclick:stopVocabPlayback},"⏹ Zatrzymaj ("+(S.vocabPlayingIdx+1)+"/"+v.length+")")
+        : h("button",{class:"sbtn",style:"border-color:var(--gold);color:var(--gold)",onclick:()=>playVocabList(v, lang, "vocab")},"▶ Odtwórz wszystkie ("+v.length+")"));
+      vw.appendChild(head);
+    }
     const onDel = isOwn ? (idx)=>{
       if(!lesson.vocab) return;
       lesson.vocab.splice(idx,1);
@@ -3660,7 +3718,7 @@ function renderLesson(){
       const li=(ml[S.lang]||[]).findIndex(l=>l.id===lesson.id);
       if(li>=0){ml[S.lang][li].vocab=lesson.vocab;set({myLessons:ml});localStorage.setItem("lingua_my_lessons",JSON.stringify(ml));scheduleDriveSync();}
     } : null;
-    vw.appendChild(renderVocabList(lesson.vocab||[], lang, onDel));
+    vw.appendChild(renderVocabList(v, lang, onDel, "vocab"));
     main.appendChild(vw);
   }
 
@@ -3681,9 +3739,13 @@ function renderLesson(){
       }
       pw.appendChild(empty);
     } else {
-      const head=h("div",{style:"display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;max-width:760px"});
+      const head=h("div",{style:"display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;max-width:760px;gap:10px;flex-wrap:wrap"});
       head.appendChild(h("div",{class:"sec-label",style:"margin:0"},"Zwroty i wyrażenia ("+phrases.length+")"));
-      const actBtns=h("div",{style:"display:flex;gap:8px"});
+      const actBtns=h("div",{style:"display:flex;gap:8px;flex-wrap:wrap"});
+      const playingPh = S.vocabPlaying && S.vocabPlayingList==="phrases";
+      actBtns.appendChild(playingPh
+        ? h("button",{class:"sbtn",style:"border-color:var(--err-text);color:var(--err-text)",onclick:stopVocabPlayback},"⏹ Zatrzymaj ("+(S.vocabPlayingIdx+1)+"/"+phrases.length+")")
+        : h("button",{class:"sbtn",style:"border-color:var(--gold);color:var(--gold)",onclick:()=>playVocabList(phrases, lang, "phrases")},"▶ Odtwórz wszystkie ("+phrases.length+")"));
       actBtns.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:phrases}),"flashcard")},"🃏 Fiszki ze zwrotów"));
       head.appendChild(actBtns);
       pw.appendChild(head);
@@ -3693,7 +3755,7 @@ function renderLesson(){
         const li=(ml[S.lang]||[]).findIndex(l=>l.id===lesson.id);
         if(li>=0){ml[S.lang][li].phrases=lesson.phrases;set({myLessons:ml});localStorage.setItem("lingua_my_lessons",JSON.stringify(ml));scheduleDriveSync();}
       } : null;
-      pw.appendChild(renderVocabList(phrases, lang, onDel));
+      pw.appendChild(renderVocabList(phrases, lang, onDel, "phrases"));
     }
     main.appendChild(pw);
   }
