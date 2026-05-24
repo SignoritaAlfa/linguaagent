@@ -1331,8 +1331,10 @@ WYMAGANIA MINIMALNE (nie można ich zmniejszyć):
 - fill: minimum 12 ćwiczeń uzupełniania luk — DWIE KATEGORIE: (1) cat:"text" — zdania bezpośrednio z materiału z brakującym słowem (min 6), (2) cat:"grammar" — ćwiczenia gramatyczne na zasady widoczne w tekście (min 6)
 - grammar: minimum 4 zasady gramatyczne widoczne w materiale
 
+Pole "rawText": jeśli widzisz obraz, przepisz DOSŁOWNIE cały tekst z obrazu (każde słowo, w kolejności w jakiej występuje). Jeśli dostałeś już tekst w wiadomości, powtórz go w "rawText" identycznie.
+
 Odpowiedz WYŁĄCZNIE czystym JSON, zero tekstu przed ani po, zero markdown:
-{"title":"tytuł lekcji","level":"B1","topic":"temat po polsku","dialog":[{"s":"Imię","l":"zdanie w języku obcym","t":"tłumaczenie po polsku"}],"vocab":[{"w":"słowo","tr":"tłumaczenie PL","ipa":"wymowa IPA","pl":"jak czytać po polsku","ex":"przykład użycia","exT":"tłumaczenie przykładu"}],"fill":[{"s":"zdanie z ___ luką","a":"odpowiedź","h":"wskazówka po polsku","cat":"text"},{"s":"gramatyczne z ___","a":"odpowiedź","h":"wskazówka","cat":"grammar"}],"grammar":[{"rule":"nazwa zasady","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie po polsku"}]}`;
+{"title":"tytuł lekcji","level":"B1","topic":"temat po polsku","rawText":"oryginalny tekst materiału dosłownie","dialog":[{"s":"Imię","l":"zdanie w języku obcym","t":"tłumaczenie po polsku"}],"vocab":[{"w":"słowo","tr":"tłumaczenie PL","ipa":"wymowa IPA","pl":"jak czytać po polsku","ex":"przykład użycia","exT":"tłumaczenie przykładu"}],"fill":[{"s":"zdanie z ___ luką","a":"odpowiedź","h":"wskazówka po polsku","cat":"text"},{"s":"gramatyczne z ___","a":"odpowiedź","h":"wskazówka","cat":"grammar"}],"grammar":[{"rule":"nazwa zasady","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie po polsku"}]}`;
   if(!S.claudeKey){set({uploadError:"Wpisz klucz Anthropic API w Ustawieniach"});return;}
   set({uploadProcessing:true, uploadError:""});
   try{
@@ -1456,8 +1458,10 @@ async function processFilm(){
   const isVideo = file.type.startsWith("video/");
   const PROMPT = `Jesteś ekspertem od nauki języków. Przeanalizuj ten fragment ${isVideo?"wideo":"audio"} w języku ${langName} i stwórz z niego kompletną lekcję językową.
 Transkrybuj DOKŁADNIE wszystkie wypowiedzi które słyszysz. Zidentyfikuj mówców (użyj imion jeśli je znasz, lub Osoba1/Osoba2).
+Pole "rawText": pełna dosłowna transkrypcja całego nagrania w języku oryginału, w kolejności wypowiedzi, bez tłumaczeń i komentarzy. Włącz każde zdanie które słyszysz.
+
 Odpowiedz TYLKO czystym JSON (bez markdown, bez komentarzy):
-{"title":"tytuł sceny np. Friends S01E01 - scena w kawiarni","level":"A2","topic":"temat lekcji po polsku","dialog":[{"s":"imię/nazwa postaci","l":"dokładny tekst w języku obcym","t":"naturalne tłumaczenie po polsku"}],"vocab":[{"w":"ważny zwrot z sceny","tr":"tłumaczenie","ipa":"wymowa IPA","pl":"wymowa dla Polaków","ex":"zdanie z fragmentu","exT":"tłumaczenie"}],"fill":[{"s":"zdanie z ___ luką","a":"brakujące słowo","h":"wskazówka po polsku","cat":"text"},{"s":"gramatyczne z ___","a":"odpowiedź","h":"wskazówka","cat":"grammar"}],"grammar":[{"rule":"zasada gramatyczna widoczna w scenie","ex":"przykład z fragmentu","exT":"tłumaczenie","note":"wyjaśnienie po polsku"}]}`;
+{"title":"tytuł sceny np. Friends S01E01 - scena w kawiarni","level":"A2","topic":"temat lekcji po polsku","rawText":"pełna dosłowna transkrypcja nagrania","dialog":[{"s":"imię/nazwa postaci","l":"dokładny tekst w języku obcym","t":"naturalne tłumaczenie po polsku"}],"vocab":[{"w":"ważny zwrot z sceny","tr":"tłumaczenie","ipa":"wymowa IPA","pl":"wymowa dla Polaków","ex":"zdanie z fragmentu","exT":"tłumaczenie"}],"fill":[{"s":"zdanie z ___ luką","a":"brakujące słowo","h":"wskazówka po polsku","cat":"text"},{"s":"gramatyczne z ___","a":"odpowiedź","h":"wskazówka","cat":"grammar"}],"grammar":[{"rule":"zasada gramatyczna widoczna w scenie","ex":"przykład z fragmentu","exT":"tłumaczenie","note":"wyjaśnienie po polsku"}]}`;
 
   try{
     // Convert file to base64
@@ -3781,7 +3785,7 @@ ${trimmedTranscript}`;
     const m=rawText.match(/\{[\s\S]*\}/);
     if(!m) throw new Error("Claude nie zwrócił poprawnego JSON — spróbuj ponownie");
     const lesson=JSON.parse(m[0]);
-    lesson.id="film_"+Date.now();lesson.type="dialog";lesson.youtubeId=videoId;
+    lesson.id="film_"+Date.now();lesson.type="dialog";lesson.youtubeId=videoId;lesson.rawText=transcript;
     console.log("[LinguaAgent] Lekcja gotowa: "+lesson.dialog?.length+" kwestii dialogu, "+lesson.vocab?.length+" słówek");
     set({filmTranscriptProcessing:false,filmTranscriptLesson:lesson});
   }catch(e){
