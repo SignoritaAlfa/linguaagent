@@ -11,6 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,500;1,400&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
 html, body { background: #fafaf8 !important; color: #1a1a18 !important; color-scheme: light; overscroll-behavior: none; }
 html { min-height: 100%; min-height: -webkit-fill-available; }
@@ -1080,6 +1081,15 @@ let S={
   rapidKey:localStorage.getItem("lingua_rapid_key")||"",
   myLessons:(()=>{try{return JSON.parse(localStorage.getItem("lingua_my_lessons")||"{}")}catch{return {}}})(),
   lessonFolders:(()=>{try{return JSON.parse(localStorage.getItem("lingua_lesson_folders")||"{}")}catch{return {}}})(),
+  // Google Drive sync
+  driveClientId:localStorage.getItem("lingua_drive_client_id")||"",
+  driveToken:null,
+  driveStatus:"disconnected",
+  driveLastSync:parseInt(localStorage.getItem("lingua_drive_last_sync")||"0",10),
+  driveFileId:localStorage.getItem("lingua_drive_file_id")||null,
+  driveError:"",
+  driveAutoSync:localStorage.getItem("lingua_drive_auto_sync")!=="0",
+  driveUserEmail:localStorage.getItem("lingua_drive_user_email")||"",
   myFilms:(()=>{try{return JSON.parse(localStorage.getItem("lingua_my_films")||"{}")}catch{return {}}})(),
   showAddFilm:false,addFilmTitle:"",addFilmType:"serial",addFilmLevel:"A2",
   showAddClip:false,addClipTitle:"",addClipEpisode:"",
@@ -1091,6 +1101,231 @@ let S={
   srs:(()=>{try{return JSON.parse(localStorage.getItem("lingua_srs")||"{}")}catch{return {}}})(),
   theme:localStorage.getItem("lingua_theme")||"light"
 };
+// ── GOOGLE DRIVE SYNC ────────────────────────────────────────────────────────
+const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.appdata";
+const DRIVE_FILENAME = "lingua_data.json";
+let _driveTokenClient = null;
+let _driveSyncTimer = null;
+
+function initDriveTokenClient(){
+  if(!S.driveClientId) return null;
+  if(!window.google || !window.google.accounts || !window.google.accounts.oauth2) return null;
+  if(_driveTokenClient && _driveTokenClient._clientId===S.driveClientId) return _driveTokenClient;
+  _driveTokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: S.driveClientId,
+    scope: DRIVE_SCOPE,
+    callback: async (resp)=>{
+      if(resp.error){
+        S.driveStatus="error";
+        S.driveError = resp.error_description || resp.error || "OAuth error";
+        render(); return;
+      }
+      S.driveToken = resp.access_token;
+      S.driveStatus = "connected";
+      S.driveError = "";
+      localStorage.setItem("lingua_drive_was_connected","1");
+      render();
+      await driveFindFile();
+      await driveSync(true);
+    }
+  });
+  _driveTokenClient._clientId = S.driveClientId;
+  return _driveTokenClient;
+}
+
+function buildSyncPayload(){
+  return {
+    version: 1,
+    lastModified: Date.now(),
+    myLessons: S.myLessons,
+    lessonFolders: S.lessonFolders,
+    myFilms: S.myFilms,
+    srs: S.srs,
+    wordStatus: JSON.parse(localStorage.getItem("lingua_word_status")||"{}"),
+    claudeKey: S.claudeKey || "",
+    geminiKey: S.geminiKey || "",
+    rapidKey: S.rapidKey || "",
+    oaiKey: S.oaiKey || "",
+    elKey: S.elKey || "",
+    lessonAudio: S.lessonAudio,
+    lessonVideos: S.lessonVideos
+  };
+}
+
+function applyDriveData(remote){
+  if(!remote || typeof remote!=="object") return;
+  if(remote.myLessons){ S.myLessons=remote.myLessons; localStorage.setItem("lingua_my_lessons", JSON.stringify(S.myLessons)); }
+  if(remote.lessonFolders){ S.lessonFolders=remote.lessonFolders; localStorage.setItem("lingua_lesson_folders", JSON.stringify(S.lessonFolders)); }
+  if(remote.myFilms){ S.myFilms=remote.myFilms; localStorage.setItem("lingua_my_films", JSON.stringify(S.myFilms)); }
+  if(remote.srs){ S.srs=remote.srs; localStorage.setItem("lingua_srs", JSON.stringify(S.srs)); }
+  if(remote.wordStatus) localStorage.setItem("lingua_word_status", JSON.stringify(remote.wordStatus));
+  if(remote.lessonAudio){ S.lessonAudio=remote.lessonAudio; localStorage.setItem("lingua_audio", JSON.stringify(S.lessonAudio)); }
+  if(remote.lessonVideos){ S.lessonVideos=remote.lessonVideos; localStorage.setItem("lingua_lesson_videos", JSON.stringify(S.lessonVideos)); }
+  if(remote.claudeKey){ S.claudeKey=remote.claudeKey; localStorage.setItem("lingua_claude_key", remote.claudeKey); }
+  if(remote.geminiKey){ S.geminiKey=remote.geminiKey; localStorage.setItem("lingua_gemini_key", remote.geminiKey); }
+  if(remote.rapidKey){ S.rapidKey=remote.rapidKey; localStorage.setItem("lingua_rapid_key", remote.rapidKey); }
+  if(remote.oaiKey){ S.oaiKey=remote.oaiKey; localStorage.setItem("lingua_oai_key", remote.oaiKey); }
+  if(remote.elKey){ S.elKey=remote.elKey; localStorage.setItem("lingua_el_key", remote.elKey); }
+}
+
+async function driveFindFile(){
+  if(!S.driveToken) return;
+  try{
+    const res = await fetch(
+      `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&fields=files(id,name,modifiedTime)&q=name='${DRIVE_FILENAME}'`,
+      {headers:{Authorization:`Bearer ${S.driveToken}`}}
+    );
+    if(!res.ok) throw new Error("Drive find HTTP "+res.status);
+    const data = await res.json();
+    if(data.files && data.files.length>0){
+      S.driveFileId = data.files[0].id;
+      localStorage.setItem("lingua_drive_file_id", S.driveFileId);
+    } else {
+      S.driveFileId = null;
+      localStorage.removeItem("lingua_drive_file_id");
+    }
+  }catch(e){
+    console.error("[Drive] find failed:", e);
+  }
+}
+
+async function pushToDrive(){
+  if(!S.driveToken){ S.driveError="Brak tokenu Drive — połącz ponownie"; S.driveStatus="error"; render(); return false; }
+  S.driveStatus="syncing"; render();
+  try{
+    const payload = buildSyncPayload();
+    const body = JSON.stringify(payload);
+    const boundary = "lingua-"+Date.now();
+    let res;
+    if(S.driveFileId){
+      const mp =
+        `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n`+
+        JSON.stringify({mimeType:"application/json"})+`\r\n`+
+        `--${boundary}\r\nContent-Type: application/json\r\n\r\n`+
+        body+`\r\n--${boundary}--`;
+      res = await fetch(
+        `https://www.googleapis.com/upload/drive/v3/files/${S.driveFileId}?uploadType=multipart&fields=id,modifiedTime`,
+        {method:"PATCH", headers:{Authorization:`Bearer ${S.driveToken}`, "Content-Type":`multipart/related; boundary=${boundary}`}, body:mp}
+      );
+    } else {
+      const meta = {name: DRIVE_FILENAME, mimeType:"application/json", parents:["appDataFolder"]};
+      const mp =
+        `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n`+
+        JSON.stringify(meta)+`\r\n`+
+        `--${boundary}\r\nContent-Type: application/json\r\n\r\n`+
+        body+`\r\n--${boundary}--`;
+      res = await fetch(
+        `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,modifiedTime`,
+        {method:"POST", headers:{Authorization:`Bearer ${S.driveToken}`, "Content-Type":`multipart/related; boundary=${boundary}`}, body:mp}
+      );
+    }
+    if(!res.ok){
+      const errText = await res.text().catch(()=>"");
+      throw new Error("Drive push HTTP "+res.status+": "+errText.slice(0,200));
+    }
+    const data = await res.json();
+    S.driveFileId = data.id;
+    localStorage.setItem("lingua_drive_file_id", S.driveFileId);
+    S.driveLastSync = Date.now();
+    localStorage.setItem("lingua_drive_last_sync", String(S.driveLastSync));
+    S.driveStatus = "connected";
+    S.driveError = "";
+    render();
+    return true;
+  }catch(e){
+    S.driveStatus="error"; S.driveError=e.message; render();
+    console.error("[Drive] push failed:", e);
+    return false;
+  }
+}
+
+async function pullFromDrive(){
+  if(!S.driveToken){ return null; }
+  if(!S.driveFileId){
+    await driveFindFile();
+    if(!S.driveFileId) return null;
+  }
+  try{
+    const res = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${S.driveFileId}?alt=media`,
+      {headers:{Authorization:`Bearer ${S.driveToken}`}}
+    );
+    if(!res.ok){
+      const errText = await res.text().catch(()=>"");
+      throw new Error("Drive pull HTTP "+res.status+": "+errText.slice(0,200));
+    }
+    return await res.json();
+  }catch(e){
+    console.error("[Drive] pull failed:", e);
+    S.driveStatus="error"; S.driveError=e.message; render();
+    return null;
+  }
+}
+
+async function driveSync(preferRemote){
+  S.driveStatus="syncing"; render();
+  const remote = await pullFromDrive();
+  if(remote && remote.lastModified){
+    const localLast = S.driveLastSync || 0;
+    if(preferRemote || remote.lastModified >= localLast){
+      applyDriveData(remote);
+      S.driveLastSync = remote.lastModified;
+      localStorage.setItem("lingua_drive_last_sync", String(S.driveLastSync));
+      S.driveStatus="connected"; render();
+    } else {
+      await pushToDrive();
+    }
+  } else {
+    await pushToDrive();
+  }
+}
+
+function connectDrive(){
+  if(!S.driveClientId){
+    S.driveError = "Wpisz Client ID z Google Cloud Console";
+    S.driveStatus="error"; render(); return;
+  }
+  const tc = initDriveTokenClient();
+  if(!tc){
+    S.driveError = "Biblioteka Google jeszcze się nie załadowała — odśwież stronę za chwilę";
+    S.driveStatus="error"; render(); return;
+  }
+  S.driveStatus="connecting"; S.driveError=""; render();
+  tc.requestAccessToken({prompt: S.driveFileId ? "" : "consent"});
+}
+
+function disconnectDrive(){
+  if(S.driveToken && window.google && window.google.accounts && window.google.accounts.oauth2 && window.google.accounts.oauth2.revoke){
+    try{ google.accounts.oauth2.revoke(S.driveToken, ()=>{}); }catch(e){}
+  }
+  S.driveToken = null;
+  S.driveStatus = "disconnected";
+  S.driveError = "";
+  localStorage.removeItem("lingua_drive_was_connected");
+  render();
+}
+
+function driveSilentReconnect(retries){
+  retries = retries||0;
+  if(!S.driveClientId) return;
+  if(localStorage.getItem("lingua_drive_was_connected")!=="1") return;
+  if(!window.google || !window.google.accounts || !window.google.accounts.oauth2){
+    if(retries<20) setTimeout(()=>driveSilentReconnect(retries+1), 300);
+    return;
+  }
+  const tc = initDriveTokenClient();
+  if(!tc) return;
+  S.driveStatus="connecting"; render();
+  try{ tc.requestAccessToken({prompt:""}); }
+  catch(e){ S.driveStatus="disconnected"; render(); console.error("[Drive] silent reconnect:",e); }
+}
+
+function scheduleDriveSync(){
+  if(!S.driveAutoSync || !S.driveToken) return;
+  if(_driveSyncTimer) clearTimeout(_driveSyncTimer);
+  _driveSyncTimer = setTimeout(()=>{ pushToDrive(); }, 3000);
+}
+
 function set(p){Object.assign(S,p);render();}
 
 // ── AUDIO ────────────────────────────────────────────────────────────────────
@@ -1230,6 +1465,7 @@ function saveMyLesson(lang, lesson){
   ml[lang].push(lesson);
   localStorage.setItem("lingua_my_lessons", JSON.stringify(ml));
   set({myLessons:ml, showUpload:false, uploadStep:0, uploadFile:null, uploadPreview:null, uploadError:""});
+  scheduleDriveSync();
 }
 
 function deleteMyLesson(lang, idx){
@@ -1237,6 +1473,7 @@ function deleteMyLesson(lang, idx){
   ml[lang] = (ml[lang]||[]).filter((_,i)=>i!==idx);
   localStorage.setItem("lingua_my_lessons", JSON.stringify(ml));
   set({myLessons:ml});
+  scheduleDriveSync();
 }
 
 function createFolder(lang){
@@ -1248,6 +1485,7 @@ function createFolder(lang){
   lf[lang]=lf[lang].concat([name]);
   localStorage.setItem("lingua_lesson_folders", JSON.stringify(lf));
   set({lessonFolders:lf});
+  scheduleDriveSync();
 }
 
 function renameFolder(lang, oldName){
@@ -1264,6 +1502,7 @@ function renameFolder(lang, oldName){
   localStorage.setItem("lingua_my_lessons", JSON.stringify(ml));
   localStorage.setItem("lingua_lesson_folders", JSON.stringify(lf));
   set({lessonFolders:lf, myLessons:ml});
+  scheduleDriveSync();
 }
 
 function deleteFolder(lang, name){
@@ -1275,6 +1514,7 @@ function deleteFolder(lang, name){
   localStorage.setItem("lingua_my_lessons", JSON.stringify(ml));
   localStorage.setItem("lingua_lesson_folders", JSON.stringify(lf));
   set({lessonFolders:lf, myLessons:ml});
+  scheduleDriveSync();
 }
 
 function moveLessonToFolder(lang, lessonIdx, folderName){
@@ -1284,6 +1524,7 @@ function moveLessonToFolder(lang, lessonIdx, folderName){
   ml[lang][lessonIdx] = Object.assign({}, ml[lang][lessonIdx], {folder: folderName||null});
   localStorage.setItem("lingua_my_lessons", JSON.stringify(ml));
   set({myLessons:ml});
+  scheduleDriveSync();
 }
 
 function saveMyFilm(lang, film){
@@ -2132,7 +2373,7 @@ function renderLesson(){
       lesson.rawText=html;
       const ml=Object.assign({},S.myLessons);
       const idx=(ml[S.lang]||[]).findIndex(l=>l.id===lesson.id);
-      if(idx>=0){ ml[S.lang][idx].rawText=html; S.myLessons=ml; localStorage.setItem("lingua_my_lessons",JSON.stringify(ml)); }
+      if(idx>=0){ ml[S.lang][idx].rawText=html; S.myLessons=ml; localStorage.setItem("lingua_my_lessons",JSON.stringify(ml)); scheduleDriveSync(); }
       const st=document.getElementById("rawtext-status");
       if(st){st.textContent="✓ Zapisano"; st.style.color="var(--ok-text)";
         setTimeout(()=>{if(st){st.textContent="Auto-zapis"; st.style.color="";}},1500);}
@@ -2540,7 +2781,7 @@ function renderSettings(){
     sw.appendChild(h("div",{style:"font-size:11px;color:var(--ink4);margin-bottom:8px"},"platform.openai.com → API keys → Create new secret key"));
     if(oaiKey) sw.appendChild(h("div",{class:"msg-ok"},"✓ OpenAI TTS aktywny"));
     const ob=h("div",{class:"row"});
-    ob.appendChild(h("button",{class:"primary",onclick:()=>{localStorage.setItem("lingua_oai_key",S.oaiKey.trim());set({oaiKey:S.oaiKey.trim()});}},"Zapisz klucz OpenAI"));
+    ob.appendChild(h("button",{class:"primary",onclick:()=>{localStorage.setItem("lingua_oai_key",S.oaiKey.trim());set({oaiKey:S.oaiKey.trim()});scheduleDriveSync();}},"Zapisz klucz OpenAI"));
     if(oaiKey) ob.appendChild(h("button",{class:"sbtn danger",onclick:()=>{localStorage.removeItem("lingua_oai_key");set({oaiKey:""});}},"Usuń"));
     sw.appendChild(ob);
   }
@@ -2571,7 +2812,7 @@ function renderSettings(){
     if(elKey&&!elMsg) sw.appendChild(h("div",{class:"msg-ok"},"✓ ElevenLabs aktywny"));
     const eb=h("div",{class:"row"});
     eb.appendChild(h("button",{class:"sbtn",onclick:testElKey},"Testuj"));
-    eb.appendChild(h("button",{class:"primary",onclick:()=>{localStorage.setItem("lingua_el_key",S.elKeyInput.trim());set({elKey:S.elKeyInput.trim(),elMsg:"ok:Zapisano"});}},"Zapisz"));
+    eb.appendChild(h("button",{class:"primary",onclick:()=>{localStorage.setItem("lingua_el_key",S.elKeyInput.trim());set({elKey:S.elKeyInput.trim(),elMsg:"ok:Zapisano"});scheduleDriveSync();}},"Zapisz"));
     if(elKey) eb.appendChild(h("button",{class:"sbtn danger",onclick:()=>{localStorage.removeItem("lingua_el_key");set({elKey:"",elKeyInput:"",elMsg:""});}},"Usuń"));
     sw.appendChild(eb);
   }
@@ -2595,7 +2836,7 @@ function renderSettings(){
   sw.appendChild(aki);
   if(geminiKey) sw.appendChild(h("div",{class:"msg-ok"},"✓ Gemini API aktywne"));
   const ab=h("div",{class:"row"});
-  ab.appendChild(h("button",{class:"primary",onclick:()=>{localStorage.setItem("lingua_gemini_key",S.geminiKey.trim());set({geminiKey:S.geminiKey.trim()});}},"Zapisz klucz Gemini"));
+  ab.appendChild(h("button",{class:"primary",onclick:()=>{localStorage.setItem("lingua_gemini_key",S.geminiKey.trim());set({geminiKey:S.geminiKey.trim()});scheduleDriveSync();}},"Zapisz klucz Gemini"));
   if(geminiKey) ab.appendChild(h("button",{class:"sbtn danger",onclick:()=>{localStorage.removeItem("lingua_gemini_key");set({geminiKey:""});}},"Usuń"));
   sw.appendChild(ab);
   sw.appendChild(h("div",{class:"sec-label",style:"margin-top:24px"},"Klucz RapidAPI — transkrypcje YouTube"));
@@ -2604,7 +2845,7 @@ function renderSettings(){
   sw.appendChild(rki);
   if(rapidKey) sw.appendChild(h("div",{class:"msg-ok"},"✓ RapidAPI aktywne"));
   const rb=h("div",{class:"row"});
-  rb.appendChild(h("button",{class:"primary",onclick:()=>{localStorage.setItem("lingua_rapid_key",S.rapidKey.trim());set({rapidKey:S.rapidKey.trim()});}},"Zapisz klucz RapidAPI"));
+  rb.appendChild(h("button",{class:"primary",onclick:()=>{localStorage.setItem("lingua_rapid_key",S.rapidKey.trim());set({rapidKey:S.rapidKey.trim()});scheduleDriveSync();}},"Zapisz klucz RapidAPI"));
   if(rapidKey) rb.appendChild(h("button",{class:"sbtn danger",onclick:()=>{localStorage.removeItem("lingua_rapid_key");set({rapidKey:""});}},"Usuń"));
   sw.appendChild(rb);
   sw.appendChild(h("div",{class:"sec-label",style:"margin-top:24px"},"Klucz Anthropic (Claude) API — analiza PDF"));
@@ -2613,13 +2854,87 @@ function renderSettings(){
   sw.appendChild(cki);
   if(claudeKey) sw.appendChild(h("div",{class:"msg-ok"},"✓ Claude API aktywne"));
   const cb=h("div",{class:"row"});
-  cb.appendChild(h("button",{class:"primary",onclick:()=>{localStorage.setItem("lingua_claude_key",S.claudeKey.trim());set({claudeKey:S.claudeKey.trim()});}},"Zapisz klucz Claude"));
+  cb.appendChild(h("button",{class:"primary",onclick:()=>{localStorage.setItem("lingua_claude_key",S.claudeKey.trim());set({claudeKey:S.claudeKey.trim()});scheduleDriveSync();}},"Zapisz klucz Claude"));
   if(claudeKey) cb.appendChild(h("button",{class:"sbtn danger",onclick:()=>{localStorage.removeItem("lingua_claude_key");set({claudeKey:""});}},"Usuń"));
   sw.appendChild(cb);
 
+  // ── Synchronizacja Google Drive ──
+  sw.appendChild(h("hr",{class:"settings-divider"}));
+  sw.appendChild(h("div",{style:"font-size:18px;font-weight:500;color:var(--text);margin-bottom:6px"},"☁ Synchronizacja Google Drive"));
+  sw.appendChild(h("div",{style:"font-size:12px;color:var(--text3);margin-bottom:14px;line-height:1.6"},"Lekcje, foldery, słówka i klucze API zapisywane w prywatnym folderze aplikacji w Twoim Google Drive. Dane są widoczne we wszystkich przeglądarkach i urządzeniach po połączeniu."));
+  const dStatus=S.driveStatus;
+  const dColors={disconnected:"var(--text3)",connecting:"var(--gold)",connected:"var(--ok-text)",syncing:"var(--gold)",error:"var(--err-text)"};
+  const dLabels={disconnected:"● Niepołączone",connecting:"● Łączenie...",connected:"● Połączone",syncing:"● Synchronizacja...",error:"● Błąd"};
+  sw.appendChild(h("div",{style:"font-size:12px;color:"+(dColors[dStatus]||"var(--text3)")+";margin-bottom:10px;font-weight:500"},dLabels[dStatus]||"● Status nieznany"));
+  if(S.driveError) sw.appendChild(h("div",{class:"msg-err",style:"margin-bottom:10px"},S.driveError));
+  if(S.driveLastSync) sw.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-bottom:14px"},"Ostatnia synchronizacja: "+new Date(S.driveLastSync).toLocaleString("pl-PL")));
+
+  sw.appendChild(h("div",{class:"sec-label",style:"margin-top:14px"},"Google OAuth Client ID"));
+  sw.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-bottom:8px;line-height:1.6"},"Klucz uzyskasz w Google Cloud Console — zobacz instrukcję pod sekcją. Bez tego synchronizacja nie zadziała."));
+  const ciInp=h("input",{type:"text",class:"key-inp",placeholder:"123456789-abc...apps.googleusercontent.com",value:S.driveClientId||"",oninput:(e)=>{S.driveClientId=e.target.value;}});
+  sw.appendChild(ciInp);
+  const ciRow=h("div",{class:"row"});
+  ciRow.appendChild(h("button",{class:"primary",onclick:()=>{
+    const v=(ciInp.value||"").trim();
+    localStorage.setItem("lingua_drive_client_id",v);
+    S.driveClientId=v;
+    _driveTokenClient=null;
+    render();
+  }},"Zapisz Client ID"));
+  if(S.driveClientId) ciRow.appendChild(h("button",{class:"sbtn danger",onclick:()=>{
+    localStorage.removeItem("lingua_drive_client_id");
+    S.driveClientId="";
+    _driveTokenClient=null;
+    disconnectDrive();
+  }},"Usuń Client ID"));
+  sw.appendChild(ciRow);
+
+  if(S.driveClientId){
+    sw.appendChild(h("div",{style:"margin-top:18px;display:flex;gap:10px;flex-wrap:wrap"},
+      dStatus==="connected" || dStatus==="syncing"
+        ? h("button",{class:"sbtn danger",onclick:disconnectDrive},"Rozłącz Google Drive")
+        : h("button",{class:"primary",onclick:connectDrive},dStatus==="connecting"?"⏳ Łączenie...":"🔗 Połącz z Google Drive"),
+      (dStatus==="connected") ? h("button",{class:"sbtn",onclick:()=>driveSync(false)},"⟳ Synchronizuj teraz") : null,
+      (dStatus==="connected") ? h("button",{class:"sbtn",onclick:()=>pullFromDrive().then(r=>{if(r){applyDriveData(r);S.driveLastSync=r.lastModified||Date.now();localStorage.setItem("lingua_drive_last_sync",String(S.driveLastSync));render();}})},"⬇ Pobierz z chmury") : null,
+      (dStatus==="connected") ? h("button",{class:"sbtn",onclick:pushToDrive},"⬆ Wyślij do chmury") : null
+    ));
+    const asRow=h("label",{style:"display:flex;align-items:center;gap:10px;margin-top:14px;cursor:pointer;font-size:12px;color:var(--text2)"});
+    const cb=h("input",{type:"checkbox"});
+    cb.checked = S.driveAutoSync;
+    cb.onchange = (e)=>{
+      S.driveAutoSync = e.target.checked;
+      localStorage.setItem("lingua_drive_auto_sync", e.target.checked?"1":"0");
+    };
+    asRow.appendChild(cb);
+    asRow.appendChild(document.createTextNode("Synchronizuj automatycznie po każdej zmianie (3s opóźnienia)"));
+    sw.appendChild(asRow);
+  }
+
+  const setupDetails=h("details",{style:"margin-top:18px;border:1px solid var(--border);border-radius:6px;padding:10px 14px;background:var(--surface)"});
+  const setupSum=h("summary",{style:"cursor:pointer;font-size:12px;font-weight:500;color:var(--text);user-select:none"},"📋 Jak uzyskać Client ID z Google Cloud Console (10 min)");
+  setupDetails.appendChild(setupSum);
+  const setupBody=h("div",{style:"font-size:12px;color:var(--text2);line-height:1.8;margin-top:12px;padding-left:6px"});
+  [
+    "1. Wejdź na console.cloud.google.com (zalogowana jako konto na którym ma być synchronizacja)",
+    "2. U góry kliknij dropdown projektu → Nowy projekt → nazwa np. „Lingua Agent\" → Utwórz",
+    "3. Wybierz nowo utworzony projekt z dropdownu",
+    "4. Lewe menu → APIs & Services → Library → wyszukaj „Google Drive API\" → Enable",
+    "5. Lewe menu → APIs & Services → OAuth consent screen → User Type: External → Create",
+    "6. App name: „Lingua Agent\", User support email: Twój email, Developer email: Twój email → Save and Continue",
+    "7. Scopes → Save and Continue (pomijamy)",
+    "8. Test users → Add Users → wpisz swój email → Save and Continue",
+    "9. Lewe menu → APIs & Services → Credentials → Create Credentials → OAuth Client ID",
+    "10. Application type: Web application, nazwa: „Lingua Agent Web\"",
+    "11. Authorized JavaScript origins → Add URI → wpisz: https://signoritaalfa.github.io",
+    "12. Create → skopiuj Client ID (kończy się na .apps.googleusercontent.com)",
+    "13. Wklej Client ID w pole powyżej → Zapisz → Połącz z Google Drive"
+  ].forEach(line=>setupBody.appendChild(h("div",{style:"margin-bottom:2px"},line)));
+  setupDetails.appendChild(setupBody);
+  sw.appendChild(setupDetails);
+
   // ── Eksport / Import danych ──
   sw.appendChild(h("hr",{class:"settings-divider"}));
-  sw.appendChild(h("div",{style:"font-size:14px;font-weight:500;color:var(--text);margin-bottom:12px"},"Eksport / Import danych"));
+  sw.appendChild(h("div",{style:"font-size:14px;font-weight:500;color:var(--text);margin-bottom:12px"},"Eksport / Import danych (lokalnie, plik)"));
   sw.appendChild(h("div",{style:"font-size:12px;color:var(--text3);margin-bottom:14px;line-height:1.6"},"Eksportuj wszystkie lekcje, filmy, słówka i postępy do pliku JSON. Importuj aby przywrócić lub przenieść na inne urządzenie."));
   const eiRow=h("div",{style:"display:flex;gap:10px;flex-wrap:wrap"});
   eiRow.appendChild(h("button",{class:"primary",onclick:exportAllData},"Eksportuj dane"));
@@ -3248,7 +3563,7 @@ function renderLesson(){
       lesson.rawText=html;
       const ml=Object.assign({},S.myLessons);
       const idx=(ml[S.lang]||[]).findIndex(l=>l.id===lesson.id);
-      if(idx>=0){ ml[S.lang][idx].rawText=html; S.myLessons=ml; localStorage.setItem("lingua_my_lessons",JSON.stringify(ml)); }
+      if(idx>=0){ ml[S.lang][idx].rawText=html; S.myLessons=ml; localStorage.setItem("lingua_my_lessons",JSON.stringify(ml)); scheduleDriveSync(); }
       const st=document.getElementById("rawtext-status");
       if(st){st.textContent="✓ Zapisano"; st.style.color="var(--ok-text)";
         setTimeout(()=>{if(st){st.textContent="Auto-zapis"; st.style.color="";}},1500);}
@@ -3656,7 +3971,7 @@ function renderSettings(){
     sw.appendChild(h("div",{style:"font-size:11px;color:var(--ink4);margin-bottom:8px"},"platform.openai.com → API keys → Create new secret key"));
     if(oaiKey) sw.appendChild(h("div",{class:"msg-ok"},"✓ OpenAI TTS aktywny"));
     const ob=h("div",{class:"row"});
-    ob.appendChild(h("button",{class:"primary",onclick:()=>{localStorage.setItem("lingua_oai_key",S.oaiKey.trim());set({oaiKey:S.oaiKey.trim()});}},"Zapisz klucz OpenAI"));
+    ob.appendChild(h("button",{class:"primary",onclick:()=>{localStorage.setItem("lingua_oai_key",S.oaiKey.trim());set({oaiKey:S.oaiKey.trim()});scheduleDriveSync();}},"Zapisz klucz OpenAI"));
     if(oaiKey) ob.appendChild(h("button",{class:"sbtn danger",onclick:()=>{localStorage.removeItem("lingua_oai_key");set({oaiKey:""});}},"Usuń"));
     sw.appendChild(ob);
   }
@@ -3687,7 +4002,7 @@ function renderSettings(){
     if(elKey&&!elMsg) sw.appendChild(h("div",{class:"msg-ok"},"✓ ElevenLabs aktywny"));
     const eb=h("div",{class:"row"});
     eb.appendChild(h("button",{class:"sbtn",onclick:testElKey},"Testuj"));
-    eb.appendChild(h("button",{class:"primary",onclick:()=>{localStorage.setItem("lingua_el_key",S.elKeyInput.trim());set({elKey:S.elKeyInput.trim(),elMsg:"ok:Zapisano"});}},"Zapisz"));
+    eb.appendChild(h("button",{class:"primary",onclick:()=>{localStorage.setItem("lingua_el_key",S.elKeyInput.trim());set({elKey:S.elKeyInput.trim(),elMsg:"ok:Zapisano"});scheduleDriveSync();}},"Zapisz"));
     if(elKey) eb.appendChild(h("button",{class:"sbtn danger",onclick:()=>{localStorage.removeItem("lingua_el_key");set({elKey:"",elKeyInput:"",elMsg:""});}},"Usuń"));
     sw.appendChild(eb);
   }
@@ -3711,7 +4026,7 @@ function renderSettings(){
   sw.appendChild(aki);
   if(geminiKey) sw.appendChild(h("div",{class:"msg-ok"},"✓ Gemini API aktywne"));
   const ab=h("div",{class:"row"});
-  ab.appendChild(h("button",{class:"primary",onclick:()=>{localStorage.setItem("lingua_gemini_key",S.geminiKey.trim());set({geminiKey:S.geminiKey.trim()});}},"Zapisz klucz Gemini"));
+  ab.appendChild(h("button",{class:"primary",onclick:()=>{localStorage.setItem("lingua_gemini_key",S.geminiKey.trim());set({geminiKey:S.geminiKey.trim()});scheduleDriveSync();}},"Zapisz klucz Gemini"));
   if(geminiKey) ab.appendChild(h("button",{class:"sbtn danger",onclick:()=>{localStorage.removeItem("lingua_gemini_key");set({geminiKey:""});}},"Usuń"));
   sw.appendChild(ab);
   sw.appendChild(h("div",{class:"sec-label",style:"margin-top:24px"},"Klucz RapidAPI — transkrypcje YouTube"));
@@ -3720,7 +4035,7 @@ function renderSettings(){
   sw.appendChild(rki);
   if(rapidKey) sw.appendChild(h("div",{class:"msg-ok"},"✓ RapidAPI aktywne"));
   const rb=h("div",{class:"row"});
-  rb.appendChild(h("button",{class:"primary",onclick:()=>{localStorage.setItem("lingua_rapid_key",S.rapidKey.trim());set({rapidKey:S.rapidKey.trim()});}},"Zapisz klucz RapidAPI"));
+  rb.appendChild(h("button",{class:"primary",onclick:()=>{localStorage.setItem("lingua_rapid_key",S.rapidKey.trim());set({rapidKey:S.rapidKey.trim()});scheduleDriveSync();}},"Zapisz klucz RapidAPI"));
   if(rapidKey) rb.appendChild(h("button",{class:"sbtn danger",onclick:()=>{localStorage.removeItem("lingua_rapid_key");set({rapidKey:""});}},"Usuń"));
   sw.appendChild(rb);
   sw.appendChild(h("div",{class:"sec-label",style:"margin-top:24px"},"Klucz Anthropic (Claude) API — analiza PDF"));
@@ -3729,13 +4044,87 @@ function renderSettings(){
   sw.appendChild(cki);
   if(claudeKey) sw.appendChild(h("div",{class:"msg-ok"},"✓ Claude API aktywne"));
   const cb=h("div",{class:"row"});
-  cb.appendChild(h("button",{class:"primary",onclick:()=>{localStorage.setItem("lingua_claude_key",S.claudeKey.trim());set({claudeKey:S.claudeKey.trim()});}},"Zapisz klucz Claude"));
+  cb.appendChild(h("button",{class:"primary",onclick:()=>{localStorage.setItem("lingua_claude_key",S.claudeKey.trim());set({claudeKey:S.claudeKey.trim()});scheduleDriveSync();}},"Zapisz klucz Claude"));
   if(claudeKey) cb.appendChild(h("button",{class:"sbtn danger",onclick:()=>{localStorage.removeItem("lingua_claude_key");set({claudeKey:""});}},"Usuń"));
   sw.appendChild(cb);
 
+  // ── Synchronizacja Google Drive ──
+  sw.appendChild(h("hr",{class:"settings-divider"}));
+  sw.appendChild(h("div",{style:"font-size:18px;font-weight:500;color:var(--text);margin-bottom:6px"},"☁ Synchronizacja Google Drive"));
+  sw.appendChild(h("div",{style:"font-size:12px;color:var(--text3);margin-bottom:14px;line-height:1.6"},"Lekcje, foldery, słówka i klucze API zapisywane w prywatnym folderze aplikacji w Twoim Google Drive. Dane są widoczne we wszystkich przeglądarkach i urządzeniach po połączeniu."));
+  const dStatus=S.driveStatus;
+  const dColors={disconnected:"var(--text3)",connecting:"var(--gold)",connected:"var(--ok-text)",syncing:"var(--gold)",error:"var(--err-text)"};
+  const dLabels={disconnected:"● Niepołączone",connecting:"● Łączenie...",connected:"● Połączone",syncing:"● Synchronizacja...",error:"● Błąd"};
+  sw.appendChild(h("div",{style:"font-size:12px;color:"+(dColors[dStatus]||"var(--text3)")+";margin-bottom:10px;font-weight:500"},dLabels[dStatus]||"● Status nieznany"));
+  if(S.driveError) sw.appendChild(h("div",{class:"msg-err",style:"margin-bottom:10px"},S.driveError));
+  if(S.driveLastSync) sw.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-bottom:14px"},"Ostatnia synchronizacja: "+new Date(S.driveLastSync).toLocaleString("pl-PL")));
+
+  sw.appendChild(h("div",{class:"sec-label",style:"margin-top:14px"},"Google OAuth Client ID"));
+  sw.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-bottom:8px;line-height:1.6"},"Klucz uzyskasz w Google Cloud Console — zobacz instrukcję pod sekcją. Bez tego synchronizacja nie zadziała."));
+  const ciInp=h("input",{type:"text",class:"key-inp",placeholder:"123456789-abc...apps.googleusercontent.com",value:S.driveClientId||"",oninput:(e)=>{S.driveClientId=e.target.value;}});
+  sw.appendChild(ciInp);
+  const ciRow=h("div",{class:"row"});
+  ciRow.appendChild(h("button",{class:"primary",onclick:()=>{
+    const v=(ciInp.value||"").trim();
+    localStorage.setItem("lingua_drive_client_id",v);
+    S.driveClientId=v;
+    _driveTokenClient=null;
+    render();
+  }},"Zapisz Client ID"));
+  if(S.driveClientId) ciRow.appendChild(h("button",{class:"sbtn danger",onclick:()=>{
+    localStorage.removeItem("lingua_drive_client_id");
+    S.driveClientId="";
+    _driveTokenClient=null;
+    disconnectDrive();
+  }},"Usuń Client ID"));
+  sw.appendChild(ciRow);
+
+  if(S.driveClientId){
+    sw.appendChild(h("div",{style:"margin-top:18px;display:flex;gap:10px;flex-wrap:wrap"},
+      dStatus==="connected" || dStatus==="syncing"
+        ? h("button",{class:"sbtn danger",onclick:disconnectDrive},"Rozłącz Google Drive")
+        : h("button",{class:"primary",onclick:connectDrive},dStatus==="connecting"?"⏳ Łączenie...":"🔗 Połącz z Google Drive"),
+      (dStatus==="connected") ? h("button",{class:"sbtn",onclick:()=>driveSync(false)},"⟳ Synchronizuj teraz") : null,
+      (dStatus==="connected") ? h("button",{class:"sbtn",onclick:()=>pullFromDrive().then(r=>{if(r){applyDriveData(r);S.driveLastSync=r.lastModified||Date.now();localStorage.setItem("lingua_drive_last_sync",String(S.driveLastSync));render();}})},"⬇ Pobierz z chmury") : null,
+      (dStatus==="connected") ? h("button",{class:"sbtn",onclick:pushToDrive},"⬆ Wyślij do chmury") : null
+    ));
+    const asRow=h("label",{style:"display:flex;align-items:center;gap:10px;margin-top:14px;cursor:pointer;font-size:12px;color:var(--text2)"});
+    const cb=h("input",{type:"checkbox"});
+    cb.checked = S.driveAutoSync;
+    cb.onchange = (e)=>{
+      S.driveAutoSync = e.target.checked;
+      localStorage.setItem("lingua_drive_auto_sync", e.target.checked?"1":"0");
+    };
+    asRow.appendChild(cb);
+    asRow.appendChild(document.createTextNode("Synchronizuj automatycznie po każdej zmianie (3s opóźnienia)"));
+    sw.appendChild(asRow);
+  }
+
+  const setupDetails=h("details",{style:"margin-top:18px;border:1px solid var(--border);border-radius:6px;padding:10px 14px;background:var(--surface)"});
+  const setupSum=h("summary",{style:"cursor:pointer;font-size:12px;font-weight:500;color:var(--text);user-select:none"},"📋 Jak uzyskać Client ID z Google Cloud Console (10 min)");
+  setupDetails.appendChild(setupSum);
+  const setupBody=h("div",{style:"font-size:12px;color:var(--text2);line-height:1.8;margin-top:12px;padding-left:6px"});
+  [
+    "1. Wejdź na console.cloud.google.com (zalogowana jako konto na którym ma być synchronizacja)",
+    "2. U góry kliknij dropdown projektu → Nowy projekt → nazwa np. „Lingua Agent\" → Utwórz",
+    "3. Wybierz nowo utworzony projekt z dropdownu",
+    "4. Lewe menu → APIs & Services → Library → wyszukaj „Google Drive API\" → Enable",
+    "5. Lewe menu → APIs & Services → OAuth consent screen → User Type: External → Create",
+    "6. App name: „Lingua Agent\", User support email: Twój email, Developer email: Twój email → Save and Continue",
+    "7. Scopes → Save and Continue (pomijamy)",
+    "8. Test users → Add Users → wpisz swój email → Save and Continue",
+    "9. Lewe menu → APIs & Services → Credentials → Create Credentials → OAuth Client ID",
+    "10. Application type: Web application, nazwa: „Lingua Agent Web\"",
+    "11. Authorized JavaScript origins → Add URI → wpisz: https://signoritaalfa.github.io",
+    "12. Create → skopiuj Client ID (kończy się na .apps.googleusercontent.com)",
+    "13. Wklej Client ID w pole powyżej → Zapisz → Połącz z Google Drive"
+  ].forEach(line=>setupBody.appendChild(h("div",{style:"margin-bottom:2px"},line)));
+  setupDetails.appendChild(setupBody);
+  sw.appendChild(setupDetails);
+
   // ── Eksport / Import danych ──
   sw.appendChild(h("hr",{class:"settings-divider"}));
-  sw.appendChild(h("div",{style:"font-size:14px;font-weight:500;color:var(--text);margin-bottom:12px"},"Eksport / Import danych"));
+  sw.appendChild(h("div",{style:"font-size:14px;font-weight:500;color:var(--text);margin-bottom:12px"},"Eksport / Import danych (lokalnie, plik)"));
   sw.appendChild(h("div",{style:"font-size:12px;color:var(--text3);margin-bottom:14px;line-height:1.6"},"Eksportuj wszystkie lekcje, filmy, słówka i postępy do pliku JSON. Importuj aby przywrócić lub przenieść na inne urządzenie."));
   const eiRow=h("div",{style:"display:flex;gap:10px;flex-wrap:wrap"});
   eiRow.appendChild(h("button",{class:"primary",onclick:exportAllData},"Eksportuj dane"));
@@ -4343,6 +4732,7 @@ function render(){
 
 window.speechSynthesis.onvoiceschanged=()=>{};
 setTimeout(render,50);
+setTimeout(()=>driveSilentReconnect(0),800);
 
 </script>
 </body>
