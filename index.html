@@ -1327,6 +1327,18 @@ function getFilmClips(lang, filmId){
   return {sysClips,userClips,allClips:[...sysClips,...userClips]};
 }
 
+function rawTextToPlain(rawText){
+  if(!rawText) return "";
+  if(!/<[a-z][\s\S]*?>/i.test(rawText)) return rawText;
+  let s = String(rawText)
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(div|p|li|h[1-6]|tr)>/gi, "\n")
+    .replace(/<[^>]+>/g, "");
+  const tmp = document.createElement("div");
+  tmp.innerHTML = s;
+  return (tmp.textContent || "").replace(/\n{3,}/g, "\n\n").trim();
+}
+
 async function extractPdfText(file){
   try{
     pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
@@ -2064,54 +2076,68 @@ function renderLesson(){
   if(S.lessonTab==="tekst" && lesson.rawText){
     const tw=h("div",{style:"max-width:700px"});
     tw.appendChild(h("div",{class:"sec-label",style:"margin-bottom:12px"},"Oryginalny tekst"));
-    // Edit mode toggle
-    const editBtn=h("button",{class:"sbtn",style:"margin-bottom:14px",onclick:()=>{
-      const ta=document.getElementById("rawtext-editor");
-      const disp=document.getElementById("rawtext-display");
-      const saveRow=document.getElementById("rawtext-save-row");
-      if(ta.style.display==="none"){
-        ta.value=lesson.rawText;
-        ta.style.display="block";
-        disp.style.display="none";
-        saveRow.style.display="flex";
-        editBtn.textContent="✕ Anuluj edycję";
-      } else {
-        ta.style.display="none";
-        disp.style.display="block";
-        saveRow.style.display="none";
-        editBtn.textContent="✏ Edytuj tekst";
-      }
-    }},"✏ Edytuj tekst");
-    tw.appendChild(editBtn);
 
-    // Display view
-    const disp=h("div",{id:"rawtext-display",style:"font-size:15px;line-height:1.9;color:var(--text);white-space:pre-wrap;font-family:'Jost',sans-serif;border:1px solid var(--border);border-radius:8px;padding:20px;margin-bottom:16px"});
-    disp.textContent=lesson.rawText;
-    tw.appendChild(disp);
+    // Toolbar
+    const toolbar=h("div",{style:"display:flex;gap:8px;align-items:center;margin-bottom:10px;padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;flex-wrap:wrap"});
+    const sizeSel=h("select",{
+      style:"padding:6px 10px;border:1px solid var(--border);background:var(--surface);font-size:11px;color:var(--text2);cursor:pointer;border-radius:2px;font-family:inherit",
+      title:"Rozmiar tekstu (zaznacz fragment, potem wybierz)",
+      onchange:(e)=>{document.execCommand("fontSize",false,e.target.value); document.getElementById("rawtext-display").focus();}
+    });
+    [["2","Bardzo mała"],["3","Mała"],["4","Średnia (domyślna)"],["5","Duża"],["6","Bardzo duża"],["7","Ogromna"]].forEach(([v,l])=>{
+      const opt=h("option",{value:v},l);
+      if(v==="4") opt.selected=true;
+      sizeSel.appendChild(opt);
+    });
+    toolbar.appendChild(sizeSel);
+    toolbar.appendChild(h("button",{class:"sbtn",style:"font-weight:700;min-width:32px",title:"Pogrubienie (Ctrl+B)",
+      onclick:()=>{document.execCommand("bold"); document.getElementById("rawtext-display").focus();}},"B"));
+    toolbar.appendChild(h("button",{class:"sbtn",style:"font-style:italic;min-width:32px",title:"Kursywa (Ctrl+I)",
+      onclick:()=>{document.execCommand("italic"); document.getElementById("rawtext-display").focus();}},"I"));
+    toolbar.appendChild(h("button",{class:"sbtn",style:"text-decoration:underline;min-width:32px",title:"Podkreślenie",
+      onclick:()=>{document.execCommand("underline"); document.getElementById("rawtext-display").focus();}},"U"));
+    toolbar.appendChild(h("span",{style:"font-size:11px;color:var(--text3);margin-left:4px"},"Kolor:"));
+    const colorInp=h("input",{type:"color",value:"#1f2937",
+      style:"width:36px;height:32px;border:1px solid var(--border);background:var(--surface);cursor:pointer;border-radius:2px;padding:2px",
+      title:"Kolor tekstu"
+    });
+    colorInp.oninput=(e)=>{document.execCommand("foreColor",false,e.target.value); document.getElementById("rawtext-display").focus();};
+    toolbar.appendChild(colorInp);
+    toolbar.appendChild(h("button",{class:"sbtn",style:"font-size:11px",title:"Wyczyść formatowanie zaznaczonego fragmentu",
+      onclick:()=>{document.execCommand("removeFormat"); document.getElementById("rawtext-display").focus();}},"✕ Wyczyść"));
+    toolbar.appendChild(h("div",{style:"flex:1"}));
+    toolbar.appendChild(h("span",{style:"font-size:11px;color:var(--text3)",id:"rawtext-status"},"Auto-zapis"));
+    tw.appendChild(toolbar);
 
-    // Edit textarea (hidden by default)
-    const ta=h("textarea",{id:"rawtext-editor",style:"display:none;width:100%;min-height:300px;padding:16px;font-size:14px;line-height:1.8;color:var(--text);background:var(--surface);border:1px solid var(--gold);border-radius:8px;font-family:'Jost',sans-serif;resize:vertical;box-sizing:border-box;outline:none"});
-    tw.appendChild(ta);
-
-    // Save row (hidden by default)
-    const saveRow=h("div",{id:"rawtext-save-row",style:"display:none;gap:10px;margin-bottom:20px"});
-    saveRow.appendChild(h("button",{class:"primary",onclick:()=>{
-      const newText=document.getElementById("rawtext-editor").value.trim();
-      if(!newText) return;
-      lesson.rawText=newText;
-      // Update in myLessons localStorage
+    // Inline editor (contenteditable)
+    const disp=h("div",{
+      id:"rawtext-display",
+      contenteditable:"true",
+      spellcheck:"false",
+      style:"font-size:15px;line-height:1.9;color:var(--text);white-space:pre-wrap;font-family:'Jost',sans-serif;border:1px solid var(--border);border-radius:8px;padding:20px;margin-bottom:16px;min-height:240px;outline:none;transition:border-color .15s"
+    });
+    disp.innerHTML = lesson.rawText;
+    disp.onfocus=()=>{disp.style.borderColor="var(--gold)";};
+    let saveTimer=null;
+    const saveNow=()=>{
+      const html=disp.innerHTML;
+      if(html===lesson.rawText) return;
+      lesson.rawText=html;
       const ml=Object.assign({},S.myLessons);
       const idx=(ml[S.lang]||[]).findIndex(l=>l.id===lesson.id);
-      if(idx>=0){ ml[S.lang][idx].rawText=newText; set({myLessons:ml}); localStorage.setItem("lingua_my_lessons",JSON.stringify(ml)); }
-      document.getElementById("rawtext-display").textContent=newText;
-      document.getElementById("rawtext-editor").style.display="none";
-      document.getElementById("rawtext-display").style.display="block";
-      document.getElementById("rawtext-save-row").style.display="none";
-      document.getElementById("rawtext-editor").closest(".lesson-tab-btn");
-      const editBtnEl=tw.querySelector(".sbtn");
-      if(editBtnEl) editBtnEl.textContent="✏ Edytuj tekst";
-    }},"💾 Zapisz zmiany"));
-    tw.appendChild(saveRow);
+      if(idx>=0){ ml[S.lang][idx].rawText=html; S.myLessons=ml; localStorage.setItem("lingua_my_lessons",JSON.stringify(ml)); }
+      const st=document.getElementById("rawtext-status");
+      if(st){st.textContent="✓ Zapisano"; st.style.color="var(--ok-text)";
+        setTimeout(()=>{if(st){st.textContent="Auto-zapis"; st.style.color="";}},1500);}
+    };
+    disp.oninput=()=>{
+      if(saveTimer) clearTimeout(saveTimer);
+      const st=document.getElementById("rawtext-status");
+      if(st){st.textContent="✏ Edytowanie...";}
+      saveTimer=setTimeout(saveNow,800);
+    };
+    disp.onblur=()=>{disp.style.borderColor="var(--border)"; if(saveTimer){clearTimeout(saveTimer); saveTimer=null;} saveNow();};
+    tw.appendChild(disp);
 
     // Generate vocab/phrases buttons
     if(S.claudeKey){
@@ -2121,7 +2147,7 @@ function renderLesson(){
         btn.innerHTML=type==="vocab"?"⏳ Generuję słówka z tekstu...":"⏳ Generuję zwroty z tekstu...";
         btn.disabled=true;
         try{
-          const currentText=lesson.rawText;
+          const currentText=rawTextToPlain(lesson.rawText);
           const prompt=type==="vocab"
             ? `Z poniższego tekstu wyciągnij MINIMUM 30 słów i zwrotów wartych nauki — im więcej tym lepiej. Wybierz słowa kluczowe, idiomy, kolokwializmy, trudniejsze słowa. Dla każdego podaj tłumaczenie PL, wymowę IPA i przykład z tekstu. Odpowiedz TYLKO czystym JSON: {"items":[{"w":"słowo","tr":"tłumaczenie PL","ipa":"IPA","pl":"fonetyka","ex":"przykład","exT":"tłumaczenie przykładu"}]}\n\nTEKST:\n${currentText.slice(0,10000)}`
             : `Z poniższego tekstu wyciągnij MINIMUM 20 użytecznych zwrotów, wyrażeń i kolokacji — im więcej tym lepiej. Szukaj idiomów, wyrażeń potocznych, zwrotów konwersacyjnych. Odpowiedz TYLKO czystym JSON: {"items":[{"w":"zwrot","tr":"tłumaczenie PL","ipa":"IPA","pl":"fonetyka","ex":"przykład użycia","exT":"tłumaczenie"}]}\n\nTEKST:\n${currentText.slice(0,10000)}`;
@@ -3166,54 +3192,68 @@ function renderLesson(){
   if(S.lessonTab==="tekst" && lesson.rawText){
     const tw=h("div",{style:"max-width:700px"});
     tw.appendChild(h("div",{class:"sec-label",style:"margin-bottom:12px"},"Oryginalny tekst"));
-    // Edit mode toggle
-    const editBtn=h("button",{class:"sbtn",style:"margin-bottom:14px",onclick:()=>{
-      const ta=document.getElementById("rawtext-editor");
-      const disp=document.getElementById("rawtext-display");
-      const saveRow=document.getElementById("rawtext-save-row");
-      if(ta.style.display==="none"){
-        ta.value=lesson.rawText;
-        ta.style.display="block";
-        disp.style.display="none";
-        saveRow.style.display="flex";
-        editBtn.textContent="✕ Anuluj edycję";
-      } else {
-        ta.style.display="none";
-        disp.style.display="block";
-        saveRow.style.display="none";
-        editBtn.textContent="✏ Edytuj tekst";
-      }
-    }},"✏ Edytuj tekst");
-    tw.appendChild(editBtn);
 
-    // Display view
-    const disp=h("div",{id:"rawtext-display",style:"font-size:15px;line-height:1.9;color:var(--text);white-space:pre-wrap;font-family:'Jost',sans-serif;border:1px solid var(--border);border-radius:8px;padding:20px;margin-bottom:16px"});
-    disp.textContent=lesson.rawText;
-    tw.appendChild(disp);
+    // Toolbar
+    const toolbar=h("div",{style:"display:flex;gap:8px;align-items:center;margin-bottom:10px;padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;flex-wrap:wrap"});
+    const sizeSel=h("select",{
+      style:"padding:6px 10px;border:1px solid var(--border);background:var(--surface);font-size:11px;color:var(--text2);cursor:pointer;border-radius:2px;font-family:inherit",
+      title:"Rozmiar tekstu (zaznacz fragment, potem wybierz)",
+      onchange:(e)=>{document.execCommand("fontSize",false,e.target.value); document.getElementById("rawtext-display").focus();}
+    });
+    [["2","Bardzo mała"],["3","Mała"],["4","Średnia (domyślna)"],["5","Duża"],["6","Bardzo duża"],["7","Ogromna"]].forEach(([v,l])=>{
+      const opt=h("option",{value:v},l);
+      if(v==="4") opt.selected=true;
+      sizeSel.appendChild(opt);
+    });
+    toolbar.appendChild(sizeSel);
+    toolbar.appendChild(h("button",{class:"sbtn",style:"font-weight:700;min-width:32px",title:"Pogrubienie (Ctrl+B)",
+      onclick:()=>{document.execCommand("bold"); document.getElementById("rawtext-display").focus();}},"B"));
+    toolbar.appendChild(h("button",{class:"sbtn",style:"font-style:italic;min-width:32px",title:"Kursywa (Ctrl+I)",
+      onclick:()=>{document.execCommand("italic"); document.getElementById("rawtext-display").focus();}},"I"));
+    toolbar.appendChild(h("button",{class:"sbtn",style:"text-decoration:underline;min-width:32px",title:"Podkreślenie",
+      onclick:()=>{document.execCommand("underline"); document.getElementById("rawtext-display").focus();}},"U"));
+    toolbar.appendChild(h("span",{style:"font-size:11px;color:var(--text3);margin-left:4px"},"Kolor:"));
+    const colorInp=h("input",{type:"color",value:"#1f2937",
+      style:"width:36px;height:32px;border:1px solid var(--border);background:var(--surface);cursor:pointer;border-radius:2px;padding:2px",
+      title:"Kolor tekstu"
+    });
+    colorInp.oninput=(e)=>{document.execCommand("foreColor",false,e.target.value); document.getElementById("rawtext-display").focus();};
+    toolbar.appendChild(colorInp);
+    toolbar.appendChild(h("button",{class:"sbtn",style:"font-size:11px",title:"Wyczyść formatowanie zaznaczonego fragmentu",
+      onclick:()=>{document.execCommand("removeFormat"); document.getElementById("rawtext-display").focus();}},"✕ Wyczyść"));
+    toolbar.appendChild(h("div",{style:"flex:1"}));
+    toolbar.appendChild(h("span",{style:"font-size:11px;color:var(--text3)",id:"rawtext-status"},"Auto-zapis"));
+    tw.appendChild(toolbar);
 
-    // Edit textarea (hidden by default)
-    const ta=h("textarea",{id:"rawtext-editor",style:"display:none;width:100%;min-height:300px;padding:16px;font-size:14px;line-height:1.8;color:var(--text);background:var(--surface);border:1px solid var(--gold);border-radius:8px;font-family:'Jost',sans-serif;resize:vertical;box-sizing:border-box;outline:none"});
-    tw.appendChild(ta);
-
-    // Save row (hidden by default)
-    const saveRow=h("div",{id:"rawtext-save-row",style:"display:none;gap:10px;margin-bottom:20px"});
-    saveRow.appendChild(h("button",{class:"primary",onclick:()=>{
-      const newText=document.getElementById("rawtext-editor").value.trim();
-      if(!newText) return;
-      lesson.rawText=newText;
-      // Update in myLessons localStorage
+    // Inline editor (contenteditable)
+    const disp=h("div",{
+      id:"rawtext-display",
+      contenteditable:"true",
+      spellcheck:"false",
+      style:"font-size:15px;line-height:1.9;color:var(--text);white-space:pre-wrap;font-family:'Jost',sans-serif;border:1px solid var(--border);border-radius:8px;padding:20px;margin-bottom:16px;min-height:240px;outline:none;transition:border-color .15s"
+    });
+    disp.innerHTML = lesson.rawText;
+    disp.onfocus=()=>{disp.style.borderColor="var(--gold)";};
+    let saveTimer=null;
+    const saveNow=()=>{
+      const html=disp.innerHTML;
+      if(html===lesson.rawText) return;
+      lesson.rawText=html;
       const ml=Object.assign({},S.myLessons);
       const idx=(ml[S.lang]||[]).findIndex(l=>l.id===lesson.id);
-      if(idx>=0){ ml[S.lang][idx].rawText=newText; set({myLessons:ml}); localStorage.setItem("lingua_my_lessons",JSON.stringify(ml)); }
-      document.getElementById("rawtext-display").textContent=newText;
-      document.getElementById("rawtext-editor").style.display="none";
-      document.getElementById("rawtext-display").style.display="block";
-      document.getElementById("rawtext-save-row").style.display="none";
-      document.getElementById("rawtext-editor").closest(".lesson-tab-btn");
-      const editBtnEl=tw.querySelector(".sbtn");
-      if(editBtnEl) editBtnEl.textContent="✏ Edytuj tekst";
-    }},"💾 Zapisz zmiany"));
-    tw.appendChild(saveRow);
+      if(idx>=0){ ml[S.lang][idx].rawText=html; S.myLessons=ml; localStorage.setItem("lingua_my_lessons",JSON.stringify(ml)); }
+      const st=document.getElementById("rawtext-status");
+      if(st){st.textContent="✓ Zapisano"; st.style.color="var(--ok-text)";
+        setTimeout(()=>{if(st){st.textContent="Auto-zapis"; st.style.color="";}},1500);}
+    };
+    disp.oninput=()=>{
+      if(saveTimer) clearTimeout(saveTimer);
+      const st=document.getElementById("rawtext-status");
+      if(st){st.textContent="✏ Edytowanie...";}
+      saveTimer=setTimeout(saveNow,800);
+    };
+    disp.onblur=()=>{disp.style.borderColor="var(--border)"; if(saveTimer){clearTimeout(saveTimer); saveTimer=null;} saveNow();};
+    tw.appendChild(disp);
 
     // Generate vocab/phrases buttons
     if(S.claudeKey){
@@ -3223,7 +3263,7 @@ function renderLesson(){
         btn.innerHTML=type==="vocab"?"⏳ Generuję słówka z tekstu...":"⏳ Generuję zwroty z tekstu...";
         btn.disabled=true;
         try{
-          const currentText=lesson.rawText;
+          const currentText=rawTextToPlain(lesson.rawText);
           const prompt=type==="vocab"
             ? `Z poniższego tekstu wyciągnij MINIMUM 30 słów i zwrotów wartych nauki — im więcej tym lepiej. Wybierz słowa kluczowe, idiomy, kolokwializmy, trudniejsze słowa. Dla każdego podaj tłumaczenie PL, wymowę IPA i przykład z tekstu. Odpowiedz TYLKO czystym JSON: {"items":[{"w":"słowo","tr":"tłumaczenie PL","ipa":"IPA","pl":"fonetyka","ex":"przykład","exT":"tłumaczenie przykładu"}]}\n\nTEKST:\n${currentText.slice(0,10000)}`
             : `Z poniższego tekstu wyciągnij MINIMUM 20 użytecznych zwrotów, wyrażeń i kolokacji — im więcej tym lepiej. Szukaj idiomów, wyrażeń potocznych, zwrotów konwersacyjnych. Odpowiedz TYLKO czystym JSON: {"items":[{"w":"zwrot","tr":"tłumaczenie PL","ipa":"IPA","pl":"fonetyka","ex":"przykład użycia","exT":"tłumaczenie"}]}\n\nTEKST:\n${currentText.slice(0,10000)}`;
