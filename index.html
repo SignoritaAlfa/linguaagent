@@ -1095,6 +1095,7 @@ let S={
   driveError:"",
   driveAutoSync:localStorage.getItem("lingua_drive_auto_sync")!=="0",
   driveUserEmail:localStorage.getItem("lingua_drive_user_email")||"",
+  localLastModified:parseInt(localStorage.getItem("lingua_local_last_modified")||"0",10),
   myFilms:(()=>{try{return JSON.parse(localStorage.getItem("lingua_my_films")||"{}")}catch{return {}}})(),
   showAddFilm:false,addFilmTitle:"",addFilmType:"serial",addFilmLevel:"A2",
   showAddClip:false,addClipTitle:"",addClipEpisode:"",
@@ -1232,7 +1233,9 @@ async function pushToDrive(){
     S.driveFileId = data.id;
     localStorage.setItem("lingua_drive_file_id", S.driveFileId);
     S.driveLastSync = Date.now();
+    S.localLastModified = S.driveLastSync;
     localStorage.setItem("lingua_drive_last_sync", String(S.driveLastSync));
+    localStorage.setItem("lingua_local_last_modified", String(S.localLastModified));
     S.driveStatus = "connected";
     S.driveError = "";
     render();
@@ -1267,20 +1270,28 @@ async function pullFromDrive(){
   }
 }
 
-async function driveSync(preferRemote){
+async function driveSync(_preferRemote){
   S.driveStatus="syncing"; render();
   const remote = await pullFromDrive();
   if(remote && remote.lastModified){
-    const localLast = S.driveLastSync || 0;
-    if(preferRemote || remote.lastModified >= localLast){
-      applyDriveData(remote);
-      S.driveLastSync = remote.lastModified;
-      localStorage.setItem("lingua_drive_last_sync", String(S.driveLastSync));
-      S.driveStatus="connected"; render();
-    } else {
+    const localLast = S.localLastModified || 0;
+    const remoteLast = remote.lastModified;
+    // Local has unsynced changes that are NEWER than remote → push (do not overwrite!)
+    if(localLast > remoteLast){
+      console.log("[Drive] Local newer ("+localLast+") than remote ("+remoteLast+") — pushing local");
       await pushToDrive();
+      return;
     }
+    // Remote is newer (or same) → apply remote
+    console.log("[Drive] Remote newer or equal ("+remoteLast+" vs local "+localLast+") — pulling remote");
+    applyDriveData(remote);
+    S.driveLastSync = remoteLast;
+    S.localLastModified = remoteLast;
+    localStorage.setItem("lingua_drive_last_sync", String(S.driveLastSync));
+    localStorage.setItem("lingua_local_last_modified", String(S.localLastModified));
+    S.driveStatus="connected"; render();
   } else {
+    // No remote file yet → push current local
     await pushToDrive();
   }
 }
@@ -1326,6 +1337,9 @@ function driveSilentReconnect(retries){
 }
 
 function scheduleDriveSync(){
+  // Always bump local timestamp so future reconnect knows local has unsynced changes
+  S.localLastModified = Date.now();
+  localStorage.setItem("lingua_local_last_modified", String(S.localLastModified));
   if(!S.driveAutoSync || !S.driveToken) return;
   if(_driveSyncTimer) clearTimeout(_driveSyncTimer);
   _driveSyncTimer = setTimeout(()=>{ pushToDrive(); }, 3000);
@@ -1347,6 +1361,27 @@ function getBrowserVoice(lang){
   return lv.find(x=>/enhanced|premium/i.test(x.name))||lv[0]||null;
 }
 
+const _audioCache = new Map();
+const _AUDIO_CACHE_MAX = 200;
+function _audioCacheStore(key, url){
+  if(_audioCache.size >= _AUDIO_CACHE_MAX){
+    const oldestKey = _audioCache.keys().next().value;
+    const oldUrl = _audioCache.get(oldestKey);
+    if(oldUrl) try{URL.revokeObjectURL(oldUrl);}catch(e){}
+    _audioCache.delete(oldestKey);
+  }
+  _audioCache.set(key, url);
+}
+function _audioCachePlay(url){
+  return new Promise((res, rej) => {
+    const a = new Audio(url);
+    a.playbackRate = S.voiceRate;
+    a.onended = ()=>res();
+    a.onerror = rej;
+    a.play().catch(rej);
+  });
+}
+
 function browserSpeak(text,lang){
   return new Promise(res=>{
     window.speechSynthesis.cancel();
@@ -1362,6 +1397,9 @@ function browserSpeak(text,lang){
 
 async function elSpeak(text,lang,voiceId){
   const vid=voiceId||EL_VOICES[lang].female.id;
+  const cacheKey = "el|"+lang+"|"+vid+"|"+text;
+  const cached = _audioCache.get(cacheKey);
+  if(cached) return _audioCachePlay(cached);
   const r=await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${vid}`,{
     method:"POST",
     headers:{"xi-api-key":S.elKey,"Content-Type":"application/json"},
@@ -1371,23 +1409,24 @@ async function elSpeak(text,lang,voiceId){
   if(!r.ok)throw new Error("EL "+r.status);
   const blob=await r.blob();
   const url=URL.createObjectURL(blob);
-  return new Promise((res,rej)=>{
-    const a=new Audio(url);
-    a.playbackRate=S.voiceRate;
-    a.onended=()=>{URL.revokeObjectURL(url);res();};
-    a.onerror=rej;a.play();
-  });
+  _audioCacheStore(cacheKey, url);
+  return _audioCachePlay(url);
 }
 
 async function oaiSpeak(text, voiceId){
-  const r = await fetch("https://api.openai.com/v1/audio/speech",{
-    method:"POST",
-    headers:{"Content-Type":"application/json","Authorization":"Bearer "+S.oaiKey},
-    body:JSON.stringify({model:"tts-1-hd", input:text, voice:voiceId, speed:S.voiceRate})
-  });
-  if(!r.ok) throw new Error("OAI TTS "+r.status);
-  const blob = await r.blob();
-  const url = URL.createObjectURL(blob);
+  const cacheKey = "oai|"+voiceId+"|"+S.voiceRate+"|"+text;
+  let url = _audioCache.get(cacheKey);
+  if(!url){
+    const r = await fetch("https://api.openai.com/v1/audio/speech",{
+      method:"POST",
+      headers:{"Content-Type":"application/json","Authorization":"Bearer "+S.oaiKey},
+      body:JSON.stringify({model:"tts-1", input:text, voice:voiceId, speed:S.voiceRate})
+    });
+    if(!r.ok) throw new Error("OAI TTS "+r.status);
+    const blob = await r.blob();
+    url = URL.createObjectURL(blob);
+    _audioCacheStore(cacheKey, url);
+  }
   return new Promise((res,rej)=>{
     const a=new Audio(url);
     a.addEventListener('loadedmetadata', ()=>{
@@ -1405,7 +1444,7 @@ async function oaiSpeak(text, voiceId){
         setTimeout(()=>document.querySelectorAll('.word-active').forEach(s=>s.classList.remove('word-active')), durationMs + 100);
       }
     });
-    a.onended=()=>{URL.revokeObjectURL(url);res();};
+    a.onended=()=>res();
     a.onerror=rej; a.play();
   });
 }
@@ -3034,7 +3073,7 @@ function renderSettings(){
         ? h("button",{class:"sbtn danger",onclick:disconnectDrive},"Rozłącz Google Drive")
         : h("button",{class:"primary",onclick:connectDrive},dStatus==="connecting"?"⏳ Łączenie...":"🔗 Połącz z Google Drive"),
       (dStatus==="connected") ? h("button",{class:"sbtn",onclick:()=>driveSync(false)},"⟳ Synchronizuj teraz") : null,
-      (dStatus==="connected") ? h("button",{class:"sbtn",onclick:()=>pullFromDrive().then(r=>{if(r){applyDriveData(r);S.driveLastSync=r.lastModified||Date.now();localStorage.setItem("lingua_drive_last_sync",String(S.driveLastSync));render();}})},"⬇ Pobierz z chmury") : null,
+      (dStatus==="connected") ? h("button",{class:"sbtn",onclick:()=>{if(!confirm("Pobierz dane z chmury i NADPISZ lokalne? Lekcje i klucze które masz tutaj zostaną zastąpione tymi z Drive.")) return; pullFromDrive().then(r=>{if(r){applyDriveData(r);S.driveLastSync=r.lastModified||Date.now();S.localLastModified=S.driveLastSync;localStorage.setItem("lingua_drive_last_sync",String(S.driveLastSync));localStorage.setItem("lingua_local_last_modified",String(S.localLastModified));render();}});}},"⬇ Pobierz z chmury") : null,
       (dStatus==="connected") ? h("button",{class:"sbtn",onclick:pushToDrive},"⬆ Wyślij do chmury") : null
     ));
     const asRow=h("label",{style:"display:flex;align-items:center;gap:10px;margin-top:14px;cursor:pointer;font-size:12px;color:var(--text2)"});
@@ -4422,7 +4461,7 @@ function renderSettings(){
         ? h("button",{class:"sbtn danger",onclick:disconnectDrive},"Rozłącz Google Drive")
         : h("button",{class:"primary",onclick:connectDrive},dStatus==="connecting"?"⏳ Łączenie...":"🔗 Połącz z Google Drive"),
       (dStatus==="connected") ? h("button",{class:"sbtn",onclick:()=>driveSync(false)},"⟳ Synchronizuj teraz") : null,
-      (dStatus==="connected") ? h("button",{class:"sbtn",onclick:()=>pullFromDrive().then(r=>{if(r){applyDriveData(r);S.driveLastSync=r.lastModified||Date.now();localStorage.setItem("lingua_drive_last_sync",String(S.driveLastSync));render();}})},"⬇ Pobierz z chmury") : null,
+      (dStatus==="connected") ? h("button",{class:"sbtn",onclick:()=>{if(!confirm("Pobierz dane z chmury i NADPISZ lokalne? Lekcje i klucze które masz tutaj zostaną zastąpione tymi z Drive.")) return; pullFromDrive().then(r=>{if(r){applyDriveData(r);S.driveLastSync=r.lastModified||Date.now();S.localLastModified=S.driveLastSync;localStorage.setItem("lingua_drive_last_sync",String(S.driveLastSync));localStorage.setItem("lingua_local_last_modified",String(S.localLastModified));render();}});}},"⬇ Pobierz z chmury") : null,
       (dStatus==="connected") ? h("button",{class:"sbtn",onclick:pushToDrive},"⬆ Wyślij do chmury") : null
     ));
     const asRow=h("label",{style:"display:flex;align-items:center;gap:10px;margin-top:14px;cursor:pointer;font-size:12px;color:var(--text2)"});
