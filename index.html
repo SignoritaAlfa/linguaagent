@@ -3324,21 +3324,69 @@ function renderAddEntryForm(lesson, arrayKey, lang){
   formBox.appendChild(plInp);
   formBox.appendChild(exInp);
   formBox.appendChild(exTInp);
-  const btnRow = h("div",{style:"display:flex;gap:10px"});
+  const btnRow = h("div",{style:"display:flex;gap:10px;align-items:center;flex-wrap:wrap"});
   const clearForm = ()=>{ [wInp,trInp,ipaInp,plInp,exInp,exTInp].forEach(i=>i.value=""); };
   const closeForm = ()=>{ formBox.style.display="none"; toggleBtn.textContent="+ Dodaj "+label+" ręcznie"; };
-  btnRow.appendChild(h("button",{class:"primary",onclick:()=>{
+
+  async function aiFillPronunciation(word){
+    if(!S.claudeKey) return null;
+    const langName = {EN:"angielskim",FR:"francuskim",IT:"włoskim",DE:"niemieckim",ES:"hiszpańskim"}[lang]||lang;
+    const promptText = `Podaj wymowę dla ${arrayKey==="phrases"?"zwrotu":"słowa"} "${word}" w języku ${langName}. Pole "ipa" to standard międzynarodowy fonetyczny, pole "pl" to fonetyka czytana intuicyjnie po polsku (np. dla angielskiego "hello" → "helou"). Odpowiedz TYLKO czystym JSON, bez markdown, bez komentarzy: {"ipa":"/.../","pl":"jak czytać po polsku"}`;
+    try{
+      const res = await fetch("https://api.anthropic.com/v1/messages",{
+        method:"POST",
+        headers:{"x-api-key":S.claudeKey,"anthropic-version":"2023-06-01","content-type":"application/json","anthropic-dangerous-direct-browser-access":"true"},
+        body:JSON.stringify({model:"claude-haiku-4-5-20251001",max_tokens:200,messages:[{role:"user",content:[{type:"text",text:promptText}]}]})
+      });
+      if(!res.ok) return null;
+      const data = await res.json();
+      const m = data.content[0].text.match(/\{[\s\S]*\}/);
+      if(!m) return null;
+      const parsed = JSON.parse(m[0]);
+      return {ipa: parsed.ipa||"", pl: parsed.pl||""};
+    }catch(e){ console.error("[Lingua] AI fill failed:",e); return null; }
+  }
+
+  const aiBtn = h("button",{class:"sbtn",style:"border-color:var(--gold);color:var(--gold)"},"✨ Uzupełnij wymowę z AI");
+  aiBtn.onclick = async ()=>{
+    const w=(wInp.value||"").trim();
+    if(!w){ alert("Najpierw wpisz "+(arrayKey==="phrases"?"zwrot":"słowo")); wInp.focus(); return; }
+    if(!S.claudeKey){ alert("Wymagany klucz Claude API w Ustawieniach (sekcja Anthropic)"); return; }
+    aiBtn.disabled=true; aiBtn.textContent="⏳ Generuję...";
+    const r = await aiFillPronunciation(w);
+    if(r){
+      if(r.ipa) ipaInp.value = r.ipa;
+      if(r.pl) plInp.value = r.pl;
+      aiBtn.textContent = "✓ Uzupełnione"; aiBtn.style.color="var(--ok-text)"; aiBtn.style.borderColor="var(--ok-text)";
+      setTimeout(()=>{ aiBtn.textContent="✨ Uzupełnij wymowę z AI"; aiBtn.style.color="var(--gold)"; aiBtn.style.borderColor="var(--gold)"; aiBtn.disabled=false; },1500);
+    } else {
+      aiBtn.textContent="⚠ Błąd — spróbuj ponownie"; aiBtn.style.color="var(--err-text)"; aiBtn.style.borderColor="var(--err-text)";
+      setTimeout(()=>{ aiBtn.textContent="✨ Uzupełnij wymowę z AI"; aiBtn.style.color="var(--gold)"; aiBtn.style.borderColor="var(--gold)"; aiBtn.disabled=false; },2000);
+    }
+  };
+
+  const saveBtn = h("button",{class:"primary"},"💾 Zapisz i dodaj kolejny");
+  saveBtn.onclick = async ()=>{
     const w=(wInp.value||"").trim(), tr=(trInp.value||"").trim();
     if(!w||!tr){ alert("Wpisz minimum "+(arrayKey==="phrases"?"zwrot i jego tłumaczenie":"słowo i jego tłumaczenie")); return; }
     if(!lesson[arrayKey]) lesson[arrayKey]=[];
     if(lesson[arrayKey].some(v=>v.w===w)){ if(!confirm("\""+w+"\" już istnieje w tej lekcji. Dodać duplikat?")) return; }
-    lesson[arrayKey].push({w,tr,ipa:(ipaInp.value||"").trim(),pl:(plInp.value||"").trim(),ex:(exInp.value||"").trim(),exT:(exTInp.value||"").trim()});
+    let ipa=(ipaInp.value||"").trim(), pl=(plInp.value||"").trim();
+    if((!ipa || !pl) && S.claudeKey){
+      saveBtn.disabled=true; saveBtn.textContent="⏳ Uzupełniam wymowę...";
+      const r = await aiFillPronunciation(w);
+      if(r){ if(!ipa && r.ipa) ipa=r.ipa; if(!pl && r.pl) pl=r.pl; }
+      saveBtn.disabled=false; saveBtn.textContent="💾 Zapisz i dodaj kolejny";
+    }
+    lesson[arrayKey].push({w,tr,ipa,pl,ex:(exInp.value||"").trim(),exT:(exTInp.value||"").trim()});
     const ml=Object.assign({},S.myLessons);
     const li=(ml[S.lang]||[]).findIndex(l=>l.id===lesson.id);
     if(li>=0){ ml[S.lang][li][arrayKey]=lesson[arrayKey]; set({myLessons:ml}); localStorage.setItem("lingua_my_lessons",JSON.stringify(ml)); scheduleDriveSync(); }
     clearForm();
     setTimeout(()=>wInp.focus(),50);
-  }},"💾 Zapisz i dodaj kolejny"));
+  };
+  btnRow.appendChild(saveBtn);
+  btnRow.appendChild(aiBtn);
   btnRow.appendChild(h("button",{class:"sbtn",onclick:closeForm},"Zamknij"));
   formBox.appendChild(btnRow);
   toggleBtn.onclick = ()=>{
