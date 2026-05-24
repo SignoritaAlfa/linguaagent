@@ -1363,7 +1363,12 @@ Odpowiedz WYŁĄCZNIE czystym JSON, zero tekstu przed ani po, zero markdown:
   try{
     let content;
     let _savedRawText = null;
-    if(S.uploadFile && S.uploadFile.type==="application/pdf"){
+    if(S.uploadFile && (S.uploadFile.type.startsWith("text/") || /\.(md|markdown|txt)$/i.test(S.uploadFile.name))){
+      const textContent = await S.uploadFile.text();
+      if(!textContent||textContent.trim().length<20) throw new Error("Plik tekstowy jest pusty lub za krótki (minimum 20 znaków)");
+      _savedRawText = textContent;
+      content=[{type:"text",text:PROMPT+"\n\nTEKST:\n"+textContent}];
+    } else if(S.uploadFile && S.uploadFile.type==="application/pdf"){
       const extractedText = await extractPdfText(S.uploadFile);
       if(!extractedText||extractedText.length<100) throw new Error("PDF jest pusty lub nie można odczytać tekstu");
       _savedRawText = extractedText;
@@ -2769,7 +2774,7 @@ function renderUploadPanel(){
   const ph=h("div",{style:"display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px"});
   ph.appendChild(h("div",{},
     h("div",{class:"upload-title"},"Wgraj własną lekcję"),
-    h("div",{class:"upload-sub"},"Zdjęcie, PDF lub tekst — Claude przeanalizuje i stworzy lekcję")
+    h("div",{class:"upload-sub"},"Zdjęcie, PDF, plik .md/.txt lub tekst — Claude przeanalizuje i stworzy lekcję")
   ));
   ph.appendChild(h("button",{style:"background:none;border:none;cursor:pointer;font-size:20px;color:var(--ink3)",onclick:()=>set({showUpload:false})},"✕"));
   panel.appendChild(ph);
@@ -2797,7 +2802,15 @@ function renderUploadPanel(){
     const pi=h("input",{type:"file",accept:".pdf",style:"display:none",onchange:(e)=>{if(e.target.files[0])set({uploadFile:e.target.files[0],uploadStep:1});}});
     pdfL.appendChild(pi);
     ug.appendChild(pdfL);
-    // Opcja 3: Własny tekst / notatki
+    // Opcja 3: Plik .md / .txt
+    const mdL=h("label",{class:"upload-opt"});
+    mdL.appendChild(h("div",{class:"uicon"},"📝"));
+    mdL.appendChild(h("div",{class:"ulabel"},"Plik tekstowy"));
+    mdL.appendChild(h("div",{class:"udesc"},"MD, TXT, Markdown"));
+    const mi=h("input",{type:"file",accept:".md,.markdown,.txt,text/plain,text/markdown",style:"display:none",onchange:(e)=>{if(e.target.files[0])set({uploadFile:e.target.files[0],uploadStep:1});}});
+    mdL.appendChild(mi);
+    ug.appendChild(mdL);
+    // Opcja 4: Własny tekst / notatki
     const txtOpt=h("div",{class:"upload-opt",style:"cursor:pointer",onclick:()=>set({uploadStep:"text"})});
     txtOpt.appendChild(h("div",{class:"uicon"},"✏️"));
     txtOpt.appendChild(h("div",{class:"ulabel"},"Własny tekst"));
