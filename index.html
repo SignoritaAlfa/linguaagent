@@ -1291,7 +1291,7 @@ function connectDrive(){
     S.driveStatus="error"; render(); return;
   }
   S.driveStatus="connecting"; S.driveError=""; render();
-  tc.requestAccessToken({prompt: S.driveFileId ? "" : "consent"});
+  tc.requestAccessToken({prompt: "select_account"});
 }
 
 function disconnectDrive(){
