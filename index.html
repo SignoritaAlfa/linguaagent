@@ -1799,7 +1799,14 @@ function renderLang(){
   });
   function renderLessonRow(lesson,idx){
     const row=h("div",{class:"my-lesson-row"});
-    const info=h("div",{class:"my-lesson-info"});
+    const info=h("div",{
+      class:"my-lesson-info",
+      style:"cursor:pointer;transition:opacity .15s",
+      title:"Otwórz lekcję",
+      onclick:()=>set({screen:"lesson",lesson,mode:"dialog",lessonTab:"dialog",playing:false,playingLine:-1})
+    });
+    info.onmouseover=()=>{info.style.opacity="0.7";};
+    info.onmouseout=()=>{info.style.opacity="1";};
     info.appendChild(h("div",{class:"my-lesson-title"},lesson.title||"Bez tytułu"));
     info.appendChild(h("div",{class:"my-lesson-meta"},(lesson.level||"")+" · "+(lesson.vocab||[]).length+" słówek · "+(lesson.dialog||[]).length+" linii"));
     row.appendChild(info);
