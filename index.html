@@ -1284,13 +1284,36 @@ async function extractPdfText(file){
     pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
     const arrayBuffer = await file.arrayBuffer();
     const pdf = await pdfjsLib.getDocument({data:arrayBuffer}).promise;
-    let text = "";
+    const pages = [];
+    const Y_TOLERANCE = 2;
     for(let i=1;i<=pdf.numPages;i++){
       const page = await pdf.getPage(i);
       const content = await page.getTextContent();
-      text += content.items.map(item=>item.str).join(" ") + "\n";
+      const lines = [];
+      let buf = [];
+      let curY = null;
+      for(const item of content.items){
+        const y = item.transform ? item.transform[5] : null;
+        if(curY === null){
+          curY = y;
+          if(item.str) buf.push(item.str);
+        } else if(y !== null && Math.abs(y - curY) <= Y_TOLERANCE){
+          if(item.str) buf.push(item.str);
+        } else {
+          lines.push(buf.join(" ").trim());
+          buf = item.str ? [item.str] : [];
+          curY = y;
+        }
+        if(item.hasEOL){
+          if(buf.length) lines.push(buf.join(" ").trim());
+          buf = [];
+          curY = null;
+        }
+      }
+      if(buf.length) lines.push(buf.join(" ").trim());
+      pages.push(lines.filter(l=>l).join("\n"));
     }
-    return text.trim();
+    return pages.join("\n\n").trim();
   }catch(e){
     throw new Error("Nie można odczytać PDF: "+e.message);
   }
@@ -1331,7 +1354,7 @@ WYMAGANIA MINIMALNE (nie można ich zmniejszyć):
 - fill: minimum 12 ćwiczeń uzupełniania luk — DWIE KATEGORIE: (1) cat:"text" — zdania bezpośrednio z materiału z brakującym słowem (min 6), (2) cat:"grammar" — ćwiczenia gramatyczne na zasady widoczne w tekście (min 6)
 - grammar: minimum 4 zasady gramatyczne widoczne w materiale
 
-Pole "rawText": jeśli widzisz obraz, przepisz DOSŁOWNIE cały tekst z obrazu (każde słowo, w kolejności w jakiej występuje). Jeśli dostałeś już tekst w wiadomości, powtórz go w "rawText" identycznie.
+Pole "rawText": jeśli widzisz obraz, przepisz DOSŁOWNIE cały tekst z obrazu — każde słowo, w kolejności w jakiej występuje, ZACHOWUJĄC ORYGINALNE FORMATOWANIE: łamania linii (każda linia widoczna na obrazku = osobna linia, użyj \n), akapity (puste linie między akapitami = \n\n), wcięcia, listy i numerację (1., 2., 3. lub - w nowej linii). Nie sklejaj wszystkiego w jeden ciąg. Jeśli dostałeś już tekst w wiadomości, powtórz go w "rawText" identycznie z zachowaniem łamań linii.
 
 Odpowiedz WYŁĄCZNIE czystym JSON, zero tekstu przed ani po, zero markdown:
 {"title":"tytuł lekcji","level":"B1","topic":"temat po polsku","rawText":"oryginalny tekst materiału dosłownie","dialog":[{"s":"Imię","l":"zdanie w języku obcym","t":"tłumaczenie po polsku"}],"vocab":[{"w":"słowo","tr":"tłumaczenie PL","ipa":"wymowa IPA","pl":"jak czytać po polsku","ex":"przykład użycia","exT":"tłumaczenie przykładu"}],"fill":[{"s":"zdanie z ___ luką","a":"odpowiedź","h":"wskazówka po polsku","cat":"text"},{"s":"gramatyczne z ___","a":"odpowiedź","h":"wskazówka","cat":"grammar"}],"grammar":[{"rule":"nazwa zasady","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie po polsku"}]}`;
@@ -1458,7 +1481,7 @@ async function processFilm(){
   const isVideo = file.type.startsWith("video/");
   const PROMPT = `Jesteś ekspertem od nauki języków. Przeanalizuj ten fragment ${isVideo?"wideo":"audio"} w języku ${langName} i stwórz z niego kompletną lekcję językową.
 Transkrybuj DOKŁADNIE wszystkie wypowiedzi które słyszysz. Zidentyfikuj mówców (użyj imion jeśli je znasz, lub Osoba1/Osoba2).
-Pole "rawText": pełna dosłowna transkrypcja całego nagrania w języku oryginału, w kolejności wypowiedzi, bez tłumaczeń i komentarzy. Włącz każde zdanie które słyszysz.
+Pole "rawText": pełna dosłowna transkrypcja całego nagrania w języku oryginału, w kolejności wypowiedzi, bez tłumaczeń i komentarzy. Każda wypowiedź mówcy = osobna linia (użyj \n między wypowiedziami). Nie sklejaj wszystkiego w jeden ciąg. Włącz każde zdanie które słyszysz.
 
 Odpowiedz TYLKO czystym JSON (bez markdown, bez komentarzy):
 {"title":"tytuł sceny np. Friends S01E01 - scena w kawiarni","level":"A2","topic":"temat lekcji po polsku","rawText":"pełna dosłowna transkrypcja nagrania","dialog":[{"s":"imię/nazwa postaci","l":"dokładny tekst w języku obcym","t":"naturalne tłumaczenie po polsku"}],"vocab":[{"w":"ważny zwrot z sceny","tr":"tłumaczenie","ipa":"wymowa IPA","pl":"wymowa dla Polaków","ex":"zdanie z fragmentu","exT":"tłumaczenie"}],"fill":[{"s":"zdanie z ___ luką","a":"brakujące słowo","h":"wskazówka po polsku","cat":"text"},{"s":"gramatyczne z ___","a":"odpowiedź","h":"wskazówka","cat":"grammar"}],"grammar":[{"rule":"zasada gramatyczna widoczna w scenie","ex":"przykład z fragmentu","exT":"tłumaczenie","note":"wyjaśnienie po polsku"}]}`;
@@ -3703,7 +3726,7 @@ async function fetchYouTubeTranscript(videoId){
     if(res.ok){
       const data=await res.json();
       if(data.transcript&&data.transcript.length>0){
-        return data.transcript.map(t=>t.text).join(" ");
+        return data.transcript.map(t=>t.text).join("\n");
       }
     } else {
       const errBody=await res.text().catch(()=>"");
@@ -3723,7 +3746,7 @@ async function fetchYouTubeTranscript(videoId){
         return data[0].transcriptionAsText;
       }
       if(data.transcription){
-        return data.transcription.map(t=>t.subtitle).join(" ");
+        return data.transcription.map(t=>t.subtitle).join("\n");
       }
     } else {
       const errBody=await res.text().catch(()=>"");
