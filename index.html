@@ -3957,11 +3957,11 @@ function renderSettings(){
   // ── Model Claude do generowania lekcji ──
   sw.appendChild(h("hr",{class:"settings-divider"}));
   sw.appendChild(h("div",{style:"font-size:14px;font-weight:500;color:var(--text);margin-bottom:6px"},"🤖 Model AI do generowania lekcji"));
-  sw.appendChild(h("div",{style:"font-size:12px;color:var(--text3);margin-bottom:12px;line-height:1.6"},"Wybierz który model Claude'a tworzy lekcje z transkrypcji. Haiku jest ~3× tańszy i ~2× szybszy — wystarcza dla większości lekcji. Sonnet daje lepsze tłumaczenia i precyzyjniejsze rozpoznawanie ról — wybierz gdy zauważysz słabą jakość."));
+  sw.appendChild(h("div",{style:"font-size:12px;color:var(--text3);margin-bottom:12px;line-height:1.6"},"Wybierz który model AI tworzy lekcje z transkrypcji. Gemini wymaga klucza Gemini API + płatność idzie przez Google Cloud (akceptuje polskie karty). Haiku/Sonnet wymagają klucza Anthropic + płatności idą przez Stripe US. Jakość: Sonnet > Haiku ≈ Gemini Flash. Koszt: Gemini < Haiku < Sonnet."));
   const modelRow = h("div",{style:"display:flex;flex-direction:column;gap:8px;margin-bottom:6px"});
-  [["haiku","🍃 Haiku 4.5","Szybki, ~$0.10 / regeneracja długiej sceny. Default — dobry kompromis"],
-   ["sonnet","💎 Sonnet 4.6","Najlepsza jakość, ~$0.40 / regeneracja. Lepsze tłumaczenia + role"]
-  ].forEach(([key, label, desc])=>{
+  Object.entries(LESSON_MODEL_CONFIG).forEach(([key, cfg])=>{
+    const label = cfg.label;
+    const desc = cfg.desc;
     const active = (S.lessonModel||"haiku") === key;
     const card = h("button",{
       style:"text-align:left;padding:12px 16px;background:"+(active?"var(--gold-dim)":"var(--surface)")+";border:2px solid "+(active?"var(--gold)":"var(--border)")+";cursor:pointer;border-radius:6px;font-family:inherit;transition:all .15s",
@@ -5877,11 +5877,11 @@ function renderSettings(){
   // ── Model Claude do generowania lekcji ──
   sw.appendChild(h("hr",{class:"settings-divider"}));
   sw.appendChild(h("div",{style:"font-size:14px;font-weight:500;color:var(--text);margin-bottom:6px"},"🤖 Model AI do generowania lekcji"));
-  sw.appendChild(h("div",{style:"font-size:12px;color:var(--text3);margin-bottom:12px;line-height:1.6"},"Wybierz który model Claude'a tworzy lekcje z transkrypcji. Haiku jest ~3× tańszy i ~2× szybszy — wystarcza dla większości lekcji. Sonnet daje lepsze tłumaczenia i precyzyjniejsze rozpoznawanie ról — wybierz gdy zauważysz słabą jakość."));
+  sw.appendChild(h("div",{style:"font-size:12px;color:var(--text3);margin-bottom:12px;line-height:1.6"},"Wybierz który model AI tworzy lekcje z transkrypcji. Gemini wymaga klucza Gemini API + płatność idzie przez Google Cloud (akceptuje polskie karty). Haiku/Sonnet wymagają klucza Anthropic + płatności idą przez Stripe US. Jakość: Sonnet > Haiku ≈ Gemini Flash. Koszt: Gemini < Haiku < Sonnet."));
   const modelRow = h("div",{style:"display:flex;flex-direction:column;gap:8px;margin-bottom:6px"});
-  [["haiku","🍃 Haiku 4.5","Szybki, ~$0.10 / regeneracja długiej sceny. Default — dobry kompromis"],
-   ["sonnet","💎 Sonnet 4.6","Najlepsza jakość, ~$0.40 / regeneracja. Lepsze tłumaczenia + role"]
-  ].forEach(([key, label, desc])=>{
+  Object.entries(LESSON_MODEL_CONFIG).forEach(([key, cfg])=>{
+    const label = cfg.label;
+    const desc = cfg.desc;
     const active = (S.lessonModel||"haiku") === key;
     const card = h("button",{
       style:"text-align:left;padding:12px 16px;background:"+(active?"var(--gold-dim)":"var(--surface)")+";border:2px solid "+(active?"var(--gold)":"var(--border)")+";cursor:pointer;border-radius:6px;font-family:inherit;transition:all .15s",
@@ -6128,13 +6128,54 @@ function formatTime(sec){
   return m+":"+(r<10?"0"+r:r);
 }
 
-// ── Claude model selection ───────────────────────────────────────────────────
+// ── Model AI do generowania lekcji (Claude / Gemini) ───────────────────────────
 const LESSON_MODEL_CONFIG = {
-  haiku:  { name:"claude-haiku-4-5-20251001", maxTokens:32000, label:"Haiku 4.5 (szybki, ~3× tańszy)" },
-  sonnet: { name:"claude-sonnet-4-6",         maxTokens:64000, label:"Sonnet 4.6 (lepsza jakość)" }
+  haiku:  { provider:"anthropic", name:"claude-haiku-4-5-20251001", maxTokens:32000, label:"🍃 Haiku 4.5",       desc:"~$0.10 / długa scena. Szybki, dobry kompromis. Karta Anthropic." },
+  sonnet: { provider:"anthropic", name:"claude-sonnet-4-6",         maxTokens:64000, label:"💎 Sonnet 4.6",      desc:"~$0.40 / długa scena. Najlepsza jakość tłumaczeń. Karta Anthropic." },
+  gemini: { provider:"gemini",    name:"gemini-2.0-flash",          maxTokens:8000,  label:"🌟 Gemini 2.0 Flash", desc:"~$0.03 / scena. Najtańszy + 1500 free/dzień. Google Cloud (polskie karty OK)." }
 };
 function getLessonModelConfig(){
   return LESSON_MODEL_CONFIG[S.lessonModel || "haiku"] || LESSON_MODEL_CONFIG.haiku;
+}
+
+// Provider-agnostic single call. Returns raw response text (caller does parsing).
+async function callLessonModel(prompt){
+  const cfg = getLessonModelConfig();
+  if(cfg.provider === "gemini"){
+    if(!S.geminiKey) throw new Error("Brak klucza Gemini API w Ustawieniach");
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${cfg.name}:generateContent?key=${encodeURIComponent(S.geminiKey)}`,
+      {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({
+          contents:[{parts:[{text:prompt}]}],
+          generationConfig:{temperature:0.3, maxOutputTokens: cfg.maxTokens}
+        })
+      }
+    );
+    if(!res.ok){
+      const err = await res.json().catch(()=>({}));
+      throw new Error("Gemini API "+res.status+": "+(err?.error?.message||"sprawdź klucz lub limit"));
+    }
+    const data = await res.json();
+    const txt = data?.candidates?.[0]?.content?.parts?.[0]?.text || data?.candidates?.[0]?.output || "";
+    if(!txt) throw new Error("Gemini nie zwrócił tekstu");
+    return txt;
+  }
+  // Anthropic Claude
+  if(!S.claudeKey) throw new Error("Brak klucza Claude w Ustawieniach");
+  const res = await fetch("https://api.anthropic.com/v1/messages",{
+    method:"POST",
+    headers:{"x-api-key":S.claudeKey,"anthropic-version":"2023-06-01","content-type":"application/json","anthropic-dangerous-direct-browser-access":"true"},
+    body:JSON.stringify({model:cfg.name, max_tokens:cfg.maxTokens, messages:[{role:"user",content:[{type:"text",text:prompt}]}]})
+  });
+  if(!res.ok){
+    const e = await res.json().catch(()=>({}));
+    throw new Error("Claude API "+res.status+": "+(e?.error?.message||"sprawdź klucz"));
+  }
+  const data = await res.json();
+  return data.content[0].text;
 }
 
 // ── Lesson cache: same transcript+lang doesn't cost Claude credits twice ─────
@@ -6218,17 +6259,8 @@ DODATKOWE SEKCJE:
     const trim=transcript.slice(0,40000);
     PROMPT=`Masz surową transkrypcję w języku ${langNames[lang||S.lang]||"angielski"}. Przerób na lekcję językową.\n\nZASADY: Weź każde zdanie DOSŁOWNIE, NIE skracaj. POPRAW interpunkcję/kapitalizację. Rozpoznaj kto mówi.${COMMON_SECTIONS}\n\nOdpowiedz TYLKO czystym JSON bez markdown:\n{"title":"tytuł","level":"A2","topic":"temat po polsku","dialog":[{"s":"imię","l":"tekst","t":"tłumaczenie"}],"vocab":[{"w":"słowo","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie","exT":"tłumaczenie"}],"phrases":[{"w":"zwrot","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie","exT":"tłumaczenie"}],"fill":[{"s":"zdanie z ___","a":"odp","h":"wskazówka","cat":"text"}],"grammar":[{"rule":"zasada","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie PL"}]}\n\nTRANSKRYPCJA:\n${trim}`;
   }
-  const apiRes = await fetch("https://api.anthropic.com/v1/messages",{
-    method:"POST",
-    headers:{"x-api-key":S.claudeKey,"anthropic-version":"2023-06-01","content-type":"application/json","anthropic-dangerous-direct-browser-access":"true"},
-    body:JSON.stringify((function(){const cfg=getLessonModelConfig();return {model:cfg.name,max_tokens:cfg.maxTokens,messages:[{role:"user",content:[{type:"text",text:PROMPT}]}]};})())
-  });
-  if(!apiRes.ok){
-    const e=await apiRes.json().catch(()=>({}));
-    throw new Error("Claude API "+apiRes.status+": "+(e?.error?.message||"sprawdź klucz"));
-  }
-  const apiData = await apiRes.json();
-  const newLesson = parseLessonJson(apiData.content[0].text);
+  const rawText = await callLessonModel(PROMPT);
+  const newLesson = parseLessonJson(rawText);
   if(!newLesson.dialog || newLesson.dialog.length===0) throw new Error("Claude nie zwrócił dialogu");
   // Cache the result so the same transcript doesn't cost again
   setCachedLesson(transcript, lang, newLesson);
@@ -6392,19 +6424,8 @@ Odpowiedz TYLKO czystym JSON bez markdown:
 TRANSKRYPCJA:
 ${trimmedTranscript}`;
   }
-  const apiRes=await fetch("https://api.anthropic.com/v1/messages",{
-    method:"POST",
-    headers:{"x-api-key":S.claudeKey,"anthropic-version":"2023-06-01","content-type":"application/json","anthropic-dangerous-direct-browser-access":"true"},
-    body:JSON.stringify((function(){const cfg=getLessonModelConfig();return {model:cfg.name,max_tokens:cfg.maxTokens,messages:[{role:"user",content:[{type:"text",text:PROMPT}]}]};})())
-  });
-  if(!apiRes.ok){
-    const e=await apiRes.json().catch(()=>({}));
-    const errMsg=e?.error?.message||"sprawdź klucz";
-    throw new Error("Claude API błąd "+apiRes.status+": "+errMsg);
-  }
-  const apiData=await apiRes.json();
-  const rawText=apiData.content[0].text;
-  console.log("[LinguaAgent] Claude response: "+rawText.length+" chars, stop_reason="+apiData.stop_reason);
+  const rawText = await callLessonModel(PROMPT);
+  console.log("[LinguaAgent] AI response ("+getLessonModelConfig().label+"): "+rawText.length+" chars");
   const lesson = parseLessonJson(rawText);
   if(!lesson.dialog || lesson.dialog.length===0) throw new Error("Claude nie zwrócił dialogu — spróbuj ponownie z krótszą sceną");
   // Cache the raw lesson (without id/youtubeId — those are call-specific)
