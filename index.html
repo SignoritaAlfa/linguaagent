@@ -1120,7 +1120,8 @@ let S={
   vocabDir:"lang→pl",
   srs:(()=>{try{return JSON.parse(localStorage.getItem("lingua_srs")||"{}")}catch{return {}}})(),
   theme:localStorage.getItem("lingua_theme")||"light",
-  palette:localStorage.getItem("lingua_palette")||"green"
+  palette:localStorage.getItem("lingua_palette")||"green",
+  translateInput:"", translateResult:null, translateProcessing:false, translateError:"", translateAddTargetLesson:"", translateRecording:false
 };
 // ── GOOGLE DRIVE SYNC ────────────────────────────────────────────────────────
 const DRIVE_SCOPE = "https://www.googleapis.com/auth/drive.appdata";
@@ -2122,7 +2123,8 @@ function renderLang(){
   const ws=JSON.parse(localStorage.getItem("lingua_word_status")||"{}");
   const learningCount=Object.entries(ws).filter(([k,v])=>k.endsWith("_"+lang)&&v==="learning").length;
   const knownCount=Object.entries(ws).filter(([k,v])=>k.endsWith("_"+lang)&&v==="known").length;
-  [[" Moje słówka","📝",""+learningCount+" w nauce",()=>set({screen:"mywords"})],
+  [[" Tłumacz","🌐","tłumacz na "+LANGS[lang].name,()=>set({screen:"translate",translateInput:"",translateResult:null,translateError:"",translateRecording:false})],
+   [" Moje słówka","📝",""+learningCount+" w nauce",()=>set({screen:"mywords"})],
    [" Powtórki","🔄",dueCount>0?dueCount+" do powtórki":"wszystko powtórzone",()=>{
      const due=getDueWords(lang);
      if(due.length===0){alert("Brak słówek do powtórki!");return;}
@@ -5474,6 +5476,235 @@ function startBuild(lesson){
   set({screen:"practice",lesson,mode:"build",cards,idx:0,score:{c:0,t:0},buildSelected:[],buildSubmitted:false});
 }
 
+// ── B5b: TŁUMACZ (PL → jezyk docelowy) ──────────────────────────────────────
+let _translateRecognition = null;
+function stopTranslateSpeech(){
+  if(_translateRecognition){ try{_translateRecognition.stop();}catch(e){} _translateRecognition=null; }
+  S.translateRecording=false;
+}
+function startTranslateSpeech(){
+  const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!Rec){ alert("Twoja przeglądarka nie obsługuje rozpoznawania mowy (Chrome/Edge tak)"); return; }
+  stopTranslateSpeech();
+  const r = new Rec();
+  _translateRecognition = r;
+  r.lang = "pl-PL";
+  r.continuous = false;
+  r.interimResults = true;
+  S.translateRecording = true;
+  render();
+  let finalChunk = "";
+  r.onresult = (e)=>{
+    let interim = "";
+    for(let i=e.resultIndex; i<e.results.length; i++){
+      const txt = e.results[i][0].transcript;
+      if(e.results[i].isFinal) finalChunk += txt;
+      else interim += txt;
+    }
+    const ta = document.getElementById("translate-input");
+    if(ta){
+      const base = S.translateInput || "";
+      const sep = base && !base.endsWith(" ") ? " " : "";
+      ta.value = base + sep + finalChunk + interim;
+    }
+  };
+  r.onend = ()=>{
+    const ta = document.getElementById("translate-input");
+    const newVal = ta ? ta.value : ((S.translateInput||"")+" "+finalChunk).trim();
+    _translateRecognition = null;
+    set({translateRecording:false, translateInput:newVal});
+  };
+  r.onerror = (ev)=>{
+    _translateRecognition = null;
+    set({translateRecording:false, translateError:"Błąd mikrofonu: "+ev.error});
+  };
+  r.start();
+}
+
+async function doTranslate(){
+  const text = (S.translateInput||"").trim();
+  if(!text){ set({translateError:"Wpisz tekst do tłumaczenia"}); return; }
+  if(!S.claudeKey){ set({translateError:"Wymagany klucz Claude (Anthropic) w Ustawieniach"}); return; }
+  set({translateProcessing:true, translateError:"", translateResult:null});
+  try{
+    const lang = S.lang;
+    const langName = {EN:"angielski",FR:"francuski",IT:"włoski"}[lang]||"obcy";
+    const langAdj = {EN:"angielskim",FR:"francuskim",IT:"włoskim"}[lang]||"obcym";
+    const prompt = `Przetłumacz poniższy polski tekst na ${langName} naturalnie, jak rodzimy użytkownik. Podaj też wymowę pełnego tłumaczenia (IPA i intuicyjną fonetykę po polsku) oraz wyciągnij kluczowe słowa i zwroty z tłumaczenia godne zapamiętania.\n\nTEKST PO POLSKU: "${text}"\n\nOdpowiedz TYLKO czystym JSON, bez markdown:\n{"translation":"tłumaczenie w ${langAdj}","ipa":"IPA pełnego tłumaczenia","pl":"jak czytać po polsku","alternatives":["alternatywne tłumaczenia (opcjonalnie 1-2)"],"words":[{"w":"słowo lub zwrot","tr":"po polsku","ipa":"IPA","pl":"czytaj","ex":"przykład użycia po ${langName}u","exT":"tłumaczenie przykładu"}]}\n\nwords: kluczowe słowa/zwroty z tłumaczenia (5-12 pozycji).`;
+    const res = await fetch("https://api.anthropic.com/v1/messages",{
+      method:"POST",
+      headers:{"x-api-key":S.claudeKey,"anthropic-version":"2023-06-01","content-type":"application/json","anthropic-dangerous-direct-browser-access":"true"},
+      body:JSON.stringify({model:"claude-haiku-4-5-20251001",max_tokens:3000,messages:[{role:"user",content:[{type:"text",text:prompt}]}]})
+    });
+    if(!res.ok) throw new Error("API błąd "+res.status);
+    const data = await res.json();
+    const m = data.content[0].text.match(/\{[\s\S]*\}/);
+    if(!m) throw new Error("Brak JSON w odpowiedzi");
+    const parsed = JSON.parse(m[0]);
+    set({translateProcessing:false, translateResult:parsed});
+  }catch(e){
+    set({translateProcessing:false, translateError:e.message});
+  }
+}
+
+function addTranslateToLesson(target){
+  const r = S.translateResult;
+  if(!r) return;
+  const lessons = S.myLessons[S.lang]||[];
+  if(lessons.length===0){ alert("Nie masz własnych lekcji w tym języku. Wgraj/dodaj lekcję najpierw."); return; }
+  let lessonId = S.translateAddTargetLesson;
+  if(!lessonId || !lessons.find(l=>l.id===lessonId)) lessonId = lessons[0].id;
+  const ml = Object.assign({}, S.myLessons);
+  const lessonIdx = (ml[S.lang]||[]).findIndex(l=>l.id===lessonId);
+  if(lessonIdx<0){ alert("Wybrana lekcja nie istnieje"); return; }
+  const lesson = ml[S.lang][lessonIdx];
+  if(target==="phrases"){
+    if(!lesson.phrases) lesson.phrases=[];
+    if(lesson.phrases.some(p=>p.w===r.translation)){ alert("Ten zwrot już jest w lekcji \""+lesson.title+"\""); return; }
+    lesson.phrases.push({w:r.translation, tr:(S.translateInput||"").trim(), ipa:r.ipa||"", pl:r.pl||"", ex:"", exT:""});
+    localStorage.setItem("lingua_my_lessons", JSON.stringify(ml));
+    S.myLessons = ml; scheduleDriveSync();
+    alert("✓ Dodano zdanie do Zwrotów lekcji \""+lesson.title+"\"");
+    render();
+  } else if(target==="vocab"){
+    if(!lesson.vocab) lesson.vocab=[];
+    let added=0;
+    (r.words||[]).forEach(word=>{
+      if(!lesson.vocab.some(v=>v.w===word.w)){
+        lesson.vocab.push({w:word.w, tr:word.tr, ipa:word.ipa||"", pl:word.pl||"", ex:word.ex||r.translation||"", exT:word.exT||(S.translateInput||"").trim()});
+        added++;
+      }
+    });
+    localStorage.setItem("lingua_my_lessons", JSON.stringify(ml));
+    S.myLessons = ml; scheduleDriveSync();
+    alert("✓ Dodano "+added+" słówek do lekcji \""+lesson.title+"\"");
+    render();
+  }
+}
+
+function renderTranslate(){
+  const lang = S.lang;
+  const w = h("div",{});
+  w.appendChild(renderTopNav());
+  const main = h("div",{class:"main"});
+  main.appendChild(h("button",{class:"back-btn",onclick:()=>{stopTranslateSpeech();set({screen:"lang",translateInput:"",translateResult:null,translateError:"",translateRecording:false});}},"← Powrót"));
+  main.appendChild(h("div",{class:"page-title"},"🌐 Tłumacz — "+LANGS[lang].name));
+  main.appendChild(h("div",{class:"page-sub"},"Napisz lub powiedz po polsku — Claude przetłumaczy na "+LANGS[lang].name+" i pozwoli dodać do własnej lekcji."));
+
+  if(!S.claudeKey){
+    main.appendChild(h("div",{class:"msg-err",style:"max-width:700px;margin-bottom:18px"},"⚠️ Brak klucza Claude API. Wejdź w Ustawienia → sekcja Anthropic."));
+  }
+
+  // Input area
+  const inputWrap = h("div",{style:"max-width:700px;margin-bottom:24px"});
+  inputWrap.appendChild(h("div",{class:"sec-label",style:"margin-bottom:8px"},"Tekst po polsku"));
+  const ta = h("textarea",{
+    id:"translate-input",
+    style:"width:100%;min-height:120px;padding:14px;border:1px solid var(--border);background:var(--surface);font-family:'DM Sans',sans-serif;font-size:14px;line-height:1.6;border-radius:6px;resize:vertical;outline:none;color:var(--text);box-sizing:border-box",
+    placeholder:"Wpisz co chciałabyś powiedzieć po polsku..."
+  });
+  ta.value = S.translateInput || "";
+  ta.oninput = (e)=>{ S.translateInput = e.target.value; };
+  ta.onkeydown = (e)=>{ if(e.key==="Enter" && (e.ctrlKey||e.metaKey)){ e.preventDefault(); doTranslate(); } };
+  inputWrap.appendChild(ta);
+
+  const inputBtns = h("div",{style:"display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;align-items:center"});
+  const hasSpeechRec = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+  if(hasSpeechRec){
+    const micBtn = h("button",{class:S.translateRecording?"sbtn danger":"sbtn"},
+      S.translateRecording?"⏹ Stop nagrywania":"🎤 Mów po polsku");
+    micBtn.onclick = ()=>{ if(S.translateRecording) stopTranslateSpeech(); else startTranslateSpeech(); };
+    inputBtns.appendChild(micBtn);
+  }
+  const transBtn = h("button",{class:"primary"},S.translateProcessing?"⏳ Tłumaczę...":"🌐 Tłumacz");
+  transBtn.disabled = S.translateProcessing || !(S.translateInput||"").trim();
+  transBtn.onclick = doTranslate;
+  inputBtns.appendChild(transBtn);
+  if(S.translateInput){
+    inputBtns.appendChild(h("button",{class:"sbtn",style:"margin-left:auto;font-size:11px",onclick:()=>{stopTranslateSpeech();set({translateInput:"",translateResult:null,translateError:""});}},"✕ Wyczyść"));
+  }
+  inputWrap.appendChild(inputBtns);
+  if(hasSpeechRec) inputWrap.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-top:6px"},"Tip: Ctrl/Cmd + Enter aby przetłumaczyć"));
+  else inputWrap.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-top:6px"},"Mikrofon dostępny tylko w Chrome/Edge. Tip: Ctrl/Cmd + Enter aby przetłumaczyć."));
+  if(S.translateError) inputWrap.appendChild(h("div",{class:"msg-err",style:"margin-top:10px"},S.translateError));
+  main.appendChild(inputWrap);
+
+  // Result
+  if(S.translateResult){
+    const r = S.translateResult;
+    const resWrap = h("div",{style:"max-width:700px;padding:20px;border:1px solid var(--gold);border-radius:8px;background:var(--surface);margin-bottom:24px"});
+    resWrap.appendChild(h("div",{class:"sec-label",style:"margin-bottom:12px"},"Tłumaczenie ("+LANGS[lang].name+")"));
+
+    const transRow = h("div",{style:"display:flex;align-items:flex-start;gap:10px;margin-bottom:8px"});
+    const transSpk = h("button",{class:"sbtn",style:"width:36px;height:36px;border-radius:50%;padding:0;font-size:14px;flex-shrink:0;border-color:var(--gold);color:var(--gold)",onclick:()=>speak(r.translation,lang,"")},"♪");
+    const transText = h("div",{style:"font-family:'Cormorant Garamond',serif;font-size:22px;color:var(--text);font-weight:500;flex:1;line-height:1.4"},r.translation);
+    transRow.appendChild(transSpk);
+    transRow.appendChild(transText);
+    resWrap.appendChild(transRow);
+
+    if(r.ipa) resWrap.appendChild(h("div",{style:"font-family:monospace;font-size:12px;color:var(--text3);margin-bottom:4px;padding-left:46px"},r.ipa));
+    if(r.pl) resWrap.appendChild(h("div",{style:"font-size:12px;color:var(--text3);margin-bottom:16px;padding-left:46px;font-style:italic"},"Czytaj: "+r.pl));
+
+    if(r.alternatives && r.alternatives.length>0){
+      resWrap.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-top:14px;letter-spacing:.06em;text-transform:uppercase"},"Alternatywne tłumaczenia"));
+      r.alternatives.forEach(alt=>{
+        const altRow = h("div",{style:"display:flex;align-items:center;gap:8px;padding:6px 0;font-size:13px;color:var(--text2)"});
+        const altSpk = h("button",{class:"sbtn",style:"width:24px;height:24px;border-radius:50%;padding:0;font-size:10px;flex-shrink:0",onclick:()=>speak(alt,lang,"")},"♪");
+        altRow.appendChild(altSpk);
+        altRow.appendChild(h("div",{style:"flex:1"},alt));
+        resWrap.appendChild(altRow);
+      });
+    }
+
+    // Add-to-lesson section
+    const lessons = S.myLessons[lang]||[];
+    resWrap.appendChild(h("hr",{style:"margin:18px 0;border:none;border-top:1px solid var(--border)"}));
+    resWrap.appendChild(h("div",{class:"sec-label",style:"margin-bottom:10px"},"Dodaj do lekcji"));
+    if(lessons.length===0){
+      resWrap.appendChild(h("div",{style:"font-size:12px;color:var(--text3);font-style:italic"},"Brak własnych lekcji. Wróć i wgraj pierwszą lekcję — później wracaj tu i dodawaj zwroty/słówka."));
+    } else {
+      const lessRow = h("div",{style:"display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px"});
+      lessRow.appendChild(h("div",{style:"font-size:12px;color:var(--text2)"},"Lekcja:"));
+      const lessSel = h("select",{style:"padding:8px 10px;border:1px solid var(--border);border-radius:4px;background:var(--surface);font-family:inherit;font-size:12px;color:var(--text);min-width:240px;cursor:pointer"});
+      if(!S.translateAddTargetLesson || !lessons.find(l=>l.id===S.translateAddTargetLesson)) S.translateAddTargetLesson = lessons[0].id;
+      lessons.forEach(les=>{
+        const opt = h("option",{value:les.id},les.title||"Bez tytułu");
+        if(les.id===S.translateAddTargetLesson) opt.selected = true;
+        lessSel.appendChild(opt);
+      });
+      lessSel.onchange = (e)=>{ S.translateAddTargetLesson = e.target.value; };
+      lessRow.appendChild(lessSel);
+      resWrap.appendChild(lessRow);
+      const actRow = h("div",{style:"display:flex;flex-wrap:wrap;gap:10px"});
+      actRow.appendChild(h("button",{class:"sbtn",style:"border-color:var(--gold);color:var(--gold)",onclick:()=>addTranslateToLesson("phrases")},"+ Dodaj zdanie do Zwrotów"));
+      if(r.words && r.words.length>0){
+        actRow.appendChild(h("button",{class:"sbtn",style:"border-color:var(--gold);color:var(--gold)",onclick:()=>addTranslateToLesson("vocab")},"+ Dodaj słówka do Słówek ("+r.words.length+")"));
+      }
+      resWrap.appendChild(actRow);
+    }
+
+    if(r.words && r.words.length>0){
+      resWrap.appendChild(h("hr",{style:"margin:18px 0;border:none;border-top:1px solid var(--border)"}));
+      resWrap.appendChild(h("div",{class:"sec-label",style:"margin-bottom:10px"},"Kluczowe słówka z tłumaczenia ("+r.words.length+")"));
+      r.words.forEach(word=>{
+        const wRow = h("div",{style:"display:grid;grid-template-columns:28px 1fr 1fr;gap:8px;padding:6px 0;border-bottom:1px solid var(--border);align-items:start"});
+        const wSpk = h("button",{class:"sbtn",style:"width:24px;height:24px;border-radius:50%;padding:0;font-size:10px",onclick:()=>speak(word.w,lang,"")},"♪");
+        wRow.appendChild(wSpk);
+        const wLeft = h("div",{});
+        wLeft.appendChild(h("div",{style:"font-size:13px;color:var(--text);font-weight:500"},word.w));
+        if(word.ipa) wLeft.appendChild(h("div",{style:"font-family:monospace;font-size:10px;color:var(--text3)"},word.ipa));
+        wRow.appendChild(wLeft);
+        wRow.appendChild(h("div",{style:"font-size:13px;color:var(--gold)"},word.tr));
+        resWrap.appendChild(wRow);
+      });
+    }
+    main.appendChild(resWrap);
+  }
+
+  w.appendChild(main);
+  return w;
+}
+
 // ── B6: MOJE SŁÓWKA (rendering) ────────────────────────────────────────────
 function renderMyWords(){
   const{lang}=S;
@@ -5615,6 +5846,7 @@ function render(){
   else if(screen==="audiomgr")root.appendChild(renderAudioMgr());
   else if(screen==="filmoteka")root.appendChild(renderFilmoteka());
   else if(screen==="mywords")root.appendChild(renderMyWords());
+  else if(screen==="translate")root.appendChild(renderTranslate());
 }
 
 window.speechSynthesis.onvoiceschanged=()=>{};
