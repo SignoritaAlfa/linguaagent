@@ -5815,23 +5815,21 @@ function renderFilmoteka(){
     // Show existing lessons for this clip — quick jump to lesson view
     const sTitle = (series && series.title) || "";
     const cTitle = (clip && clip.title) || "";
-    const cTitleLow = cTitle.toLowerCase();
+    const normalize = (s)=>(s||"").toLowerCase().replace(/[^a-z0-9ąćęłńóśźż\s]/g,"").replace(/\s+/g," ").trim();
+    const cTitleN = normalize(cTitle);
+    const sTitleN = normalize(sTitle);
     const existingForClip = (S.myLessons[lang]||[]).map((les,idx)=>({lesson:les, idx})).filter(({lesson})=>{
-      // 1. Direct clipId match (lessons created after PR #29 have this)
       if(lesson.clipId && lesson.clipId === filmClipId) return true;
-      // 2. YouTube video ID match (when URL was saved)
       if(filmYtId && lesson.youtubeId === filmYtId) return true;
-      // 3. Series + clip title heuristic (caught most older film lessons)
-      if(sTitle && cTitle.length>2){
-        const t = (lesson.title||"").toLowerCase();
-        if(lesson.seriesTitle === sTitle && t.includes(cTitleLow)) return true;
-        // 4. Loose: title contains both series and clip name
-        if(t.includes(sTitle.toLowerCase()) && t.includes(cTitleLow)) return true;
+      const tN = normalize(lesson.title);
+      if(sTitle && cTitleN.length>2){
+        if(lesson.seriesTitle === sTitle && tN.includes(cTitleN)) return true;
+        if(tN.includes(sTitleN) && tN.includes(cTitleN)) return true;
       }
-      // 5. Last resort: just clip title substring (only for longer titles to avoid false matches)
-      if(cTitle.length>5 && lesson.title && lesson.title.toLowerCase().includes(cTitleLow)) return true;
+      if(cTitleN.length>4 && tN.includes(cTitleN)) return true;
       return false;
     });
+    const linkedIds = new Set(existingForClip.map(({lesson})=>lesson.id));
     if(existingForClip.length > 0 && !filmTranscriptLesson){
       main.appendChild(h("div",{class:"sec-label",style:"margin-top:24px;color:var(--gold)"},"📚 Twoje lekcje z tego klipu ("+existingForClip.length+")"));
       existingForClip.forEach(({lesson:les, idx})=>{
@@ -5849,7 +5847,36 @@ function renderFilmoteka(){
         row.appendChild(h("div",{style:"font-size:13px;color:var(--gold);flex-shrink:0;margin-left:12px"},"→ Otwórz"));
         main.appendChild(row);
       });
-      main.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin:6px 0 18px;font-style:italic"},"Możesz otworzyć istniejącą lekcję powyżej albo utworzyć nową poniżej (z nowej transkrypcji)."));
+    }
+    // Manual link UI: assign any unlinked lesson to this clip
+    if(!filmTranscriptLesson && (S.myLessons[lang]||[]).length>0){
+      const det = h("details",{style:"margin:14px 0 18px;border:1px dashed var(--border);border-radius:6px;padding:10px 14px;background:var(--surface)"});
+      det.appendChild(h("summary",{style:"cursor:pointer;font-size:12px;color:var(--text2);user-select:none"}, existingForClip.length>0 ? "🔗 Przypisz dodatkową lekcję do tego klipu" : "🔗 Masz już lekcję dla tego klipu? Przypisz ją tutaj"));
+      const body = h("div",{style:"margin-top:12px"});
+      body.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-bottom:10px;line-height:1.6"},"Wybierz lekcję która dotyczy tego klipu — pojawi się w panelu powyżej i będzie dostępna jednym kliknięciem przy każdym wejściu w klip."));
+      const sel = h("select",{style:"width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:4px;background:var(--surface);font-family:inherit;font-size:12px;color:var(--text);margin-bottom:10px;cursor:pointer"});
+      sel.appendChild(h("option",{value:""},"— wybierz lekcję —"));
+      (S.myLessons[lang]||[]).forEach(les=>{
+        if(linkedIds.has(les.id)) return;
+        const opt = h("option",{value:les.id}, (les.title||"Bez tytułu")+" — "+(les.dialog||[]).length+" kwestii");
+        sel.appendChild(opt);
+      });
+      body.appendChild(sel);
+      body.appendChild(h("button",{class:"sbtn",style:"border-color:var(--gold);color:var(--gold)",onclick:()=>{
+        const lid = sel.value;
+        if(!lid){ alert("Wybierz lekcję z listy"); return; }
+        const ml = Object.assign({},S.myLessons);
+        const arr = (ml[lang]||[]).slice();
+        const i = arr.findIndex(l=>l.id===lid);
+        if(i<0) return;
+        arr[i] = Object.assign({}, arr[i], {clipId: filmClipId, clipTitle: cTitle, seriesTitle: arr[i].seriesTitle || sTitle});
+        ml[lang] = arr;
+        S.myLessons = ml;
+        localStorage.setItem("lingua_my_lessons", JSON.stringify(ml));
+        scheduleDriveSync();
+        render();
+      }},"Przypisz do tego klipu"));
+      main.appendChild(det);
     }
 
     // Edit-before-create panel (shown when there's a draft transcript)
