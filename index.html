@@ -2427,7 +2427,19 @@ function renderLesson(){
       if(li>=0){ml[S.lang][li].vocab=lesson.vocab;set({myLessons:ml});localStorage.setItem("lingua_my_lessons",JSON.stringify(ml));scheduleDriveSync();}
     } : null;
     const onEditVocab = isOwn ? (vIdx)=>openEditEntryForm(lesson,"vocab",lang,vIdx) : null;
-    vw.appendChild(renderVocabList(v, lang, onDel, "vocab", onEditVocab));
+    const onMoveVocab = isOwn ? (vIdx)=>{
+      const item = lesson.vocab[vIdx];
+      if(!item) return;
+      if(!confirm("Przenieść \""+item.w+"\" ze Słówek do Zwrotów?")) return;
+      if(!lesson.phrases) lesson.phrases=[];
+      if(lesson.phrases.some(p=>p.w===item.w)){ alert("\""+item.w+"\" już jest w Zwrotach"); return; }
+      lesson.phrases.push(item);
+      lesson.vocab.splice(vIdx,1);
+      const ml=Object.assign({},S.myLessons);
+      const li=(ml[S.lang]||[]).findIndex(l=>l.id===lesson.id);
+      if(li>=0){ml[S.lang][li].vocab=lesson.vocab;ml[S.lang][li].phrases=lesson.phrases;localStorage.setItem("lingua_my_lessons",JSON.stringify(ml));scheduleDriveSync();set({myLessons:ml});}
+    } : null;
+    vw.appendChild(renderVocabList(v, lang, onDel, "vocab", onEditVocab, onMoveVocab));
     main.appendChild(vw);
   }
 
@@ -2465,7 +2477,19 @@ function renderLesson(){
         if(li>=0){ml[S.lang][li].phrases=lesson.phrases;set({myLessons:ml});localStorage.setItem("lingua_my_lessons",JSON.stringify(ml));scheduleDriveSync();}
       } : null;
       const onEditPhrases = isOwn ? (pIdx)=>openEditEntryForm(lesson,"phrases",lang,pIdx) : null;
-      pw.appendChild(renderVocabList(phrases, lang, onDel, "phrases", onEditPhrases));
+      const onMovePhrases = isOwn ? (pIdx)=>{
+        const item = lesson.phrases[pIdx];
+        if(!item) return;
+        if(!confirm("Przenieść \""+item.w+"\" ze Zwrotów do Słówek?")) return;
+        if(!lesson.vocab) lesson.vocab=[];
+        if(lesson.vocab.some(v=>v.w===item.w)){ alert("\""+item.w+"\" już jest w Słówkach"); return; }
+        lesson.vocab.push(item);
+        lesson.phrases.splice(pIdx,1);
+        const ml=Object.assign({},S.myLessons);
+        const li=(ml[S.lang]||[]).findIndex(l=>l.id===lesson.id);
+        if(li>=0){ml[S.lang][li].vocab=lesson.vocab;ml[S.lang][li].phrases=lesson.phrases;localStorage.setItem("lingua_my_lessons",JSON.stringify(ml));scheduleDriveSync();set({myLessons:ml});}
+      } : null;
+      pw.appendChild(renderVocabList(phrases, lang, onDel, "phrases", onEditPhrases, onMovePhrases));
     }
     main.appendChild(pw);
   }
@@ -3482,7 +3506,7 @@ function markWord(key, status, wordClean, lang){
   document.getElementById("word-popup")?.remove();
 }
 
-function renderVocabList(vocab, lang, onDelete, listType, onEdit){
+function renderVocabList(vocab, lang, onDelete, listType, onEdit, onMove){
   const wrap = document.createElement("div");
   wrap.className = "vocab-list-wrap";
 
@@ -3501,10 +3525,9 @@ function renderVocabList(vocab, lang, onDelete, listType, onEdit){
     const row = document.createElement("div");
     row.className = "vocab-list-row";
     if(listType) row.id = "vocab-row-"+listType+"-"+i;
-    const numActions = (onEdit ? 1 : 0) + (onDelete ? 1 : 0);
+    const numActions = (onMove?1:0) + (onEdit?1:0) + (onDelete?1:0);
     if(numActions > 0){
-      const actCols = numActions===2 ? "auto auto" : "auto";
-      row.style.gridTemplateColumns = "40px 1fr 1fr "+actCols;
+      row.style.gridTemplateColumns = "40px 1fr 1fr " + new Array(numActions).fill("auto").join(" ");
     }
     if(listType && S.vocabPlaying && S.vocabPlayingList===listType && S.vocabPlayingIdx===i){
       row.style.background = "var(--gold-dim)";
@@ -3570,6 +3593,17 @@ function renderVocabList(vocab, lang, onDelete, listType, onEdit){
     });
     row.appendChild(right);
 
+    if(onMove){
+      const moveBtn = document.createElement("button");
+      const isPhraseList = listType==="phrases";
+      moveBtn.textContent = isPhraseList ? "→ Sł" : "→ Zw";
+      moveBtn.title = isPhraseList ? "Przenieś do Słówek" : "Przenieś do Zwrotów";
+      moveBtn.style.cssText = "background:none;border:1px solid var(--border);color:var(--text3);border-radius:4px;height:28px;padding:0 8px;cursor:pointer;font-size:11px;line-height:1;align-self:start;white-space:nowrap;font-family:inherit";
+      moveBtn.onmouseover = ()=>{ moveBtn.style.borderColor="var(--gold)"; moveBtn.style.color="var(--gold)"; };
+      moveBtn.onmouseout = ()=>{ moveBtn.style.borderColor="var(--border)"; moveBtn.style.color="var(--text3)"; };
+      moveBtn.onclick = (e)=>{ e.stopPropagation(); onMove(i); };
+      row.appendChild(moveBtn);
+    }
     if(onEdit){
       const editBtn = document.createElement("button");
       editBtn.textContent = "✏";
@@ -4106,7 +4140,19 @@ function renderLesson(){
       if(li>=0){ml[S.lang][li].vocab=lesson.vocab;set({myLessons:ml});localStorage.setItem("lingua_my_lessons",JSON.stringify(ml));scheduleDriveSync();}
     } : null;
     const onEditVocab = isOwn ? (vIdx)=>openEditEntryForm(lesson,"vocab",lang,vIdx) : null;
-    vw.appendChild(renderVocabList(v, lang, onDel, "vocab", onEditVocab));
+    const onMoveVocab = isOwn ? (vIdx)=>{
+      const item = lesson.vocab[vIdx];
+      if(!item) return;
+      if(!confirm("Przenieść \""+item.w+"\" ze Słówek do Zwrotów?")) return;
+      if(!lesson.phrases) lesson.phrases=[];
+      if(lesson.phrases.some(p=>p.w===item.w)){ alert("\""+item.w+"\" już jest w Zwrotach"); return; }
+      lesson.phrases.push(item);
+      lesson.vocab.splice(vIdx,1);
+      const ml=Object.assign({},S.myLessons);
+      const li=(ml[S.lang]||[]).findIndex(l=>l.id===lesson.id);
+      if(li>=0){ml[S.lang][li].vocab=lesson.vocab;ml[S.lang][li].phrases=lesson.phrases;localStorage.setItem("lingua_my_lessons",JSON.stringify(ml));scheduleDriveSync();set({myLessons:ml});}
+    } : null;
+    vw.appendChild(renderVocabList(v, lang, onDel, "vocab", onEditVocab, onMoveVocab));
     main.appendChild(vw);
   }
 
@@ -4144,7 +4190,19 @@ function renderLesson(){
         if(li>=0){ml[S.lang][li].phrases=lesson.phrases;set({myLessons:ml});localStorage.setItem("lingua_my_lessons",JSON.stringify(ml));scheduleDriveSync();}
       } : null;
       const onEditPhrases = isOwn ? (pIdx)=>openEditEntryForm(lesson,"phrases",lang,pIdx) : null;
-      pw.appendChild(renderVocabList(phrases, lang, onDel, "phrases", onEditPhrases));
+      const onMovePhrases = isOwn ? (pIdx)=>{
+        const item = lesson.phrases[pIdx];
+        if(!item) return;
+        if(!confirm("Przenieść \""+item.w+"\" ze Zwrotów do Słówek?")) return;
+        if(!lesson.vocab) lesson.vocab=[];
+        if(lesson.vocab.some(v=>v.w===item.w)){ alert("\""+item.w+"\" już jest w Słówkach"); return; }
+        lesson.vocab.push(item);
+        lesson.phrases.splice(pIdx,1);
+        const ml=Object.assign({},S.myLessons);
+        const li=(ml[S.lang]||[]).findIndex(l=>l.id===lesson.id);
+        if(li>=0){ml[S.lang][li].vocab=lesson.vocab;ml[S.lang][li].phrases=lesson.phrases;localStorage.setItem("lingua_my_lessons",JSON.stringify(ml));scheduleDriveSync();set({myLessons:ml});}
+      } : null;
+      pw.appendChild(renderVocabList(phrases, lang, onDel, "phrases", onEditPhrases, onMovePhrases));
     }
     main.appendChild(pw);
   }
