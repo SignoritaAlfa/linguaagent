@@ -1120,20 +1120,22 @@ let S={
   foldersCollapsed:(()=>{try{return JSON.parse(localStorage.getItem("lingua_folders_collapsed")||"{}")}catch{return {}}})(),
   // Google Drive sync
   driveClientId:(()=>{
-    // Allow setup via URL parameter (?driveClientId=...) for easy mobile setup
+    // Allow setup via URL parameter (?driveClientId=...&driveLoginHint=...) for easy mobile setup
     try{
       const params = new URLSearchParams(window.location.search);
       const cid = params.get("driveClientId");
-      if(cid && /\.apps\.googleusercontent\.com$/.test(cid)){
+      const ok = cid && /\.apps\.googleusercontent\.com$/.test(cid);
+      if(ok){
         localStorage.setItem("lingua_drive_client_id", cid);
-        // Clean URL so the param doesn't linger
-        if(window.history.replaceState){
-          params.delete("driveClientId");
-          const newUrl = window.location.pathname + (params.toString() ? "?"+params.toString() : "") + window.location.hash;
-          window.history.replaceState({}, "", newUrl);
-        }
-        return cid;
       }
+      // Strip both Drive setup params from URL (loginHint handled separately in its IIFE)
+      if(window.history.replaceState && (params.get("driveClientId") || params.get("driveLoginHint"))){
+        params.delete("driveClientId");
+        params.delete("driveLoginHint");
+        const newUrl = window.location.pathname + (params.toString() ? "?"+params.toString() : "") + window.location.hash;
+        window.history.replaceState({}, "", newUrl);
+      }
+      if(ok) return cid;
     }catch(e){}
     return localStorage.getItem("lingua_drive_client_id")||"";
   })(),
@@ -1145,6 +1147,17 @@ let S={
   driveError:"",
   driveAutoSync:localStorage.getItem("lingua_drive_auto_sync")!=="0",
   driveUserEmail:localStorage.getItem("lingua_drive_user_email")||"",
+  driveLoginHint:(()=>{
+    try{
+      const params = new URLSearchParams(window.location.search);
+      const lh = params.get("driveLoginHint");
+      if(lh && /@/.test(lh)){
+        localStorage.setItem("lingua_drive_login_hint", lh);
+        return lh;
+      }
+    }catch(e){}
+    return localStorage.getItem("lingua_drive_login_hint")||"";
+  })(),
   localLastModified:parseInt(localStorage.getItem("lingua_local_last_modified")||"0",10),
   myFilms:(()=>{try{return JSON.parse(localStorage.getItem("lingua_my_films")||"{}")}catch{return {}}})(),
   filmClipUrls:(()=>{try{return JSON.parse(localStorage.getItem("lingua_film_clip_urls")||"{}")}catch{return {}}})(),
@@ -1388,7 +1401,9 @@ function connectDrive(){
     S.driveStatus="error"; render(); return;
   }
   S.driveStatus="connecting"; S.driveError=""; render();
-  tc.requestAccessToken({prompt: "select_account"});
+  const opts = {prompt: "select_account"};
+  if(S.driveLoginHint && /@/.test(S.driveLoginHint)) opts.hint = S.driveLoginHint.trim();
+  tc.requestAccessToken(opts);
 }
 
 function disconnectDrive(){
@@ -3851,6 +3866,25 @@ function renderSettings(){
   }},"Usuń Client ID"));
   sw.appendChild(ciRow);
 
+  // Login hint — suggested Google email to pre-select in OAuth popup
+  sw.appendChild(h("div",{class:"sec-label",style:"margin-top:14px"},"Sugerowany email Google (opcjonalnie)"));
+  sw.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-bottom:8px;line-height:1.6"},"Wpisz email konta na którym jest skonfigurowany Drive. Google pre-zaznaczy to konto w popup'ie zamiast zgadywać — pomocne gdy w przeglądarce jesteś zalogowana na kilka kont."));
+  const lhInp = h("input",{type:"text",class:"key-inp",placeholder:"np. aleksandrabarwasna4@gmail.com",value:S.driveLoginHint||"",oninput:(e)=>{S.driveLoginHint=e.target.value;}});
+  sw.appendChild(lhInp);
+  const lhRow = h("div",{class:"row"});
+  lhRow.appendChild(h("button",{class:"primary",onclick:()=>{
+    const v=(lhInp.value||"").trim();
+    localStorage.setItem("lingua_drive_login_hint",v);
+    S.driveLoginHint=v;
+    render();
+  }},"Zapisz email"));
+  if(S.driveLoginHint) lhRow.appendChild(h("button",{class:"sbtn danger",onclick:()=>{
+    localStorage.removeItem("lingua_drive_login_hint");
+    S.driveLoginHint="";
+    render();
+  }},"Usuń"));
+  sw.appendChild(lhRow);
+
   if(S.driveClientId){
     sw.appendChild(h("div",{style:"margin-top:18px;display:flex;gap:10px;flex-wrap:wrap"},
       dStatus==="connected" || dStatus==="syncing"
@@ -3875,7 +3909,7 @@ function renderSettings(){
     const mobileWrap = h("div",{style:"margin-top:18px;padding:14px;border:1px dashed var(--border);border-radius:6px;background:var(--surface)"});
     mobileWrap.appendChild(h("div",{style:"font-size:12px;color:var(--text2);font-weight:500;margin-bottom:6px"},"📱 Skonfiguruj na telefonie / drugiej przeglądarce"));
     mobileWrap.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-bottom:10px;line-height:1.6"},"Każde urządzenie ma osobny localStorage, więc Client ID nie synchronizuje się przez Drive. Skopiuj poniższy link i otwórz na telefonie — Client ID zapisze się automatycznie, wystarczy kliknąć Połącz."));
-    const magicUrl = "https://signoritaalfa.github.io/linguaagent/?driveClientId=" + encodeURIComponent(S.driveClientId);
+    const magicUrl = "https://signoritaalfa.github.io/linguaagent/?driveClientId=" + encodeURIComponent(S.driveClientId) + (S.driveLoginHint ? "&driveLoginHint="+encodeURIComponent(S.driveLoginHint) : "");
     const linkInp = h("input",{type:"text",class:"key-inp",style:"font-family:monospace;font-size:11px",value:magicUrl,readonly:"true"});
     linkInp.onclick = ()=>{ linkInp.select(); };
     mobileWrap.appendChild(linkInp);
@@ -5709,6 +5743,25 @@ function renderSettings(){
   }},"Usuń Client ID"));
   sw.appendChild(ciRow);
 
+  // Login hint — suggested Google email to pre-select in OAuth popup
+  sw.appendChild(h("div",{class:"sec-label",style:"margin-top:14px"},"Sugerowany email Google (opcjonalnie)"));
+  sw.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-bottom:8px;line-height:1.6"},"Wpisz email konta na którym jest skonfigurowany Drive. Google pre-zaznaczy to konto w popup'ie zamiast zgadywać — pomocne gdy w przeglądarce jesteś zalogowana na kilka kont."));
+  const lhInp = h("input",{type:"text",class:"key-inp",placeholder:"np. aleksandrabarwasna4@gmail.com",value:S.driveLoginHint||"",oninput:(e)=>{S.driveLoginHint=e.target.value;}});
+  sw.appendChild(lhInp);
+  const lhRow = h("div",{class:"row"});
+  lhRow.appendChild(h("button",{class:"primary",onclick:()=>{
+    const v=(lhInp.value||"").trim();
+    localStorage.setItem("lingua_drive_login_hint",v);
+    S.driveLoginHint=v;
+    render();
+  }},"Zapisz email"));
+  if(S.driveLoginHint) lhRow.appendChild(h("button",{class:"sbtn danger",onclick:()=>{
+    localStorage.removeItem("lingua_drive_login_hint");
+    S.driveLoginHint="";
+    render();
+  }},"Usuń"));
+  sw.appendChild(lhRow);
+
   if(S.driveClientId){
     sw.appendChild(h("div",{style:"margin-top:18px;display:flex;gap:10px;flex-wrap:wrap"},
       dStatus==="connected" || dStatus==="syncing"
@@ -5733,7 +5786,7 @@ function renderSettings(){
     const mobileWrap = h("div",{style:"margin-top:18px;padding:14px;border:1px dashed var(--border);border-radius:6px;background:var(--surface)"});
     mobileWrap.appendChild(h("div",{style:"font-size:12px;color:var(--text2);font-weight:500;margin-bottom:6px"},"📱 Skonfiguruj na telefonie / drugiej przeglądarce"));
     mobileWrap.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-bottom:10px;line-height:1.6"},"Każde urządzenie ma osobny localStorage, więc Client ID nie synchronizuje się przez Drive. Skopiuj poniższy link i otwórz na telefonie — Client ID zapisze się automatycznie, wystarczy kliknąć Połącz."));
-    const magicUrl = "https://signoritaalfa.github.io/linguaagent/?driveClientId=" + encodeURIComponent(S.driveClientId);
+    const magicUrl = "https://signoritaalfa.github.io/linguaagent/?driveClientId=" + encodeURIComponent(S.driveClientId) + (S.driveLoginHint ? "&driveLoginHint="+encodeURIComponent(S.driveLoginHint) : "");
     const linkInp = h("input",{type:"text",class:"key-inp",style:"font-family:monospace;font-size:11px",value:magicUrl,readonly:"true"});
     linkInp.onclick = ()=>{ linkInp.select(); };
     mobileWrap.appendChild(linkInp);
