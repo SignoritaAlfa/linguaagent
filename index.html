@@ -6101,7 +6101,36 @@ function renderFilmoteka(){
         const dialogHasTime = les.dialog && les.dialog[0] && typeof les.dialog[0].start === "number";
         left.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-top:2px"},(les.level||"")+" · "+(les.dialog||[]).length+" kwestii · "+(les.vocab||[]).length+" słówek · "+(les.phrases||[]).length+" zwrotów"+(dialogHasTime?" · 🎬 karaoke":"")));
         row.appendChild(left);
-        row.appendChild(h("div",{style:"font-size:13px;color:var(--gold);flex-shrink:0;margin-left:12px"},"→ Otwórz"));
+        const actions = h("div",{style:"display:flex;align-items:center;gap:10px;flex-shrink:0;margin-left:12px"});
+        const renameBtn = h("button",{class:"sbtn",style:"font-size:11px;padding:4px 8px",title:"Zmień nazwę lekcji"},"✏");
+        renameBtn.onclick = (e)=>{ e.stopPropagation(); renameLesson(lang, idx); };
+        actions.appendChild(renameBtn);
+        const unlinkBtn = h("button",{class:"sbtn",style:"font-size:11px;padding:4px 8px",title:"Odepnij lekcję od tego klipu (nie usuwa lekcji)"},"⊘");
+        unlinkBtn.onclick = (e)=>{
+          e.stopPropagation();
+          if(!confirm("Odepnij \""+(les.title||"lekcję")+"\" od tego klipu? Lekcja zostaje, tylko nie będzie tu wyświetlana.")) return;
+          const ml=Object.assign({},S.myLessons);
+          const li=(ml[lang]||[]).findIndex(l=>l.id===les.id);
+          if(li<0) return;
+          const upd = Object.assign({}, ml[lang][li]);
+          delete upd.clipId;
+          delete upd.youtubeId; // also remove video link reference so it stops matching tier 2
+          ml[lang][li] = upd;
+          S.myLessons = ml;
+          localStorage.setItem("lingua_my_lessons",JSON.stringify(ml));
+          scheduleDriveSync();
+          render();
+        };
+        actions.appendChild(unlinkBtn);
+        const delBtn = h("button",{class:"sbtn",style:"font-size:11px;padding:4px 8px;border-color:var(--red);color:var(--red)",title:"Usuń tę lekcję całkowicie"},"✕");
+        delBtn.onclick = (e)=>{
+          e.stopPropagation();
+          if(!confirm("USUNĄĆ całą lekcję \""+(les.title||"")+"\"? Tego nie można cofnąć.")) return;
+          deleteMyLesson(lang, idx);
+        };
+        actions.appendChild(delBtn);
+        actions.appendChild(h("div",{style:"font-size:13px;color:var(--gold)"},"→ Otwórz"));
+        row.appendChild(actions);
         main.appendChild(row);
       });
     }
