@@ -2633,7 +2633,7 @@ function renderLesson(){
               lesson[arr].push({w:item.w,tr:item.tr,ipa:item.ipa||"" ,pl:item.pl||"" ,ex:item.ex||"" ,exT:item.exT||""});
               const ml=Object.assign({},S.myLessons);
               const li=(ml[S.lang]||[]).findIndex(l=>l.id===lesson.id);
-              if(li>=0){ml[S.lang][li][arr]=lesson[arr];set({myLessons:ml});localStorage.setItem("lingua_my_lessons",JSON.stringify(ml));scheduleDriveSync();}
+              if(li>=0){ml[S.lang][li][arr]=lesson[arr];S.myLessons=ml;localStorage.setItem("lingua_my_lessons",JSON.stringify(ml));scheduleDriveSync();}
               addBtn.textContent="✓";addBtn.style.color="var(--ok-text)";addBtn.disabled=true;
             };
             row.appendChild(left);row.appendChild(right);row.appendChild(addBtn);
@@ -2655,7 +2655,7 @@ function renderLesson(){
             });
             const ml=Object.assign({},S.myLessons);
             const li=(ml[S.lang]||[]).findIndex(l=>l.id===lesson.id);
-            if(li>=0){ml[S.lang][li][arr]=lesson[arr];set({myLessons:ml});localStorage.setItem("lingua_my_lessons",JSON.stringify(ml));scheduleDriveSync();}
+            if(li>=0){ml[S.lang][li][arr]=lesson[arr];S.myLessons=ml;localStorage.setItem("lingua_my_lessons",JSON.stringify(ml));scheduleDriveSync();}
             addAllBtn.textContent = "✓ Dodano "+added+" nowych do "+(arr==="phrases"?"zwrotów":"fiszek");
             addAllBtn.style.color="var(--ok-text)";addAllBtn.style.borderColor="var(--ok-text)";
             addAllBtn.disabled=true;
@@ -4055,7 +4055,7 @@ function renderLesson(){
               lesson[arr].push({w:item.w,tr:item.tr,ipa:item.ipa||"" ,pl:item.pl||"" ,ex:item.ex||"" ,exT:item.exT||""});
               const ml=Object.assign({},S.myLessons);
               const li=(ml[S.lang]||[]).findIndex(l=>l.id===lesson.id);
-              if(li>=0){ml[S.lang][li][arr]=lesson[arr];set({myLessons:ml});localStorage.setItem("lingua_my_lessons",JSON.stringify(ml));scheduleDriveSync();}
+              if(li>=0){ml[S.lang][li][arr]=lesson[arr];S.myLessons=ml;localStorage.setItem("lingua_my_lessons",JSON.stringify(ml));scheduleDriveSync();}
               addBtn.textContent="✓";addBtn.style.color="var(--ok-text)";addBtn.disabled=true;
             };
             row.appendChild(left);row.appendChild(right);row.appendChild(addBtn);
@@ -4077,7 +4077,7 @@ function renderLesson(){
             });
             const ml=Object.assign({},S.myLessons);
             const li=(ml[S.lang]||[]).findIndex(l=>l.id===lesson.id);
-            if(li>=0){ml[S.lang][li][arr]=lesson[arr];set({myLessons:ml});localStorage.setItem("lingua_my_lessons",JSON.stringify(ml));scheduleDriveSync();}
+            if(li>=0){ml[S.lang][li][arr]=lesson[arr];S.myLessons=ml;localStorage.setItem("lingua_my_lessons",JSON.stringify(ml));scheduleDriveSync();}
             addAllBtn.textContent = "✓ Dodano "+added+" nowych do "+(arr==="phrases"?"zwrotów":"fiszek");
             addAllBtn.style.color="var(--ok-text)";addAllBtn.style.borderColor="var(--ok-text)";
             addAllBtn.disabled=true;
