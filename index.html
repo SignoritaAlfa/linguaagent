@@ -5785,6 +5785,33 @@ function renderFilmoteka(){
     if(!rapidKey||!geminiKey) main.appendChild(h("div",{class:"msg-err",style:"margin-bottom:10px"},"⚠️ Wejdź w Ustawienia i wpisz klucze: "+((!rapidKey)?"RapidAPI ":"")+(!geminiKey?"Gemini API":"")));
     if(filmTranscriptError) main.appendChild(h("div",{class:"msg-err",style:"margin-bottom:10px;line-height:1.5"},filmTranscriptError));
 
+    // Show existing lessons for this clip — quick jump to lesson view
+    const existingForClip = (S.myLessons[lang]||[]).map((les,idx)=>({lesson:les, idx})).filter(({lesson})=>{
+      if(filmYtId && lesson.youtubeId === filmYtId) return true;
+      // Fallback: match by clip title (in case URL changed)
+      if(clip && lesson.title && lesson.title.toLowerCase().includes((clip.title||"").toLowerCase()) && (clip.title||"").length>3) return true;
+      return false;
+    });
+    if(existingForClip.length > 0 && !filmTranscriptLesson){
+      main.appendChild(h("div",{class:"sec-label",style:"margin-top:24px;color:var(--gold)"},"📚 Twoje lekcje z tego klipu ("+existingForClip.length+")"));
+      existingForClip.forEach(({lesson:les, idx})=>{
+        const row = h("div",{
+          style:"display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border:1px solid var(--gold);border-radius:6px;margin-bottom:8px;background:var(--surface);cursor:pointer;transition:all .15s",
+          onclick:()=>set({screen:"lesson",lesson:les,mode:"dialog",lessonTab:"dialog",playing:false,playingLine:-1})
+        });
+        row.onmouseover = ()=>{ row.style.background="var(--gold-dim)"; };
+        row.onmouseout = ()=>{ row.style.background="var(--surface)"; };
+        const left = h("div",{style:"flex:1;min-width:0"});
+        left.appendChild(h("div",{style:"font-size:14px;font-weight:500;color:var(--text)"},les.title||"Bez tytułu"));
+        const dialogHasTime = les.dialog && les.dialog[0] && typeof les.dialog[0].start === "number";
+        left.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-top:2px"},(les.level||"")+" · "+(les.dialog||[]).length+" kwestii · "+(les.vocab||[]).length+" słówek · "+(les.phrases||[]).length+" zwrotów"+(dialogHasTime?" · 🎬 karaoke":"")));
+        row.appendChild(left);
+        row.appendChild(h("div",{style:"font-size:13px;color:var(--gold);flex-shrink:0;margin-left:12px"},"→ Otwórz"));
+        main.appendChild(row);
+      });
+      main.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin:6px 0 18px;font-style:italic"},"Możesz otworzyć istniejącą lekcję powyżej albo utworzyć nową poniżej (z nowej transkrypcji)."));
+    }
+
     // Edit-before-create panel (shown when there's a draft transcript)
     if(S.filmTranscriptDraft && !filmTranscriptLoading && !filmTranscriptProcessing && !filmTranscriptLesson){
       const draft = S.filmTranscriptDraft;
@@ -5844,7 +5871,7 @@ function renderFilmoteka(){
         _sl.source="video";
         _sl.seriesTitle=series?.title||"";
         if(series?.title&&_sl.title&&!_sl.title.startsWith(series.title)) _sl.title=series.title+" — "+_sl.title;
-        saveMyLesson(lang,_sl);set({filmClipId:null,filmYtInput:"",filmYtId:"",filmTranscriptError:"",filmTranscriptLesson:null,filmTranscriptText:"",filmManualPaste:"",screen:"lang"});
+        saveMyLesson(lang,_sl);set({filmClipId:null,filmYtInput:"",filmYtId:"",filmTranscriptError:"",filmTranscriptLesson:null,filmTranscriptText:"",filmManualPaste:"",filmTranscriptDraft:"",filmTranscriptDraftVideoId:null,screen:"lesson",lesson:_sl,mode:"dialog",lessonTab:"dialog",playing:false,playingLine:-1});
       }},"+ Dodaj do Moich Lekcji"));
       main.appendChild(h("button",{style:"background:none;border:none;color:var(--text3);cursor:pointer;font-size:12px;margin-left:16px",onclick:()=>set({filmTranscriptLesson:null,filmYtInput:"",filmYtId:"",filmTranscriptText:""})},"← Spróbuj inny klip"));
     }
