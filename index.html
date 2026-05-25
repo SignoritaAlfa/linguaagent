@@ -1537,10 +1537,14 @@ async function playVocabList(vocab, lang, listType){
     try{
       await speak(item.w, lang, "");
       if(flag.v) break;
-      if(item.ex){
+      const allEx = [];
+      if(item.ex) allEx.push(item.ex);
+      (item.extraExamples||[]).forEach(e=>{ if(e.ex) allEx.push(e.ex); });
+      for(const exText of allEx){
         await new Promise(r=>setTimeout(r,350));
         if(flag.v) break;
-        await speak(item.ex, lang, "");
+        await speak(exText, lang, "");
+        if(flag.v) break;
       }
     } catch(e){ console.log("[Lingua] vocab speak err:", e); }
     if(flag.v) break;
@@ -2422,7 +2426,8 @@ function renderLesson(){
       const li=(ml[S.lang]||[]).findIndex(l=>l.id===lesson.id);
       if(li>=0){ml[S.lang][li].vocab=lesson.vocab;set({myLessons:ml});localStorage.setItem("lingua_my_lessons",JSON.stringify(ml));scheduleDriveSync();}
     } : null;
-    vw.appendChild(renderVocabList(v, lang, onDel, "vocab"));
+    const onEditVocab = isOwn ? (vIdx)=>openEditEntryForm(lesson,"vocab",lang,vIdx) : null;
+    vw.appendChild(renderVocabList(v, lang, onDel, "vocab", onEditVocab));
     main.appendChild(vw);
   }
 
@@ -2459,7 +2464,8 @@ function renderLesson(){
         const li=(ml[S.lang]||[]).findIndex(l=>l.id===lesson.id);
         if(li>=0){ml[S.lang][li].phrases=lesson.phrases;set({myLessons:ml});localStorage.setItem("lingua_my_lessons",JSON.stringify(ml));scheduleDriveSync();}
       } : null;
-      pw.appendChild(renderVocabList(phrases, lang, onDel, "phrases"));
+      const onEditPhrases = isOwn ? (pIdx)=>openEditEntryForm(lesson,"phrases",lang,pIdx) : null;
+      pw.appendChild(renderVocabList(phrases, lang, onDel, "phrases", onEditPhrases));
     }
     main.appendChild(pw);
   }
@@ -3476,7 +3482,7 @@ function markWord(key, status, wordClean, lang){
   document.getElementById("word-popup")?.remove();
 }
 
-function renderVocabList(vocab, lang, onDelete, listType){
+function renderVocabList(vocab, lang, onDelete, listType, onEdit){
   const wrap = document.createElement("div");
   wrap.className = "vocab-list-wrap";
 
@@ -3495,7 +3501,11 @@ function renderVocabList(vocab, lang, onDelete, listType){
     const row = document.createElement("div");
     row.className = "vocab-list-row";
     if(listType) row.id = "vocab-row-"+listType+"-"+i;
-    if(onDelete) row.style.gridTemplateColumns = "40px 1fr 1fr auto";
+    const numActions = (onEdit ? 1 : 0) + (onDelete ? 1 : 0);
+    if(numActions > 0){
+      const actCols = numActions===2 ? "auto auto" : "auto";
+      row.style.gridTemplateColumns = "40px 1fr 1fr "+actCols;
+    }
     if(listType && S.vocabPlaying && S.vocabPlayingList===listType && S.vocabPlayingIdx===i){
       row.style.background = "var(--gold-dim)";
       row.style.borderLeft = "3px solid var(--gold)";
@@ -3523,8 +3533,12 @@ function renderVocabList(vocab, lang, onDelete, listType){
     const right = document.createElement("div");
     const trDiv = document.createElement("div"); trDiv.className="vocab-list-translation"; trDiv.textContent=isLangToPl?v.tr:v.w;
     right.appendChild(trDiv);
-    if(v.ex){
-      // Foreign-language example with ♪ button — goes with the foreign word
+    // All examples: primary + extras
+    const allExamples = [];
+    if(v.ex || v.exT) allExamples.push({ex:v.ex||"", exT:v.exT||""});
+    (v.extraExamples||[]).forEach(e=>allExamples.push({ex:e.ex||"", exT:e.exT||""}));
+    allExamples.forEach((exObj, exIdx)=>{
+      if(!exObj.ex && !exObj.exT) return;
       const foreignExBox=document.createElement("div");
       foreignExBox.style.cssText="display:flex;align-items:flex-start;gap:6px;margin-top:6px";
       const exSpk=document.createElement("button");
@@ -3533,31 +3547,39 @@ function renderVocabList(vocab, lang, onDelete, listType){
       exSpk.style.cssText="width:20px;height:20px;flex-shrink:0;padding:0;line-height:1;border-radius:50%;border:1px solid var(--border);background:var(--surface);color:var(--text3);cursor:pointer;font-size:10px";
       exSpk.onmouseover=()=>{exSpk.style.borderColor="var(--gold)";exSpk.style.color="var(--gold)";};
       exSpk.onmouseout=()=>{exSpk.style.borderColor="var(--border)";exSpk.style.color="var(--text3)";};
-      exSpk.onclick=(e)=>{e.stopPropagation();speak(v.ex,lang,"");};
+      exSpk.onclick=(e)=>{e.stopPropagation();speak(exObj.ex,lang,"");};
       const exTxt=document.createElement("div");
       exTxt.className="vocab-list-example";
       exTxt.style.flex="1";
-      exTxt.textContent=v.ex;
+      exTxt.textContent=exObj.ex;
       foreignExBox.appendChild(exSpk);
       foreignExBox.appendChild(exTxt);
-      // PL translation of example — goes with the PL translation
       let plExBox=null;
-      if(v.exT){
+      if(exObj.exT){
         plExBox=document.createElement("div");
         plExBox.style.cssText="font-size:12px;color:var(--text3);font-style:italic;margin-top:6px;line-height:1.5";
-        plExBox.textContent=v.exT;
+        plExBox.textContent=exObj.exT;
       }
       if(isLangToPl){
-        // foreign on left, PL on right
         left.appendChild(foreignExBox);
         if(plExBox) right.appendChild(plExBox);
       } else {
-        // PL on left, foreign on right
         if(plExBox) left.appendChild(plExBox);
         right.appendChild(foreignExBox);
       }
-    }
+    });
     row.appendChild(right);
+
+    if(onEdit){
+      const editBtn = document.createElement("button");
+      editBtn.textContent = "✏";
+      editBtn.title = "Edytuj pozycję";
+      editBtn.style.cssText = "background:none;border:1px solid var(--border);color:var(--text3);border-radius:4px;width:28px;height:28px;cursor:pointer;font-size:12px;line-height:1;padding:0;align-self:start";
+      editBtn.onmouseover = ()=>{ editBtn.style.borderColor="var(--gold)"; editBtn.style.color="var(--gold)"; };
+      editBtn.onmouseout = ()=>{ editBtn.style.borderColor="var(--border)"; editBtn.style.color="var(--text3)"; };
+      editBtn.onclick = (e)=>{ e.stopPropagation(); onEdit(i); };
+      row.appendChild(editBtn);
+    }
 
     if(onDelete){
       const delBtn = document.createElement("button");
@@ -3573,6 +3595,149 @@ function renderVocabList(vocab, lang, onDelete, listType){
     wrap.appendChild(row);
   });
   return wrap;
+}
+
+function openEditEntryForm(lesson, arrayKey, lang, idx){
+  document.querySelectorAll('.entry-edit-overlay').forEach(el=>el.remove());
+  const item = (lesson[arrayKey]||[])[idx];
+  if(!item) return;
+  const label = arrayKey==="phrases" ? "zwrot" : "słówko";
+  const langName = lang==="EN" ? "angielskim" : lang==="FR" ? "francuskim" : lang==="IT" ? "włoskim" : "obcym";
+
+  const overlay = document.createElement("div");
+  overlay.className = "entry-edit-overlay";
+  overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1000;display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;overflow-y:auto";
+
+  const modal = document.createElement("div");
+  modal.style.cssText = "background:var(--surface);border-radius:10px;padding:24px;max-width:640px;width:100%;box-shadow:0 20px 50px rgba(0,0,0,0.3);font-family:inherit";
+  overlay.appendChild(modal);
+
+  // Header
+  const head = document.createElement("div");
+  head.style.cssText = "display:flex;align-items:center;justify-content:space-between;margin-bottom:18px";
+  const title = document.createElement("div");
+  title.style.cssText = "font-size:16px;font-weight:500;color:var(--text)";
+  title.textContent = "Edytuj " + label;
+  head.appendChild(title);
+  const closeBtn = document.createElement("button");
+  closeBtn.style.cssText = "background:none;border:none;cursor:pointer;font-size:22px;color:var(--text3);line-height:1;padding:0 4px";
+  closeBtn.textContent = "✕";
+  closeBtn.onclick = ()=>overlay.remove();
+  head.appendChild(closeBtn);
+  modal.appendChild(head);
+
+  function mkInp(ph, val, marginBottom){
+    const inp = document.createElement("input");
+    inp.type = "text";
+    inp.placeholder = ph;
+    inp.className = "key-inp";
+    inp.style.marginBottom = marginBottom;
+    inp.value = val || "";
+    return inp;
+  }
+  const wInp  = mkInp(arrayKey==="phrases"?"Zwrot (obcojęzyczne)":"Słowo (obcojęzyczne)", item.w, "8px");
+  const trInp = mkInp("Tłumaczenie po polsku", item.tr, "8px");
+  const ipaInp = mkInp("Wymowa IPA (opcjonalnie)", item.ipa, "8px");
+  const plInp = mkInp("Jak czytać po polsku (opcjonalnie)", item.pl, "8px");
+  modal.appendChild(wInp);
+  modal.appendChild(trInp);
+  modal.appendChild(ipaInp);
+  modal.appendChild(plInp);
+
+  // Examples section
+  const exHead = document.createElement("div");
+  exHead.style.cssText = "font-size:11px;color:var(--text3);margin:14px 0 8px 0;letter-spacing:.06em;text-transform:uppercase";
+  exHead.textContent = "Przykłady użycia";
+  modal.appendChild(exHead);
+
+  const examples = [];
+  if(item.ex || item.exT) examples.push({ex:item.ex||"", exT:item.exT||""});
+  (item.extraExamples||[]).forEach(e=>examples.push({ex:e.ex||"", exT:e.exT||""}));
+  if(examples.length === 0) examples.push({ex:"", exT:""});
+
+  const exContainer = document.createElement("div");
+  function rebuildExamples(){
+    exContainer.innerHTML = "";
+    examples.forEach((exObj, exIdx)=>{
+      const exRow = document.createElement("div");
+      exRow.style.cssText = "display:grid;grid-template-columns:1fr 1fr 28px;gap:8px;margin-bottom:8px;align-items:start";
+      const exIn = document.createElement("input");
+      exIn.type = "text"; exIn.className = "key-inp"; exIn.placeholder = "Przykład w "+langName;
+      exIn.value = exObj.ex || "";
+      exIn.oninput = ()=>{ examples[exIdx].ex = exIn.value; };
+      const exTIn = document.createElement("input");
+      exTIn.type = "text"; exTIn.className = "key-inp"; exTIn.placeholder = "Tłumaczenie po polsku";
+      exTIn.value = exObj.exT || "";
+      exTIn.oninput = ()=>{ examples[exIdx].exT = exTIn.value; };
+      const rmBtn = document.createElement("button");
+      rmBtn.className = "sbtn";
+      rmBtn.style.cssText = "width:28px;padding:0;font-size:14px;border-color:var(--red);color:var(--red);align-self:start";
+      rmBtn.textContent = "✕";
+      rmBtn.title = "Usuń ten przykład";
+      rmBtn.onclick = ()=>{
+        examples.splice(exIdx, 1);
+        if(examples.length===0) examples.push({ex:"",exT:""});
+        rebuildExamples();
+      };
+      exRow.appendChild(exIn);
+      exRow.appendChild(exTIn);
+      exRow.appendChild(rmBtn);
+      exContainer.appendChild(exRow);
+    });
+  }
+  rebuildExamples();
+  modal.appendChild(exContainer);
+
+  const addExBtn = document.createElement("button");
+  addExBtn.className = "sbtn";
+  addExBtn.style.cssText = "font-size:11px;border-color:var(--gold);color:var(--gold);margin-bottom:18px";
+  addExBtn.textContent = "+ Dodaj kolejny przykład";
+  addExBtn.onclick = ()=>{ examples.push({ex:"",exT:""}); rebuildExamples(); };
+  modal.appendChild(addExBtn);
+
+  // Buttons
+  const btnRow = document.createElement("div");
+  btnRow.style.cssText = "display:flex;gap:10px;margin-top:8px";
+  const saveBtn = document.createElement("button");
+  saveBtn.className = "primary";
+  saveBtn.textContent = "💾 Zapisz zmiany";
+  saveBtn.onclick = ()=>{
+    const w = wInp.value.trim();
+    const tr = trInp.value.trim();
+    if(!w || !tr){ alert("Słowo/zwrot i tłumaczenie są wymagane"); return; }
+    const cleanExamples = examples.filter(e=>(e.ex||"").trim() || (e.exT||"").trim()).map(e=>({ex:(e.ex||"").trim(), exT:(e.exT||"").trim()}));
+    const newItem = { w, tr, ipa: ipaInp.value.trim(), pl: plInp.value.trim() };
+    if(cleanExamples.length > 0){
+      newItem.ex = cleanExamples[0].ex;
+      newItem.exT = cleanExamples[0].exT;
+      if(cleanExamples.length > 1) newItem.extraExamples = cleanExamples.slice(1);
+    } else {
+      newItem.ex = ""; newItem.exT = "";
+    }
+    lesson[arrayKey][idx] = newItem;
+    const ml = Object.assign({}, S.myLessons);
+    const li = (ml[S.lang]||[]).findIndex(l=>l.id===lesson.id);
+    if(li>=0){
+      ml[S.lang][li][arrayKey] = lesson[arrayKey];
+      localStorage.setItem("lingua_my_lessons", JSON.stringify(ml));
+      scheduleDriveSync();
+      set({myLessons: ml});
+    }
+    overlay.remove();
+  };
+  const cancelBtn = document.createElement("button");
+  cancelBtn.className = "sbtn";
+  cancelBtn.textContent = "Anuluj";
+  cancelBtn.onclick = ()=>overlay.remove();
+  btnRow.appendChild(saveBtn);
+  btnRow.appendChild(cancelBtn);
+  modal.appendChild(btnRow);
+
+  // Close on backdrop click (but not modal click)
+  overlay.onclick = (e)=>{ if(e.target===overlay) overlay.remove(); };
+
+  document.body.appendChild(overlay);
+  setTimeout(()=>wInp.focus(), 50);
 }
 
 function renderAddEntryForm(lesson, arrayKey, lang){
@@ -3940,7 +4105,8 @@ function renderLesson(){
       const li=(ml[S.lang]||[]).findIndex(l=>l.id===lesson.id);
       if(li>=0){ml[S.lang][li].vocab=lesson.vocab;set({myLessons:ml});localStorage.setItem("lingua_my_lessons",JSON.stringify(ml));scheduleDriveSync();}
     } : null;
-    vw.appendChild(renderVocabList(v, lang, onDel, "vocab"));
+    const onEditVocab = isOwn ? (vIdx)=>openEditEntryForm(lesson,"vocab",lang,vIdx) : null;
+    vw.appendChild(renderVocabList(v, lang, onDel, "vocab", onEditVocab));
     main.appendChild(vw);
   }
 
@@ -3977,7 +4143,8 @@ function renderLesson(){
         const li=(ml[S.lang]||[]).findIndex(l=>l.id===lesson.id);
         if(li>=0){ml[S.lang][li].phrases=lesson.phrases;set({myLessons:ml});localStorage.setItem("lingua_my_lessons",JSON.stringify(ml));scheduleDriveSync();}
       } : null;
-      pw.appendChild(renderVocabList(phrases, lang, onDel, "phrases"));
+      const onEditPhrases = isOwn ? (pIdx)=>openEditEntryForm(lesson,"phrases",lang,pIdx) : null;
+      pw.appendChild(renderVocabList(phrases, lang, onDel, "phrases", onEditPhrases));
     }
     main.appendChild(pw);
   }
