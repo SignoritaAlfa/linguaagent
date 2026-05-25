@@ -2570,20 +2570,61 @@ function renderLesson(){
   });
   main.appendChild(tabsEl);
 
-  // YouTube player link
-  if(lesson.youtubeId){
-    const ytWrap=h("div",{style:"max-width:680px;margin-bottom:24px"});
-    const ytLink=h("a",{href:"https://www.youtube.com/watch?v="+lesson.youtubeId,target:"_blank",
-      style:"display:flex;align-items:center;gap:14px;padding:16px 20px;border:1px solid var(--border);background:var(--surface);text-decoration:none;transition:all .2s;cursor:pointer"});
-    ytLink.onmouseover=()=>{ytLink.style.borderColor="var(--gold)";};
-    ytLink.onmouseout=()=>{ytLink.style.borderColor="var(--border)";};
-    ytLink.appendChild(h("div",{style:"font-size:32px"},"▶️"));
-    const ytInfo=h("div",{});
-    ytInfo.appendChild(h("div",{style:"font-size:14px;color:var(--text);font-weight:500"},"Słuchaj oryginalnych głosów aktorów"));
-    ytInfo.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-top:3px"},"Otwórz wideo na YouTube w nowej karcie"));
-    ytLink.appendChild(ytInfo);
-    ytWrap.appendChild(ytLink);
-    main.appendChild(ytWrap);
+  // YouTube player link + edit URL for own lessons
+  {
+    const isOwn = (S.myLessons[lang]||[]).some(l=>l.id===lesson.id);
+    const editVideoUrl = ()=>{
+      const cur = lesson.youtubeId ? "https://www.youtube.com/watch?v="+lesson.youtubeId : "";
+      const nv = prompt(lesson.youtubeId ? "Nowy link YouTube dla tej lekcji (musi pasować do dialogu):" : "Wklej link YouTube dla tej lekcji:", cur);
+      if(nv===null) return;
+      const trimmed = (nv||"").trim();
+      if(!trimmed){
+        if(lesson.youtubeId && confirm("Usunąć link YouTube z tej lekcji?")){
+          lesson.youtubeId = "";
+          const ml = Object.assign({},S.myLessons);
+          const li = (ml[lang]||[]).findIndex(l=>l.id===lesson.id);
+          if(li>=0){ delete ml[lang][li].youtubeId; S.myLessons = ml; localStorage.setItem("lingua_my_lessons",JSON.stringify(ml)); scheduleDriveSync(); }
+          render();
+        }
+        return;
+      }
+      const ytId = extractYtId(trimmed);
+      if(!ytId){ alert("To nie jest poprawny URL YouTube"); return; }
+      if(ytId === lesson.youtubeId) return;
+      lesson.youtubeId = ytId;
+      const ml = Object.assign({},S.myLessons);
+      const li = (ml[lang]||[]).findIndex(l=>l.id===lesson.id);
+      if(li>=0){ ml[lang][li].youtubeId = ytId; S.myLessons = ml; localStorage.setItem("lingua_my_lessons",JSON.stringify(ml)); scheduleDriveSync(); }
+      render();
+    };
+    if(lesson.youtubeId){
+      const ytWrap=h("div",{style:"max-width:680px;margin-bottom:24px"});
+      const ytLink=h("a",{href:"https://www.youtube.com/watch?v="+lesson.youtubeId,target:"_blank",
+        style:"display:flex;align-items:center;gap:14px;padding:16px 20px;border:1px solid var(--border);background:var(--surface);text-decoration:none;transition:all .2s;cursor:pointer"});
+      ytLink.onmouseover=()=>{ytLink.style.borderColor="var(--gold)";};
+      ytLink.onmouseout=()=>{ytLink.style.borderColor="var(--border)";};
+      ytLink.appendChild(h("div",{style:"font-size:32px"},"▶️"));
+      const ytInfo=h("div",{style:"flex:1"});
+      ytInfo.appendChild(h("div",{style:"font-size:14px;color:var(--text);font-weight:500"},"Słuchaj oryginalnych głosów aktorów"));
+      ytInfo.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-top:3px"},"Otwórz wideo na YouTube w nowej karcie · ID: "+lesson.youtubeId));
+      ytLink.appendChild(ytInfo);
+      ytWrap.appendChild(ytLink);
+      if(isOwn){
+        const editRow = h("div",{style:"margin-top:6px;text-align:right"});
+        const editBtn = h("button",{class:"sbtn",style:"font-size:11px;padding:4px 10px"},"🔗 Zmień link wideo");
+        editBtn.onclick = editVideoUrl;
+        editRow.appendChild(editBtn);
+        ytWrap.appendChild(editRow);
+      }
+      main.appendChild(ytWrap);
+    } else if(isOwn){
+      const ytWrap=h("div",{style:"max-width:680px;margin-bottom:24px;padding:12px 16px;border:1px dashed var(--border);border-radius:6px;background:var(--surface);display:flex;align-items:center;gap:12px;flex-wrap:wrap"});
+      ytWrap.appendChild(h("div",{style:"font-size:12px;color:var(--text3);flex:1"},"🔗 Ta lekcja nie ma linku YouTube. Dodaj go żeby otworzyć filmik bezpośrednio lub mieć karaoke z sync."));
+      const addBtn = h("button",{class:"sbtn",style:"font-size:11px;padding:6px 12px"},"+ Dodaj link YouTube");
+      addBtn.onclick = editVideoUrl;
+      ytWrap.appendChild(addBtn);
+      main.appendChild(ytWrap);
+    }
   }
 
   // Video player if lesson has video
@@ -4362,20 +4403,61 @@ function renderLesson(){
   });
   main.appendChild(tabsEl);
 
-  // YouTube player link
-  if(lesson.youtubeId){
-    const ytWrap=h("div",{style:"max-width:680px;margin-bottom:24px"});
-    const ytLink=h("a",{href:"https://www.youtube.com/watch?v="+lesson.youtubeId,target:"_blank",
-      style:"display:flex;align-items:center;gap:14px;padding:16px 20px;border:1px solid var(--border);background:var(--surface);text-decoration:none;transition:all .2s;cursor:pointer"});
-    ytLink.onmouseover=()=>{ytLink.style.borderColor="var(--gold)";};
-    ytLink.onmouseout=()=>{ytLink.style.borderColor="var(--border)";};
-    ytLink.appendChild(h("div",{style:"font-size:32px"},"▶️"));
-    const ytInfo=h("div",{});
-    ytInfo.appendChild(h("div",{style:"font-size:14px;color:var(--text);font-weight:500"},"Słuchaj oryginalnych głosów aktorów"));
-    ytInfo.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-top:3px"},"Otwórz wideo na YouTube w nowej karcie"));
-    ytLink.appendChild(ytInfo);
-    ytWrap.appendChild(ytLink);
-    main.appendChild(ytWrap);
+  // YouTube player link + edit URL for own lessons
+  {
+    const isOwn = (S.myLessons[lang]||[]).some(l=>l.id===lesson.id);
+    const editVideoUrl = ()=>{
+      const cur = lesson.youtubeId ? "https://www.youtube.com/watch?v="+lesson.youtubeId : "";
+      const nv = prompt(lesson.youtubeId ? "Nowy link YouTube dla tej lekcji (musi pasować do dialogu):" : "Wklej link YouTube dla tej lekcji:", cur);
+      if(nv===null) return;
+      const trimmed = (nv||"").trim();
+      if(!trimmed){
+        if(lesson.youtubeId && confirm("Usunąć link YouTube z tej lekcji?")){
+          lesson.youtubeId = "";
+          const ml = Object.assign({},S.myLessons);
+          const li = (ml[lang]||[]).findIndex(l=>l.id===lesson.id);
+          if(li>=0){ delete ml[lang][li].youtubeId; S.myLessons = ml; localStorage.setItem("lingua_my_lessons",JSON.stringify(ml)); scheduleDriveSync(); }
+          render();
+        }
+        return;
+      }
+      const ytId = extractYtId(trimmed);
+      if(!ytId){ alert("To nie jest poprawny URL YouTube"); return; }
+      if(ytId === lesson.youtubeId) return;
+      lesson.youtubeId = ytId;
+      const ml = Object.assign({},S.myLessons);
+      const li = (ml[lang]||[]).findIndex(l=>l.id===lesson.id);
+      if(li>=0){ ml[lang][li].youtubeId = ytId; S.myLessons = ml; localStorage.setItem("lingua_my_lessons",JSON.stringify(ml)); scheduleDriveSync(); }
+      render();
+    };
+    if(lesson.youtubeId){
+      const ytWrap=h("div",{style:"max-width:680px;margin-bottom:24px"});
+      const ytLink=h("a",{href:"https://www.youtube.com/watch?v="+lesson.youtubeId,target:"_blank",
+        style:"display:flex;align-items:center;gap:14px;padding:16px 20px;border:1px solid var(--border);background:var(--surface);text-decoration:none;transition:all .2s;cursor:pointer"});
+      ytLink.onmouseover=()=>{ytLink.style.borderColor="var(--gold)";};
+      ytLink.onmouseout=()=>{ytLink.style.borderColor="var(--border)";};
+      ytLink.appendChild(h("div",{style:"font-size:32px"},"▶️"));
+      const ytInfo=h("div",{style:"flex:1"});
+      ytInfo.appendChild(h("div",{style:"font-size:14px;color:var(--text);font-weight:500"},"Słuchaj oryginalnych głosów aktorów"));
+      ytInfo.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-top:3px"},"Otwórz wideo na YouTube w nowej karcie · ID: "+lesson.youtubeId));
+      ytLink.appendChild(ytInfo);
+      ytWrap.appendChild(ytLink);
+      if(isOwn){
+        const editRow = h("div",{style:"margin-top:6px;text-align:right"});
+        const editBtn = h("button",{class:"sbtn",style:"font-size:11px;padding:4px 10px"},"🔗 Zmień link wideo");
+        editBtn.onclick = editVideoUrl;
+        editRow.appendChild(editBtn);
+        ytWrap.appendChild(editRow);
+      }
+      main.appendChild(ytWrap);
+    } else if(isOwn){
+      const ytWrap=h("div",{style:"max-width:680px;margin-bottom:24px;padding:12px 16px;border:1px dashed var(--border);border-radius:6px;background:var(--surface);display:flex;align-items:center;gap:12px;flex-wrap:wrap"});
+      ytWrap.appendChild(h("div",{style:"font-size:12px;color:var(--text3);flex:1"},"🔗 Ta lekcja nie ma linku YouTube. Dodaj go żeby otworzyć filmik bezpośrednio lub mieć karaoke z sync."));
+      const addBtn = h("button",{class:"sbtn",style:"font-size:11px;padding:6px 12px"},"+ Dodaj link YouTube");
+      addBtn.onclick = editVideoUrl;
+      ytWrap.appendChild(addBtn);
+      main.appendChild(ytWrap);
+    }
   }
 
   // Video player if lesson has video
