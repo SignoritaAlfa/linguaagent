@@ -5773,10 +5773,39 @@ function renderFilmoteka(){
     w.appendChild(renderTopNav());
     const main=h("div",{class:"main"});
     main.appendChild(h("button",{class:"back-btn",onclick:()=>set({filmClipId:null,filmYtInput:"",filmYtId:"",filmTranscriptError:"",filmTranscriptLesson:null,filmTranscriptText:"",filmManualPaste:""})},"← "+series.title));
-    main.appendChild(h("div",{style:"font-size:10px;color:var(--text3);letter-spacing:.2em;text-transform:uppercase;margin-bottom:8px"},clip.episode+" · "+clip.level));
-    main.appendChild(h("div",{class:"page-title",style:"font-size:26px;margin-bottom:4px"},clip.title));
-    main.appendChild(h("div",{style:"font-size:13px;color:var(--text2);margin-bottom:6px;line-height:1.6"},clip.desc));
-    main.appendChild(h("div",{style:"font-size:11px;color:var(--gold);margin-bottom:28px"},"Temat: "+clip.topic));
+    // If user accidentally pasted URL as clip.title, fall back to episode for display
+    const titleLooksUrl = /^https?:\/\//.test((clip.title||"").trim());
+    const displayTitle = titleLooksUrl ? (clip.episode||"Klip") : clip.title;
+    const displayEyebrow = titleLooksUrl ? clip.level : (clip.episode+" · "+clip.level);
+    main.appendChild(h("div",{style:"font-size:10px;color:var(--text3);letter-spacing:.2em;text-transform:uppercase;margin-bottom:8px"},displayEyebrow));
+    const titleRow = h("div",{style:"display:flex;align-items:baseline;gap:10px;margin-bottom:4px;flex-wrap:wrap"});
+    titleRow.appendChild(h("div",{class:"page-title",style:"font-size:26px;margin:0"},displayTitle));
+    // Detect if clip is user-added (in myFilms overlay) — show edit/delete buttons
+    const overlayFilm = ((S.myFilms[lang])||[]).find(f=>f.id===filmSeries);
+    const isCustomClip = !!(overlayFilm && overlayFilm.clips && overlayFilm.clips.some(c=>c.id===filmClipId));
+    if(isCustomClip){
+      titleRow.appendChild(h("button",{class:"sbtn",style:"font-size:11px;padding:4px 10px",title:"Zmień tytuł / odcinek",onclick:()=>{
+        const newTitle = prompt("Tytuł klipu (np. 'Joey hires Chandler'):", clip.title||"");
+        if(newTitle === null) return;
+        const newEpisode = prompt("Odcinek / tag (np. 'S06E12' albo 'Friends scene'):", clip.episode||"");
+        if(newEpisode === null) return;
+        const mf = Object.assign({},S.myFilms);
+        const film = (mf[lang]||[]).find(f=>f.id===filmSeries);
+        if(!film || !film.clips) return;
+        const ci = film.clips.findIndex(c=>c.id===filmClipId);
+        if(ci<0) return;
+        film.clips = film.clips.slice();
+        film.clips[ci] = Object.assign({}, film.clips[ci], {title:newTitle.trim()||film.clips[ci].title, episode:newEpisode.trim()||film.clips[ci].episode});
+        S.myFilms = mf;
+        localStorage.setItem("lingua_my_films", JSON.stringify(mf));
+        scheduleDriveSync();
+        render();
+      }},"✏ Edytuj klip"));
+    }
+    main.appendChild(titleRow);
+    if(clip.desc) main.appendChild(h("div",{style:"font-size:13px;color:var(--text2);margin-bottom:6px;line-height:1.6"},clip.desc));
+    if(clip.topic) main.appendChild(h("div",{style:"font-size:11px;color:var(--gold);margin-bottom:28px"},"Temat: "+clip.topic));
+    else main.appendChild(h("div",{style:"margin-bottom:28px"}));
     const ytSearchUrl="https://www.youtube.com/results?search_query="+encodeURIComponent(clip.ytSearch);
     const ytA=h("a",{href:ytSearchUrl,target:"_blank",
       style:"display:inline-block;padding:10px 18px;border:1px solid var(--border2);color:var(--text2);text-decoration:none;font-size:12px;letter-spacing:.06em;margin-bottom:28px;transition:all .2s"},
@@ -5814,9 +5843,13 @@ function renderFilmoteka(){
 
     // Show existing lessons for this clip — quick jump to lesson view
     const sTitle = (series && series.title) || "";
-    const cTitle = (clip && clip.title) || "";
+    // If clip.title is URL, use episode as the matching target instead
+    const titleIsUrl = /^https?:\/\//.test((clip && clip.title||"").trim());
+    const cTitle = titleIsUrl ? (clip.episode||"") : (clip && clip.title || "");
+    const cEpisode = (clip && clip.episode) || "";
     const normalize = (s)=>(s||"").toLowerCase().replace(/[^a-z0-9ąćęłńóśźż\s]/g,"").replace(/\s+/g," ").trim();
     const cTitleN = normalize(cTitle);
+    const cEpisodeN = normalize(cEpisode);
     const sTitleN = normalize(sTitle);
     const existingForClip = (S.myLessons[lang]||[]).map((les,idx)=>({lesson:les, idx})).filter(({lesson})=>{
       if(lesson.clipId && lesson.clipId === filmClipId) return true;
@@ -5826,6 +5859,8 @@ function renderFilmoteka(){
         if(lesson.seriesTitle === sTitle && tN.includes(cTitleN)) return true;
         if(tN.includes(sTitleN) && tN.includes(cTitleN)) return true;
       }
+      // Also try clip.episode as a match target (e.g. "WHAT IF JOEY HIRED CHANDLER" in episode field)
+      if(cEpisodeN.length>4 && cEpisodeN !== cTitleN && tN.includes(cEpisodeN)) return true;
       if(cTitleN.length>4 && tN.includes(cTitleN)) return true;
       return false;
     });
