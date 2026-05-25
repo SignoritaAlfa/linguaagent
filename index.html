@@ -1158,6 +1158,7 @@ let S={
     }catch(e){}
     return localStorage.getItem("lingua_drive_login_hint")||"";
   })(),
+  lessonModel:localStorage.getItem("lingua_lesson_model")||"haiku",
   localLastModified:parseInt(localStorage.getItem("lingua_local_last_modified")||"0",10),
   myFilms:(()=>{try{return JSON.parse(localStorage.getItem("lingua_my_films")||"{}")}catch{return {}}})(),
   filmClipUrls:(()=>{try{return JSON.parse(localStorage.getItem("lingua_film_clip_urls")||"{}")}catch{return {}}})(),
@@ -3953,6 +3954,29 @@ function renderSettings(){
   setupDetails.appendChild(setupBody);
   sw.appendChild(setupDetails);
 
+  // ── Model Claude do generowania lekcji ──
+  sw.appendChild(h("hr",{class:"settings-divider"}));
+  sw.appendChild(h("div",{style:"font-size:14px;font-weight:500;color:var(--text);margin-bottom:6px"},"🤖 Model AI do generowania lekcji"));
+  sw.appendChild(h("div",{style:"font-size:12px;color:var(--text3);margin-bottom:12px;line-height:1.6"},"Wybierz który model Claude'a tworzy lekcje z transkrypcji. Haiku jest ~3× tańszy i ~2× szybszy — wystarcza dla większości lekcji. Sonnet daje lepsze tłumaczenia i precyzyjniejsze rozpoznawanie ról — wybierz gdy zauważysz słabą jakość."));
+  const modelRow = h("div",{style:"display:flex;flex-direction:column;gap:8px;margin-bottom:6px"});
+  [["haiku","🍃 Haiku 4.5","Szybki, ~$0.10 / regeneracja długiej sceny. Default — dobry kompromis"],
+   ["sonnet","💎 Sonnet 4.6","Najlepsza jakość, ~$0.40 / regeneracja. Lepsze tłumaczenia + role"]
+  ].forEach(([key, label, desc])=>{
+    const active = (S.lessonModel||"haiku") === key;
+    const card = h("button",{
+      style:"text-align:left;padding:12px 16px;background:"+(active?"var(--gold-dim)":"var(--surface)")+";border:2px solid "+(active?"var(--gold)":"var(--border)")+";cursor:pointer;border-radius:6px;font-family:inherit;transition:all .15s",
+      onclick:()=>{
+        S.lessonModel = key;
+        localStorage.setItem("lingua_lesson_model", key);
+        render();
+      }
+    });
+    card.appendChild(h("div",{style:"font-size:13px;font-weight:500;color:var(--text);margin-bottom:2px"},label+(active?" — aktywny":"")));
+    card.appendChild(h("div",{style:"font-size:11px;color:var(--text3)"},desc));
+    modelRow.appendChild(card);
+  });
+  sw.appendChild(modelRow);
+
   // ── Cache lekcji ──
   sw.appendChild(h("hr",{class:"settings-divider"}));
   sw.appendChild(h("div",{style:"font-size:14px;font-weight:500;color:var(--text);margin-bottom:6px"},"💾 Cache lekcji"));
@@ -5850,6 +5874,29 @@ function renderSettings(){
   setupDetails.appendChild(setupBody);
   sw.appendChild(setupDetails);
 
+  // ── Model Claude do generowania lekcji ──
+  sw.appendChild(h("hr",{class:"settings-divider"}));
+  sw.appendChild(h("div",{style:"font-size:14px;font-weight:500;color:var(--text);margin-bottom:6px"},"🤖 Model AI do generowania lekcji"));
+  sw.appendChild(h("div",{style:"font-size:12px;color:var(--text3);margin-bottom:12px;line-height:1.6"},"Wybierz który model Claude'a tworzy lekcje z transkrypcji. Haiku jest ~3× tańszy i ~2× szybszy — wystarcza dla większości lekcji. Sonnet daje lepsze tłumaczenia i precyzyjniejsze rozpoznawanie ról — wybierz gdy zauważysz słabą jakość."));
+  const modelRow = h("div",{style:"display:flex;flex-direction:column;gap:8px;margin-bottom:6px"});
+  [["haiku","🍃 Haiku 4.5","Szybki, ~$0.10 / regeneracja długiej sceny. Default — dobry kompromis"],
+   ["sonnet","💎 Sonnet 4.6","Najlepsza jakość, ~$0.40 / regeneracja. Lepsze tłumaczenia + role"]
+  ].forEach(([key, label, desc])=>{
+    const active = (S.lessonModel||"haiku") === key;
+    const card = h("button",{
+      style:"text-align:left;padding:12px 16px;background:"+(active?"var(--gold-dim)":"var(--surface)")+";border:2px solid "+(active?"var(--gold)":"var(--border)")+";cursor:pointer;border-radius:6px;font-family:inherit;transition:all .15s",
+      onclick:()=>{
+        S.lessonModel = key;
+        localStorage.setItem("lingua_lesson_model", key);
+        render();
+      }
+    });
+    card.appendChild(h("div",{style:"font-size:13px;font-weight:500;color:var(--text);margin-bottom:2px"},label+(active?" — aktywny":"")));
+    card.appendChild(h("div",{style:"font-size:11px;color:var(--text3)"},desc));
+    modelRow.appendChild(card);
+  });
+  sw.appendChild(modelRow);
+
   // ── Cache lekcji ──
   sw.appendChild(h("hr",{class:"settings-divider"}));
   sw.appendChild(h("div",{style:"font-size:14px;font-weight:500;color:var(--text);margin-bottom:6px"},"💾 Cache lekcji"));
@@ -6081,6 +6128,15 @@ function formatTime(sec){
   return m+":"+(r<10?"0"+r:r);
 }
 
+// ── Claude model selection ───────────────────────────────────────────────────
+const LESSON_MODEL_CONFIG = {
+  haiku:  { name:"claude-haiku-4-5-20251001", maxTokens:32000, label:"Haiku 4.5 (szybki, ~3× tańszy)" },
+  sonnet: { name:"claude-sonnet-4-6",         maxTokens:64000, label:"Sonnet 4.6 (lepsza jakość)" }
+};
+function getLessonModelConfig(){
+  return LESSON_MODEL_CONFIG[S.lessonModel || "haiku"] || LESSON_MODEL_CONFIG.haiku;
+}
+
 // ── Lesson cache: same transcript+lang doesn't cost Claude credits twice ─────
 const LESSON_CACHE_KEY = "lingua_lesson_cache";
 const LESSON_CACHE_MAX = 30;
@@ -6165,7 +6221,7 @@ DODATKOWE SEKCJE:
   const apiRes = await fetch("https://api.anthropic.com/v1/messages",{
     method:"POST",
     headers:{"x-api-key":S.claudeKey,"anthropic-version":"2023-06-01","content-type":"application/json","anthropic-dangerous-direct-browser-access":"true"},
-    body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:64000,messages:[{role:"user",content:[{type:"text",text:PROMPT}]}]})
+    body:JSON.stringify((function(){const cfg=getLessonModelConfig();return {model:cfg.name,max_tokens:cfg.maxTokens,messages:[{role:"user",content:[{type:"text",text:PROMPT}]}]};})())
   });
   if(!apiRes.ok){
     const e=await apiRes.json().catch(()=>({}));
@@ -6339,7 +6395,7 @@ ${trimmedTranscript}`;
   const apiRes=await fetch("https://api.anthropic.com/v1/messages",{
     method:"POST",
     headers:{"x-api-key":S.claudeKey,"anthropic-version":"2023-06-01","content-type":"application/json","anthropic-dangerous-direct-browser-access":"true"},
-    body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:64000,messages:[{role:"user",content:[{type:"text",text:PROMPT}]}]})
+    body:JSON.stringify((function(){const cfg=getLessonModelConfig();return {model:cfg.name,max_tokens:cfg.maxTokens,messages:[{role:"user",content:[{type:"text",text:PROMPT}]}]};})())
   });
   if(!apiRes.ok){
     const e=await apiRes.json().catch(()=>({}));
