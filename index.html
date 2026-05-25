@@ -2614,6 +2614,28 @@ function renderLesson(){
     const frame = h("div",{class:"film-video-frame"});
     frame.appendChild(h("div",{id:"yt-player-target"}));
     videoCol.appendChild(frame);
+    // Edit video URL bar (when lesson.youtubeId doesn't match the dialog content)
+    const __isOwnLesson = (S.myLessons[lang]||[]).some(l=>l.id===lesson.id);
+    if(__isOwnLesson){
+      const urlEditBar = h("div",{style:"display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap;font-size:11px"});
+      urlEditBar.appendChild(h("div",{style:"color:var(--text3);flex:1;font-family:monospace"},"YouTube: "+lesson.youtubeId));
+      const fixBtn = h("button",{class:"sbtn",style:"font-size:11px;padding:4px 10px",title:"Zmień link YouTube tej lekcji (gdy video nie pasuje do dialogu)"},"🔗 Zmień link");
+      fixBtn.onclick = ()=>{
+        const cur = "https://www.youtube.com/watch?v="+lesson.youtubeId;
+        const nv = prompt("Nowy link YouTube dla tej lekcji (musi pasować do dialogu):", cur);
+        if(nv===null) return;
+        const ytId = extractYtId((nv||"").trim());
+        if(!ytId){ alert("To nie jest poprawny URL YouTube"); return; }
+        if(ytId === lesson.youtubeId) return;
+        lesson.youtubeId = ytId;
+        const ml = Object.assign({},S.myLessons);
+        const li = (ml[lang]||[]).findIndex(l=>l.id===lesson.id);
+        if(li>=0){ ml[lang][li].youtubeId = ytId; S.myLessons = ml; localStorage.setItem("lingua_my_lessons",JSON.stringify(ml)); scheduleDriveSync(); }
+        render();
+      };
+      urlEditBar.appendChild(fixBtn);
+      videoCol.appendChild(urlEditBar);
+    }
     layout.appendChild(videoCol);
     const cuesCol = h("div",{class:"film-cues-col"});
     cuesCol.appendChild(h("div",{class:"sec-label",style:"margin-bottom:12px"},"Dialog ("+lesson.dialog.length+" kwestii)"));
@@ -4384,6 +4406,28 @@ function renderLesson(){
     const frame = h("div",{class:"film-video-frame"});
     frame.appendChild(h("div",{id:"yt-player-target"}));
     videoCol.appendChild(frame);
+    // Edit video URL bar (when lesson.youtubeId doesn't match the dialog content)
+    const __isOwnLesson = (S.myLessons[lang]||[]).some(l=>l.id===lesson.id);
+    if(__isOwnLesson){
+      const urlEditBar = h("div",{style:"display:flex;gap:8px;align-items:center;margin-top:8px;flex-wrap:wrap;font-size:11px"});
+      urlEditBar.appendChild(h("div",{style:"color:var(--text3);flex:1;font-family:monospace"},"YouTube: "+lesson.youtubeId));
+      const fixBtn = h("button",{class:"sbtn",style:"font-size:11px;padding:4px 10px",title:"Zmień link YouTube tej lekcji (gdy video nie pasuje do dialogu)"},"🔗 Zmień link");
+      fixBtn.onclick = ()=>{
+        const cur = "https://www.youtube.com/watch?v="+lesson.youtubeId;
+        const nv = prompt("Nowy link YouTube dla tej lekcji (musi pasować do dialogu):", cur);
+        if(nv===null) return;
+        const ytId = extractYtId((nv||"").trim());
+        if(!ytId){ alert("To nie jest poprawny URL YouTube"); return; }
+        if(ytId === lesson.youtubeId) return;
+        lesson.youtubeId = ytId;
+        const ml = Object.assign({},S.myLessons);
+        const li = (ml[lang]||[]).findIndex(l=>l.id===lesson.id);
+        if(li>=0){ ml[lang][li].youtubeId = ytId; S.myLessons = ml; localStorage.setItem("lingua_my_lessons",JSON.stringify(ml)); scheduleDriveSync(); }
+        render();
+      };
+      urlEditBar.appendChild(fixBtn);
+      videoCol.appendChild(urlEditBar);
+    }
     layout.appendChild(videoCol);
     const cuesCol = h("div",{class:"film-cues-col"});
     cuesCol.appendChild(h("div",{class:"sec-label",style:"margin-bottom:12px"},"Dialog ("+lesson.dialog.length+" kwestii)"));
