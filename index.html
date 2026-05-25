@@ -1831,39 +1831,23 @@ function addClipToMyFilm(lang, filmId, clip){
   localStorage.setItem("lingua_my_films",JSON.stringify(mf));
   set({myFilms:mf,showAddClip:false,addClipTitle:"",addClipEpisode:"",addClipDesc:"",addClipTopic:"",addClipUrl:""});
 }
-async function autoFillClipFromUrl(seriesTitle, langCode){
-  const url = (S.addClipUrl||"").trim();
-  if(!url){ alert("Wklej najpierw URL YouTube"); return; }
+// Shared: fetch a metadata suggestion for any YT URL — used by add and edit flows
+async function fetchClipMetadataSuggestion(url, seriesTitle, langCode){
   const videoId = extractYtId(url);
-  if(!videoId){ alert("To nie wygląda na poprawny URL YouTube"); return; }
-  if(!S.claudeKey){ alert("Skonfiguruj klucz Claude w Ustawieniach"); return; }
-  set({addClipAutoFilling:true});
+  if(!videoId) throw new Error("Nieprawidłowy URL YouTube");
+  if(!S.claudeKey) throw new Error("Brak klucza Claude w Ustawieniach");
+  let ytTitle = "", ytAuthor = "";
   try{
-    // Step 1: YouTube oEmbed for title + author (CORS-friendly, no auth)
-    let ytTitle = "", ytAuthor = "";
-    try{
-      const oeRes = await fetch("https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v="+videoId+"&format=json");
-      if(oeRes.ok){
-        const oe = await oeRes.json();
-        ytTitle = oe.title || "";
-        ytAuthor = oe.author_name || "";
-      }
-    }catch(e){ console.log("[Auto-fill] oEmbed failed:", e); }
-
-    // Step 2: optional transcript preview via Worker
-    let transcriptPreview = "";
-    if(S.workerUrl){
-      try{
-        const data = await fetchViaWorker(videoId);
-        if(data && data.cues){
-          transcriptPreview = data.cues.slice(0, 30).map(c=>c.text).join(" ").slice(0, 1500);
-        }
-      }catch(e){ console.log("[Auto-fill] Worker transcript skipped:", e.message); }
-    }
-
-    // Step 3: Claude generates metadata
-    const langName = {EN:"angielskim",FR:"francuskim",IT:"włoskim"}[langCode]||"obcym";
-    const prompt = `Generujesz metadata sceny do nauki języka ${langName}, w polskim. Na podstawie informacji o klipie YouTube zaproponuj zwięzłe pola opisujące scenę.
+    const oeRes = await fetch("https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v="+videoId+"&format=json");
+    if(oeRes.ok){ const oe = await oeRes.json(); ytTitle = oe.title||""; ytAuthor = oe.author_name||""; }
+  }catch(e){}
+  let transcriptPreview = "";
+  if(S.workerUrl){
+    try{ const data = await fetchViaWorker(videoId); if(data && data.cues){ transcriptPreview = data.cues.slice(0,30).map(c=>c.text).join(" ").slice(0,1500); } }
+    catch(e){}
+  }
+  const langName = {EN:"angielskim",FR:"francuskim",IT:"włoskim"}[langCode]||"obcym";
+  const prompt = `Generujesz metadata sceny do nauki języka ${langName}, w polskim. Na podstawie informacji o klipie YouTube zaproponuj zwięzłe pola opisujące scenę.
 
 DANE:
 - Seria/film: "${seriesTitle||"nieznana"}"
@@ -1872,25 +1856,32 @@ DANE:
 ${transcriptPreview ? '- Fragment transkrypcji (początek):\n"""\n' + transcriptPreview + '\n"""' : "- Brak transkrypcji (klip bez napisów)"}
 
 WYGENERUJ JSON:
-- title: zwięzły tytuł sceny w języku oryginału (np. "Joey hires Chandler", "Garden Scene"). Max 60 znaków. NIE wklejaj URL ani całego tytułu YouTube.
-- episode: oznaczenie odcinka jeśli się da wywnioskować (np. "S06E12") lub krótki tag (np. "Friends scene")
-- desc: opis sceny po polsku, 1-2 zdania, naturalne (np. "Joey zatrudnia Chandlera jako asystenta — slang, codzienne wyrażenia")
-- topic: temat językowy po polsku, 3-5 słów kluczy oddzielonych przecinkami (np. "Slang, idiomy, codzienne wyrażenia")
-- level: poziom CEFR (A1/A2/B1/B2/C1) — dobierz odpowiedni do trudności sceny
+- title: zwięzły tytuł sceny w języku oryginału (max 60 znaków, bez URL)
+- episode: oznaczenie odcinka (np. "S06E12") lub krótki tag (np. "Friends scene")
+- desc: opis sceny po polsku, 1-2 zdania
+- topic: temat językowy po polsku, 3-5 słów kluczy
+- level: poziom CEFR (A1/A2/B1/B2/C1)
 
 Odpowiedz TYLKO czystym JSON bez markdown:
 {"title":"...","episode":"...","desc":"...","topic":"...","level":"..."}`;
+  const res = await fetch("https://api.anthropic.com/v1/messages",{
+    method:"POST",
+    headers:{"x-api-key":S.claudeKey,"anthropic-version":"2023-06-01","content-type":"application/json","anthropic-dangerous-direct-browser-access":"true"},
+    body:JSON.stringify({model:"claude-haiku-4-5-20251001",max_tokens:600,messages:[{role:"user",content:[{type:"text",text:prompt}]}]})
+  });
+  if(!res.ok) throw new Error("Claude API "+res.status);
+  const data = await res.json();
+  const m = data.content[0].text.match(/\{[\s\S]*\}/);
+  if(!m) throw new Error("Brak JSON w odpowiedzi");
+  return JSON.parse(m[0]);
+}
 
-    const res = await fetch("https://api.anthropic.com/v1/messages",{
-      method:"POST",
-      headers:{"x-api-key":S.claudeKey,"anthropic-version":"2023-06-01","content-type":"application/json","anthropic-dangerous-direct-browser-access":"true"},
-      body:JSON.stringify({model:"claude-haiku-4-5-20251001",max_tokens:600,messages:[{role:"user",content:[{type:"text",text:prompt}]}]})
-    });
-    if(!res.ok){ throw new Error("Claude API "+res.status); }
-    const data = await res.json();
-    const m = data.content[0].text.match(/\{[\s\S]*\}/);
-    if(!m) throw new Error("Brak JSON w odpowiedzi");
-    const meta = JSON.parse(m[0]);
+async function autoFillClipFromUrl(seriesTitle, langCode){
+  const url = (S.addClipUrl||"").trim();
+  if(!url){ alert("Wklej najpierw URL YouTube"); return; }
+  set({addClipAutoFilling:true});
+  try{
+    const meta = await fetchClipMetadataSuggestion(url, seriesTitle, langCode);
     set({
       addClipTitle: meta.title || S.addClipTitle,
       addClipEpisode: meta.episode || S.addClipEpisode,
@@ -1905,37 +1896,138 @@ Odpowiedz TYLKO czystym JSON bez markdown:
   }
 }
 
+// Modal-based clip edit — replaces the 5-prompt flow. Used from list view and clip view.
 function editClipMetadata(lang, filmId, clipId){
+  document.querySelectorAll('.clip-edit-overlay').forEach(el=>el.remove());
   const mf = Object.assign({},S.myFilms);
   const film = (mf[lang]||[]).find(f=>f.id===filmId);
   if(!film || !film.clips) return;
   const ci = film.clips.findIndex(c=>c.id===clipId);
   if(ci<0) return;
   const clip = film.clips[ci];
+  const seriesTitle = film.title || "";
+  const savedUrl = (S.filmClipUrls||{})[clipId] || "";
   const titleLooksUrl = /^https?:\/\//.test((clip.title||"").trim());
-  const newTitle = prompt("Tytuł klipu (np. 'Joey hires Chandler'):", titleLooksUrl ? "" : (clip.title||""));
-  if(newTitle === null) return;
-  const newEpisode = prompt("Odcinek / tag (np. 'S06E12'):", clip.episode||"");
-  if(newEpisode === null) return;
-  const newDesc = prompt("Opis sceny (1-2 zdania):", clip.desc||"");
-  if(newDesc === null) return;
-  const newTopic = prompt("Temat językowy (np. 'Slang, idiomy'):", clip.topic||"");
-  if(newTopic === null) return;
-  const newLevel = prompt("Poziom (A1/A2/B1/B2/C1):", clip.level||"A2");
-  if(newLevel === null) return;
-  const fin = (s,d)=>{const t=(s||"").trim();return t || d;};
-  film.clips = film.clips.slice();
-  film.clips[ci] = Object.assign({}, clip, {
-    title: fin(newTitle, clip.title),
-    episode: fin(newEpisode, clip.episode),
-    desc: newDesc.trim(),
-    topic: newTopic.trim(),
-    level: fin(newLevel, clip.level||"A2")
-  });
-  S.myFilms = mf;
-  localStorage.setItem("lingua_my_films", JSON.stringify(mf));
-  scheduleDriveSync();
-  render();
+
+  const overlay = document.createElement("div");
+  overlay.className = "clip-edit-overlay";
+  overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1000;display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;overflow-y:auto";
+  const modal = document.createElement("div");
+  modal.style.cssText = "background:var(--surface);border-radius:10px;padding:24px;max-width:640px;width:100%;box-shadow:0 20px 50px rgba(0,0,0,0.3);font-family:inherit";
+  overlay.appendChild(modal);
+
+  const head = document.createElement("div");
+  head.style.cssText = "display:flex;align-items:center;justify-content:space-between;margin-bottom:18px";
+  const headerText = document.createElement("div");
+  headerText.style.cssText = "font-size:16px;font-weight:500;color:var(--text)";
+  headerText.textContent = "Edytuj klip";
+  head.appendChild(headerText);
+  const closeBtn = document.createElement("button");
+  closeBtn.style.cssText = "background:none;border:none;cursor:pointer;font-size:22px;color:var(--text3);line-height:1;padding:0 4px";
+  closeBtn.textContent = "✕";
+  closeBtn.onclick = ()=>overlay.remove();
+  head.appendChild(closeBtn);
+  modal.appendChild(head);
+
+  function mkInp(label, val, placeholder, marginBottom){
+    const lab = document.createElement("div");
+    lab.style.cssText = "font-size:11px;color:var(--text3);margin-bottom:4px;letter-spacing:.04em";
+    lab.textContent = label;
+    const inp = document.createElement("input");
+    inp.type = "text"; inp.className = "fill-inp";
+    inp.style.cssText = "width:100%;margin-bottom:"+marginBottom+";font-size:13px;box-sizing:border-box";
+    inp.value = val || "";
+    if(placeholder) inp.placeholder = placeholder;
+    modal.appendChild(lab);
+    modal.appendChild(inp);
+    return inp;
+  }
+
+  // URL + Auto-fill button
+  const urlLab = document.createElement("div");
+  urlLab.style.cssText = "font-size:11px;color:var(--text3);margin-bottom:4px;letter-spacing:.04em";
+  urlLab.textContent = "URL YouTube (do auto-uzupełniania)";
+  modal.appendChild(urlLab);
+  const urlRow = document.createElement("div");
+  urlRow.style.cssText = "display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center";
+  const urlInp = document.createElement("input");
+  urlInp.type = "text"; urlInp.className = "fill-inp";
+  urlInp.style.cssText = "flex:1;min-width:240px;margin:0;font-size:13px";
+  urlInp.placeholder = "https://www.youtube.com/watch?v=...";
+  urlInp.value = savedUrl;
+  urlRow.appendChild(urlInp);
+  const autoBtn = document.createElement("button");
+  autoBtn.className = "sbtn";
+  autoBtn.style.cssText = "font-size:11px;padding:8px 14px;border-color:var(--gold);color:var(--gold);white-space:nowrap;flex-shrink:0";
+  autoBtn.textContent = "✨ Auto-uzupełnij";
+  urlRow.appendChild(autoBtn);
+  modal.appendChild(urlRow);
+
+  const tInp = mkInp("Tytuł klipu", titleLooksUrl ? "" : (clip.title||""), "np. 'Joey hires Chandler'", "8px");
+  const eInp = mkInp("Odcinek / tag", clip.episode||"", "np. 'S06E12'", "8px");
+  const dInp = mkInp("Opis sceny", clip.desc||"", "1-2 zdania, opcjonalnie", "8px");
+  const toInp = mkInp("Temat językowy", clip.topic||"", "np. 'Slang, idiomy'", "8px");
+  const lInp = mkInp("Poziom (A1/A2/B1/B2/C1)", clip.level||"A2", "", "14px");
+
+  autoBtn.onclick = async ()=>{
+    const url = urlInp.value.trim();
+    if(!url){ alert("Wklej najpierw URL YouTube"); return; }
+    autoBtn.disabled = true;
+    autoBtn.textContent = "⏳ Generuję...";
+    try{
+      const meta = await fetchClipMetadataSuggestion(url, seriesTitle, lang);
+      if(meta.title) tInp.value = meta.title;
+      if(meta.episode) eInp.value = meta.episode;
+      if(meta.desc) dInp.value = meta.desc;
+      if(meta.topic) toInp.value = meta.topic;
+      if(meta.level) lInp.value = meta.level;
+      autoBtn.textContent = "✓ Uzupełnione";
+      setTimeout(()=>{ autoBtn.textContent = "✨ Auto-uzupełnij"; autoBtn.disabled = false; }, 1500);
+    }catch(e){
+      alert("Błąd: "+e.message);
+      autoBtn.disabled = false;
+      autoBtn.textContent = "✨ Auto-uzupełnij";
+    }
+  };
+
+  // Save / Cancel
+  const btnRow = document.createElement("div");
+  btnRow.style.cssText = "display:flex;gap:10px;margin-top:8px";
+  const saveBtn = document.createElement("button");
+  saveBtn.className = "primary";
+  saveBtn.textContent = "💾 Zapisz zmiany";
+  saveBtn.onclick = ()=>{
+    const fin = (s,d)=>{const t=(s||"").trim();return t || d;};
+    const upd = {
+      title: fin(tInp.value, clip.title),
+      episode: fin(eInp.value, clip.episode),
+      desc: (dInp.value||"").trim(),
+      topic: (toInp.value||"").trim(),
+      level: fin(lInp.value, clip.level||"A2")
+    };
+    film.clips = film.clips.slice();
+    film.clips[ci] = Object.assign({}, clip, upd);
+    S.myFilms = mf;
+    localStorage.setItem("lingua_my_films", JSON.stringify(mf));
+    // Save URL too if it changed
+    const newUrl = (urlInp.value||"").trim();
+    if(newUrl && newUrl !== savedUrl) saveFilmClipUrl(clipId, newUrl);
+    else if(!newUrl && savedUrl) saveFilmClipUrl(clipId, "");
+    scheduleDriveSync();
+    overlay.remove();
+    render();
+  };
+  const cancelBtn = document.createElement("button");
+  cancelBtn.className = "sbtn";
+  cancelBtn.textContent = "Anuluj";
+  cancelBtn.onclick = ()=>overlay.remove();
+  btnRow.appendChild(saveBtn);
+  btnRow.appendChild(cancelBtn);
+  modal.appendChild(btnRow);
+
+  overlay.onclick = (e)=>{ if(e.target===overlay) overlay.remove(); };
+  document.body.appendChild(overlay);
+  setTimeout(()=>tInp.focus(), 50);
 }
 
 function deleteClipFromMyFilm(lang, filmId, clipId){
