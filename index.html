@@ -1119,7 +1119,24 @@ let S={
   lessonFolders:(()=>{try{return JSON.parse(localStorage.getItem("lingua_lesson_folders")||"{}")}catch{return {}}})(),
   foldersCollapsed:(()=>{try{return JSON.parse(localStorage.getItem("lingua_folders_collapsed")||"{}")}catch{return {}}})(),
   // Google Drive sync
-  driveClientId:localStorage.getItem("lingua_drive_client_id")||"",
+  driveClientId:(()=>{
+    // Allow setup via URL parameter (?driveClientId=...) for easy mobile setup
+    try{
+      const params = new URLSearchParams(window.location.search);
+      const cid = params.get("driveClientId");
+      if(cid && /\.apps\.googleusercontent\.com$/.test(cid)){
+        localStorage.setItem("lingua_drive_client_id", cid);
+        // Clean URL so the param doesn't linger
+        if(window.history.replaceState){
+          params.delete("driveClientId");
+          const newUrl = window.location.pathname + (params.toString() ? "?"+params.toString() : "") + window.location.hash;
+          window.history.replaceState({}, "", newUrl);
+        }
+        return cid;
+      }
+    }catch(e){}
+    return localStorage.getItem("lingua_drive_client_id")||"";
+  })(),
   driveToken:(()=>{const t=localStorage.getItem("lingua_drive_token");const e=parseInt(localStorage.getItem("lingua_drive_token_expires")||"0",10);return (t && e > Date.now()+30000) ? t : null;})(),
   driveTokenExpires:parseInt(localStorage.getItem("lingua_drive_token_expires")||"0",10),
   driveStatus:(()=>{const t=localStorage.getItem("lingua_drive_token");const e=parseInt(localStorage.getItem("lingua_drive_token_expires")||"0",10);return (t && e > Date.now()+30000) ? "connected" : "disconnected";})(),
@@ -3853,6 +3870,28 @@ function renderSettings(){
     asRow.appendChild(cb);
     asRow.appendChild(document.createTextNode("Synchronizuj automatycznie po każdej zmianie (3s opóźnienia)"));
     sw.appendChild(asRow);
+
+    // Share-to-mobile: generate a magic link that auto-configures Client ID on the other device
+    const mobileWrap = h("div",{style:"margin-top:18px;padding:14px;border:1px dashed var(--border);border-radius:6px;background:var(--surface)"});
+    mobileWrap.appendChild(h("div",{style:"font-size:12px;color:var(--text2);font-weight:500;margin-bottom:6px"},"📱 Skonfiguruj na telefonie / drugiej przeglądarce"));
+    mobileWrap.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-bottom:10px;line-height:1.6"},"Każde urządzenie ma osobny localStorage, więc Client ID nie synchronizuje się przez Drive. Skopiuj poniższy link i otwórz na telefonie — Client ID zapisze się automatycznie, wystarczy kliknąć Połącz."));
+    const magicUrl = "https://signoritaalfa.github.io/linguaagent/?driveClientId=" + encodeURIComponent(S.driveClientId);
+    const linkInp = h("input",{type:"text",class:"key-inp",style:"font-family:monospace;font-size:11px",value:magicUrl,readonly:"true"});
+    linkInp.onclick = ()=>{ linkInp.select(); };
+    mobileWrap.appendChild(linkInp);
+    const linkBtnRow = h("div",{style:"display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"});
+    linkBtnRow.appendChild(h("button",{class:"sbtn",style:"font-size:11px",onclick:()=>{
+      navigator.clipboard.writeText(magicUrl).then(()=>{ alert("✓ Link skopiowany. Wyślij sobie SMS-em / mailem / na komunikator i otwórz na drugim urządzeniu."); }).catch(()=>{
+        linkInp.select(); document.execCommand("copy"); alert("Skopiowane przez fallback. Wklej w wiadomości i wyślij na drugie urządzenie.");
+      });
+    }},"📋 Skopiuj link"));
+    if(navigator.share){
+      linkBtnRow.appendChild(h("button",{class:"sbtn",style:"font-size:11px",onclick:()=>{
+        navigator.share({title:"Lingua Agent — setup", text:"Otwórz na telefonie żeby ustawić Drive sync", url: magicUrl}).catch(()=>{});
+      }},"📤 Udostępnij..."));
+    }
+    mobileWrap.appendChild(linkBtnRow);
+    sw.appendChild(mobileWrap);
   }
 
   const setupDetails=h("details",{style:"margin-top:18px;border:1px solid var(--border);border-radius:6px;padding:10px 14px;background:var(--surface)"});
@@ -5689,6 +5728,28 @@ function renderSettings(){
     asRow.appendChild(cb);
     asRow.appendChild(document.createTextNode("Synchronizuj automatycznie po każdej zmianie (3s opóźnienia)"));
     sw.appendChild(asRow);
+
+    // Share-to-mobile: generate a magic link that auto-configures Client ID on the other device
+    const mobileWrap = h("div",{style:"margin-top:18px;padding:14px;border:1px dashed var(--border);border-radius:6px;background:var(--surface)"});
+    mobileWrap.appendChild(h("div",{style:"font-size:12px;color:var(--text2);font-weight:500;margin-bottom:6px"},"📱 Skonfiguruj na telefonie / drugiej przeglądarce"));
+    mobileWrap.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-bottom:10px;line-height:1.6"},"Każde urządzenie ma osobny localStorage, więc Client ID nie synchronizuje się przez Drive. Skopiuj poniższy link i otwórz na telefonie — Client ID zapisze się automatycznie, wystarczy kliknąć Połącz."));
+    const magicUrl = "https://signoritaalfa.github.io/linguaagent/?driveClientId=" + encodeURIComponent(S.driveClientId);
+    const linkInp = h("input",{type:"text",class:"key-inp",style:"font-family:monospace;font-size:11px",value:magicUrl,readonly:"true"});
+    linkInp.onclick = ()=>{ linkInp.select(); };
+    mobileWrap.appendChild(linkInp);
+    const linkBtnRow = h("div",{style:"display:flex;gap:8px;margin-top:8px;flex-wrap:wrap"});
+    linkBtnRow.appendChild(h("button",{class:"sbtn",style:"font-size:11px",onclick:()=>{
+      navigator.clipboard.writeText(magicUrl).then(()=>{ alert("✓ Link skopiowany. Wyślij sobie SMS-em / mailem / na komunikator i otwórz na drugim urządzeniu."); }).catch(()=>{
+        linkInp.select(); document.execCommand("copy"); alert("Skopiowane przez fallback. Wklej w wiadomości i wyślij na drugie urządzenie.");
+      });
+    }},"📋 Skopiuj link"));
+    if(navigator.share){
+      linkBtnRow.appendChild(h("button",{class:"sbtn",style:"font-size:11px",onclick:()=>{
+        navigator.share({title:"Lingua Agent — setup", text:"Otwórz na telefonie żeby ustawić Drive sync", url: magicUrl}).catch(()=>{});
+      }},"📤 Udostępnij..."));
+    }
+    mobileWrap.appendChild(linkBtnRow);
+    sw.appendChild(mobileWrap);
   }
 
   const setupDetails=h("details",{style:"margin-top:18px;border:1px solid var(--border);border-radius:6px;padding:10px 14px;background:var(--surface)"});
