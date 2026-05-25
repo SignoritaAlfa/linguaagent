@@ -2594,12 +2594,12 @@ function renderLesson(){
         try{
           const currentText=rawTextToPlain(lesson.rawText);
           const prompt=type==="vocab"
-            ? `Z poniższego tekstu wyciągnij MINIMUM 30 słów i zwrotów wartych nauki — im więcej tym lepiej. Wybierz słowa kluczowe, idiomy, kolokwializmy, trudniejsze słowa. Dla każdego podaj tłumaczenie PL, wymowę IPA i przykład z tekstu. Odpowiedz TYLKO czystym JSON: {"items":[{"w":"słowo","tr":"tłumaczenie PL","ipa":"IPA","pl":"fonetyka","ex":"przykład","exT":"tłumaczenie przykładu"}]}\n\nTEKST:\n${currentText.slice(0,10000)}`
-            : `Z poniższego tekstu wyciągnij MINIMUM 20 użytecznych zwrotów, wyrażeń i kolokacji — im więcej tym lepiej. Szukaj idiomów, wyrażeń potocznych, zwrotów konwersacyjnych. Odpowiedz TYLKO czystym JSON: {"items":[{"w":"zwrot","tr":"tłumaczenie PL","ipa":"IPA","pl":"fonetyka","ex":"przykład użycia","exT":"tłumaczenie"}]}\n\nTEKST:\n${currentText.slice(0,10000)}`;
+            ? `Z poniższego tekstu wyciągnij MAKSYMALNIE DUŻO słów wartych nauki — celuj w 60-100 pozycji, absolutne minimum 50. NIE PRZESTAWAJ na 30 ani 40 — kontynuuj aż wyczerpiesz wszystkie wartościowe słowa z tekstu. Wybierz słowa kluczowe, idiomy, kolokwializmy, trudniejsze słowa, słowa specyficzne dla kontekstu, a także słówka B1-C1. Dla każdego podaj tłumaczenie PL, wymowę IPA i przykład z tekstu. Odpowiedz TYLKO czystym JSON: {"items":[{"w":"słowo","tr":"tłumaczenie PL","ipa":"IPA","pl":"fonetyka","ex":"przykład","exT":"tłumaczenie przykładu"}]}\n\nTEKST:\n${currentText.slice(0,15000)}`
+            : `Z poniższego tekstu wyciągnij MAKSYMALNIE DUŻO użytecznych zwrotów, wyrażeń i kolokacji — celuj w 50-80 pozycji, absolutne minimum 40. NIE PRZESTAWAJ na 20 ani 30 — kontynuuj aż wyczerpiesz wszystkie wartościowe zwroty z tekstu. Szukaj: idiomów, wyrażeń potocznych, zwrotów konwersacyjnych, czasowników frazowych, przyimkowych konstrukcji, kolokacji rzeczownik+czasownik, utartych zwrotów. Odpowiedz TYLKO czystym JSON: {"items":[{"w":"zwrot","tr":"tłumaczenie PL","ipa":"IPA","pl":"fonetyka","ex":"przykład użycia","exT":"tłumaczenie"}]}\n\nTEKST:\n${currentText.slice(0,15000)}`;
           const res=await fetch("https://api.anthropic.com/v1/messages",{
             method:"POST",
             headers:{"x-api-key":S.claudeKey,"anthropic-version":"2023-06-01","content-type":"application/json","anthropic-dangerous-direct-browser-access":"true"},
-            body:JSON.stringify({model:"claude-haiku-4-5-20251001",max_tokens:8000,messages:[{role:"user",content:[{type:"text",text:prompt}]}]})
+            body:JSON.stringify({model:"claude-haiku-4-5-20251001",max_tokens:16000,messages:[{role:"user",content:[{type:"text",text:prompt}]}]})
           });
           if(!res.ok) throw new Error("API błąd "+res.status);
           const data=await res.json();
@@ -4112,12 +4112,12 @@ function renderLesson(){
         try{
           const currentText=rawTextToPlain(lesson.rawText);
           const prompt=type==="vocab"
-            ? `Z poniższego tekstu wyciągnij MINIMUM 30 słów i zwrotów wartych nauki — im więcej tym lepiej. Wybierz słowa kluczowe, idiomy, kolokwializmy, trudniejsze słowa. Dla każdego podaj tłumaczenie PL, wymowę IPA i przykład z tekstu. Odpowiedz TYLKO czystym JSON: {"items":[{"w":"słowo","tr":"tłumaczenie PL","ipa":"IPA","pl":"fonetyka","ex":"przykład","exT":"tłumaczenie przykładu"}]}\n\nTEKST:\n${currentText.slice(0,10000)}`
-            : `Z poniższego tekstu wyciągnij MINIMUM 20 użytecznych zwrotów, wyrażeń i kolokacji — im więcej tym lepiej. Szukaj idiomów, wyrażeń potocznych, zwrotów konwersacyjnych. Odpowiedz TYLKO czystym JSON: {"items":[{"w":"zwrot","tr":"tłumaczenie PL","ipa":"IPA","pl":"fonetyka","ex":"przykład użycia","exT":"tłumaczenie"}]}\n\nTEKST:\n${currentText.slice(0,10000)}`;
+            ? `Z poniższego tekstu wyciągnij MAKSYMALNIE DUŻO słów wartych nauki — celuj w 60-100 pozycji, absolutne minimum 50. NIE PRZESTAWAJ na 30 ani 40 — kontynuuj aż wyczerpiesz wszystkie wartościowe słowa z tekstu. Wybierz słowa kluczowe, idiomy, kolokwializmy, trudniejsze słowa, słowa specyficzne dla kontekstu, a także słówka B1-C1. Dla każdego podaj tłumaczenie PL, wymowę IPA i przykład z tekstu. Odpowiedz TYLKO czystym JSON: {"items":[{"w":"słowo","tr":"tłumaczenie PL","ipa":"IPA","pl":"fonetyka","ex":"przykład","exT":"tłumaczenie przykładu"}]}\n\nTEKST:\n${currentText.slice(0,15000)}`
+            : `Z poniższego tekstu wyciągnij MAKSYMALNIE DUŻO użytecznych zwrotów, wyrażeń i kolokacji — celuj w 50-80 pozycji, absolutne minimum 40. NIE PRZESTAWAJ na 20 ani 30 — kontynuuj aż wyczerpiesz wszystkie wartościowe zwroty z tekstu. Szukaj: idiomów, wyrażeń potocznych, zwrotów konwersacyjnych, czasowników frazowych, przyimkowych konstrukcji, kolokacji rzeczownik+czasownik, utartych zwrotów. Odpowiedz TYLKO czystym JSON: {"items":[{"w":"zwrot","tr":"tłumaczenie PL","ipa":"IPA","pl":"fonetyka","ex":"przykład użycia","exT":"tłumaczenie"}]}\n\nTEKST:\n${currentText.slice(0,15000)}`;
           const res=await fetch("https://api.anthropic.com/v1/messages",{
             method:"POST",
             headers:{"x-api-key":S.claudeKey,"anthropic-version":"2023-06-01","content-type":"application/json","anthropic-dangerous-direct-browser-access":"true"},
-            body:JSON.stringify({model:"claude-haiku-4-5-20251001",max_tokens:8000,messages:[{role:"user",content:[{type:"text",text:prompt}]}]})
+            body:JSON.stringify({model:"claude-haiku-4-5-20251001",max_tokens:16000,messages:[{role:"user",content:[{type:"text",text:prompt}]}]})
           });
           if(!res.ok) throw new Error("API błąd "+res.status);
           const data=await res.json();
