@@ -5813,10 +5813,23 @@ function renderFilmoteka(){
     if(filmTranscriptError) main.appendChild(h("div",{class:"msg-err",style:"margin-bottom:10px;line-height:1.5"},filmTranscriptError));
 
     // Show existing lessons for this clip — quick jump to lesson view
+    const sTitle = (series && series.title) || "";
+    const cTitle = (clip && clip.title) || "";
+    const cTitleLow = cTitle.toLowerCase();
     const existingForClip = (S.myLessons[lang]||[]).map((les,idx)=>({lesson:les, idx})).filter(({lesson})=>{
+      // 1. Direct clipId match (lessons created after PR #29 have this)
+      if(lesson.clipId && lesson.clipId === filmClipId) return true;
+      // 2. YouTube video ID match (when URL was saved)
       if(filmYtId && lesson.youtubeId === filmYtId) return true;
-      // Fallback: match by clip title (in case URL changed)
-      if(clip && lesson.title && lesson.title.toLowerCase().includes((clip.title||"").toLowerCase()) && (clip.title||"").length>3) return true;
+      // 3. Series + clip title heuristic (caught most older film lessons)
+      if(sTitle && cTitle.length>2){
+        const t = (lesson.title||"").toLowerCase();
+        if(lesson.seriesTitle === sTitle && t.includes(cTitleLow)) return true;
+        // 4. Loose: title contains both series and clip name
+        if(t.includes(sTitle.toLowerCase()) && t.includes(cTitleLow)) return true;
+      }
+      // 5. Last resort: just clip title substring (only for longer titles to avoid false matches)
+      if(cTitle.length>5 && lesson.title && lesson.title.toLowerCase().includes(cTitleLow)) return true;
       return false;
     });
     if(existingForClip.length > 0 && !filmTranscriptLesson){
@@ -5897,6 +5910,8 @@ function renderFilmoteka(){
         const _sl=filmTranscriptLesson;
         _sl.source="video";
         _sl.seriesTitle=series?.title||"";
+        _sl.clipId=filmClipId;
+        _sl.clipTitle=clip?.title||"";
         if(series?.title&&_sl.title&&!_sl.title.startsWith(series.title)) _sl.title=series.title+" — "+_sl.title;
         saveMyLesson(lang,_sl);set({filmClipId:null,filmYtInput:"",filmYtId:"",filmTranscriptError:"",filmTranscriptLesson:null,filmTranscriptText:"",filmManualPaste:"",filmTranscriptDraft:"",filmTranscriptDraftVideoId:null,screen:"lesson",lesson:_sl,mode:"dialog",lessonTab:"dialog",playing:false,playingLine:-1});
       }},"+ Dodaj do Moich Lekcji"));
