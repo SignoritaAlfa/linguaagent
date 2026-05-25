@@ -1133,7 +1133,7 @@ let S={
   filmClipUrls:(()=>{try{return JSON.parse(localStorage.getItem("lingua_film_clip_urls")||"{}")}catch{return {}}})(),
   workerUrl:localStorage.getItem("lingua_worker_url")||"",
   showAddFilm:false,addFilmTitle:"",addFilmType:"serial",addFilmLevel:"A2",
-  showAddClip:false,addClipTitle:"",addClipEpisode:"",
+  showAddClip:false,addClipTitle:"",addClipEpisode:"",addClipDesc:"",addClipTopic:"",
   showUpload:false,uploadLang:"FR",uploadStep:0,uploadFile:null,uploadPreview:null,uploadProcessing:false,uploadError:"",
   elKeyInput:"",elMsg:"",
   voiceRate:parseFloat(localStorage.getItem("lingua_rate")||"1.0"),
@@ -1829,7 +1829,7 @@ function addClipToMyFilm(lang, filmId, clip){
   }
   film.clips.push(clip);
   localStorage.setItem("lingua_my_films",JSON.stringify(mf));
-  set({myFilms:mf,showAddClip:false,addClipTitle:"",addClipEpisode:""});
+  set({myFilms:mf,showAddClip:false,addClipTitle:"",addClipEpisode:"",addClipDesc:"",addClipTopic:""});
 }
 function deleteClipFromMyFilm(lang, filmId, clipId){
   const mf=Object.assign({},S.myFilms);
@@ -6006,18 +6006,31 @@ function renderFilmoteka(){
     const overlayFilm = ((S.myFilms[lang])||[]).find(f=>f.id===filmSeries);
     const isCustomClip = !!(overlayFilm && overlayFilm.clips && overlayFilm.clips.some(c=>c.id===filmClipId));
     if(isCustomClip){
-      titleRow.appendChild(h("button",{class:"sbtn",style:"font-size:11px;padding:4px 10px",title:"Zmień tytuł / odcinek",onclick:()=>{
-        const newTitle = prompt("Tytuł klipu (np. 'Joey hires Chandler'):", clip.title||"");
+      titleRow.appendChild(h("button",{class:"sbtn",style:"font-size:11px;padding:4px 10px",title:"Zmień tytuł / odcinek / temat / opis",onclick:()=>{
+        const newTitle = prompt("Tytuł klipu (np. 'Joey hires Chandler'):", titleLooksUrl ? "" : (clip.title||""));
         if(newTitle === null) return;
-        const newEpisode = prompt("Odcinek / tag (np. 'S06E12' albo 'Friends scene'):", clip.episode||"");
+        const newEpisode = prompt("Odcinek / tag (np. 'S06E12'):", clip.episode||"");
         if(newEpisode === null) return;
+        const newDesc = prompt("Opis sceny (1-2 zdania, np. 'Joey zatrudnia Chandlera jako asystenta — slang, codzienne wyrażenia'):", clip.desc||"");
+        if(newDesc === null) return;
+        const newTopic = prompt("Temat językowy (np. 'Slang, idiomy, codzienne wyrażenia'):", clip.topic||"");
+        if(newTopic === null) return;
+        const newLevel = prompt("Poziom (A1/A2/B1/B2/C1):", clip.level||"A2");
+        if(newLevel === null) return;
         const mf = Object.assign({},S.myFilms);
         const film = (mf[lang]||[]).find(f=>f.id===filmSeries);
         if(!film || !film.clips) return;
         const ci = film.clips.findIndex(c=>c.id===filmClipId);
         if(ci<0) return;
         film.clips = film.clips.slice();
-        film.clips[ci] = Object.assign({}, film.clips[ci], {title:newTitle.trim()||film.clips[ci].title, episode:newEpisode.trim()||film.clips[ci].episode});
+        const fin = (s,d)=>{const t=(s||"").trim();return t || d;};
+        film.clips[ci] = Object.assign({}, film.clips[ci], {
+          title: fin(newTitle, film.clips[ci].title),
+          episode: fin(newEpisode, film.clips[ci].episode),
+          desc: newDesc.trim(),
+          topic: newTopic.trim(),
+          level: fin(newLevel, film.clips[ci].level||"A2")
+        });
         S.myFilms = mf;
         localStorage.setItem("lingua_my_films", JSON.stringify(mf));
         scheduleDriveSync();
@@ -6235,6 +6248,32 @@ function renderFilmoteka(){
         _sl.clipId=filmClipId;
         _sl.clipTitle=clip?.title||"";
         if(series?.title&&_sl.title&&!_sl.title.startsWith(series.title)) _sl.title=series.title+" — "+_sl.title;
+        // Auto-populate custom clip metadata from AI-generated lesson if fields are empty
+        const userFilmEntry = ((S.myFilms[lang])||[]).find(f=>f.id===filmSeries);
+        if(userFilmEntry && userFilmEntry.clips){
+          const ci = userFilmEntry.clips.findIndex(c=>c.id===filmClipId);
+          if(ci>=0){
+            const cc = userFilmEntry.clips[ci];
+            const updates = {};
+            if(!cc.topic && _sl.topic) updates.topic = _sl.topic;
+            if(!cc.desc && _sl.title){
+              // Generate desc from Claude's lesson title (without series prefix)
+              const stripped = _sl.title.replace(series?.title+" — ","");
+              updates.desc = "Scena: "+stripped+(_sl.dialog?.length ? " ("+_sl.dialog.length+" kwestii)" : "");
+            }
+            if(_sl.level && (cc.level === "A2" || !cc.level)) updates.level = _sl.level;
+            if(Object.keys(updates).length>0){
+              const mfx = Object.assign({},S.myFilms);
+              const fx = (mfx[lang]||[]).find(f=>f.id===filmSeries);
+              if(fx && fx.clips){
+                fx.clips = fx.clips.slice();
+                fx.clips[ci] = Object.assign({}, fx.clips[ci], updates);
+                S.myFilms = mfx;
+                localStorage.setItem("lingua_my_films", JSON.stringify(mfx));
+              }
+            }
+          }
+        }
         saveMyLesson(lang,_sl);set({filmClipId:null,filmYtInput:"",filmYtId:"",filmTranscriptError:"",filmTranscriptLesson:null,filmTranscriptText:"",filmManualPaste:"",filmTranscriptDraft:"",filmTranscriptDraftVideoId:null,screen:"lesson",lesson:_sl,mode:"dialog",lessonTab:"dialog",playing:false,playingLine:-1});
       }},"+ Dodaj do Moich Lekcji"));
       main.appendChild(h("button",{style:"background:none;border:none;color:var(--text3);cursor:pointer;font-size:12px;margin-left:16px",onclick:()=>set({filmTranscriptLesson:null,filmYtInput:"",filmYtId:"",filmTranscriptText:""})},"← Spróbuj inny klip"));
@@ -6268,12 +6307,14 @@ function renderFilmoteka(){
       const acw=h("div",{style:"background:var(--surface);border:1px solid var(--border);padding:20px;margin-bottom:20px"});
       acw.appendChild(h("div",{style:"font-size:13px;color:var(--text);margin-bottom:12px;font-weight:600"},"Nowy klip"));
       const acEp=h("input",{type:"text",class:"fill-inp",style:"margin-bottom:8px;font-size:13px",placeholder:"Odcinek, np. S01E01",value:S.addClipEpisode,oninput:e=>set({addClipEpisode:e.target.value})});
-      const acTi=h("input",{type:"text",class:"fill-inp",style:"margin-bottom:12px;font-size:13px",placeholder:"Tytuł klipu (wymagany)",value:S.addClipTitle,oninput:e=>set({addClipTitle:e.target.value})});
-      acw.appendChild(acEp);acw.appendChild(acTi);
+      const acTi=h("input",{type:"text",class:"fill-inp",style:"margin-bottom:8px;font-size:13px",placeholder:"Tytuł klipu (np. 'Joey hires Chandler') — wymagany",value:S.addClipTitle,oninput:e=>set({addClipTitle:e.target.value})});
+      const acDe=h("input",{type:"text",class:"fill-inp",style:"margin-bottom:8px;font-size:13px",placeholder:"Opis sceny (1-2 zdania, opcjonalnie)",value:S.addClipDesc||"",oninput:e=>set({addClipDesc:e.target.value})});
+      const acTo=h("input",{type:"text",class:"fill-inp",style:"margin-bottom:12px;font-size:13px",placeholder:"Temat językowy (np. 'Slang, idiomy', opcjonalnie)",value:S.addClipTopic||"",oninput:e=>set({addClipTopic:e.target.value})});
+      acw.appendChild(acEp);acw.appendChild(acTi);acw.appendChild(acDe);acw.appendChild(acTo);
       acw.appendChild(h("div",{style:"display:flex;gap:8px"},
         h("button",{class:"primary",style:"font-size:12px;padding:8px 16px",onclick:()=>{
           if(!S.addClipTitle.trim()) return;
-          addClipToMyFilm(lang,series.id,{id:"clip_"+Date.now(),episode:S.addClipEpisode||"Clip",title:S.addClipTitle.trim(),level:series.level||"A2",topic:"",desc:"",ytSearch:series.title+" "+S.addClipTitle.trim()});
+          addClipToMyFilm(lang,series.id,{id:"clip_"+Date.now(),episode:S.addClipEpisode||"Clip",title:S.addClipTitle.trim(),level:series.level||"A2",topic:(S.addClipTopic||"").trim(),desc:(S.addClipDesc||"").trim(),ytSearch:series.title+" "+S.addClipTitle.trim()});
         }},"Zapisz klip"),
         h("button",{class:"sbtn",style:"font-size:12px;padding:8px 16px",onclick:()=>set({showAddClip:false})},"Anuluj")
       ));
