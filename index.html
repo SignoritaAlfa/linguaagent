@@ -1128,6 +1128,7 @@ let S={
   localLastModified:parseInt(localStorage.getItem("lingua_local_last_modified")||"0",10),
   myFilms:(()=>{try{return JSON.parse(localStorage.getItem("lingua_my_films")||"{}")}catch{return {}}})(),
   filmClipUrls:(()=>{try{return JSON.parse(localStorage.getItem("lingua_film_clip_urls")||"{}")}catch{return {}}})(),
+  workerUrl:localStorage.getItem("lingua_worker_url")||"",
   showAddFilm:false,addFilmTitle:"",addFilmType:"serial",addFilmLevel:"A2",
   showAddClip:false,addClipTitle:"",addClipEpisode:"",
   showUpload:false,uploadLang:"FR",uploadStep:0,uploadFile:null,uploadPreview:null,uploadProcessing:false,uploadError:"",
@@ -1180,6 +1181,7 @@ function buildSyncPayload(){
     lessonFolders: S.lessonFolders,
     myFilms: S.myFilms,
     filmClipUrls: S.filmClipUrls,
+    workerUrl: S.workerUrl || "",
     srs: S.srs,
     wordStatus: JSON.parse(localStorage.getItem("lingua_word_status")||"{}"),
     claudeKey: S.claudeKey || "",
@@ -1200,6 +1202,7 @@ function applyDriveData(remote){
   if(remote.lessonFolders){ S.lessonFolders=remote.lessonFolders; localStorage.setItem("lingua_lesson_folders", JSON.stringify(S.lessonFolders)); }
   if(remote.myFilms){ S.myFilms=remote.myFilms; localStorage.setItem("lingua_my_films", JSON.stringify(S.myFilms)); }
   if(remote.filmClipUrls){ S.filmClipUrls=remote.filmClipUrls; localStorage.setItem("lingua_film_clip_urls", JSON.stringify(S.filmClipUrls)); }
+  if(typeof remote.workerUrl === "string"){ S.workerUrl=remote.workerUrl; if(remote.workerUrl) localStorage.setItem("lingua_worker_url", remote.workerUrl); else localStorage.removeItem("lingua_worker_url"); }
   if(remote.srs){ S.srs=remote.srs; localStorage.setItem("lingua_srs", JSON.stringify(S.srs)); }
   if(remote.wordStatus) localStorage.setItem("lingua_word_status", JSON.stringify(remote.wordStatus));
   if(remote.lessonAudio){ S.lessonAudio=remote.lessonAudio; localStorage.setItem("lingua_audio", JSON.stringify(S.lessonAudio)); }
@@ -3342,6 +3345,37 @@ function renderSettings(){
   if(claudeKey) cb.appendChild(h("button",{class:"sbtn danger",onclick:()=>{localStorage.removeItem("lingua_claude_key");set({claudeKey:""});}},"Usuń"));
   sw.appendChild(cb);
 
+  // ── Worker do transkrypcji YouTube ──
+  sw.appendChild(h("hr",{class:"settings-divider"}));
+  sw.appendChild(h("div",{style:"font-size:18px;font-weight:500;color:var(--text);margin-bottom:6px"},"🎬 Worker do transkrypcji YouTube"));
+  sw.appendChild(h("div",{style:"font-size:12px;color:var(--text3);margin-bottom:14px;line-height:1.6"},"Po deployu Workera Cloudflare (free, ~5 min, zobacz worker/README.md w repo) wklej tu jego URL. Wtedy w Filmotece klikasz \"🤖 Auto pobierz\" zamiast wklejać SRT ręcznie."));
+  const wuInp=h("input",{type:"text",class:"key-inp",placeholder:"https://lingua-captions.TWOJA-NAZWA.workers.dev",value:S.workerUrl||"",oninput:(e)=>{S.workerUrl=e.target.value;}});
+  sw.appendChild(wuInp);
+  if(S.workerUrl) sw.appendChild(h("div",{class:"msg-ok"},"✓ Worker URL zapisany"));
+  const wuRow=h("div",{class:"row"});
+  wuRow.appendChild(h("button",{class:"primary",onclick:()=>{
+    const v=(wuInp.value||"").trim().replace(/\/+$/,"");
+    localStorage.setItem("lingua_worker_url",v);
+    S.workerUrl=v;
+    scheduleDriveSync();
+    render();
+  }},"Zapisz URL Workera"));
+  if(S.workerUrl) wuRow.appendChild(h("button",{class:"sbtn danger",onclick:()=>{
+    localStorage.removeItem("lingua_worker_url");
+    S.workerUrl="";
+    scheduleDriveSync();
+    render();
+  }},"Usuń"));
+  if(S.workerUrl) wuRow.appendChild(h("button",{class:"sbtn",onclick:async()=>{
+    try{
+      const r = await fetch(S.workerUrl.replace(/\/+$/,"")+"/?id=dQw4w9WgXcQ");
+      const data = await r.json();
+      if(r.ok && data.cueCount) alert("✓ Worker działa! Test: pobrano "+data.cueCount+" linii dla testowego klipu.");
+      else alert("⚠ Worker odpowiedział, ale: "+(data.error||"nieoczekiwana odpowiedź"));
+    }catch(e){ alert("Błąd połączenia z Workerem: "+e.message); }
+  }},"Testuj"));
+  sw.appendChild(wuRow);
+
   // ── Synchronizacja Google Drive ──
   sw.appendChild(h("hr",{class:"settings-divider"}));
   sw.appendChild(h("div",{style:"font-size:18px;font-weight:500;color:var(--text);margin-bottom:6px"},"☁ Synchronizacja Google Drive"));
@@ -5081,6 +5115,37 @@ function renderSettings(){
   if(claudeKey) cb.appendChild(h("button",{class:"sbtn danger",onclick:()=>{localStorage.removeItem("lingua_claude_key");set({claudeKey:""});}},"Usuń"));
   sw.appendChild(cb);
 
+  // ── Worker do transkrypcji YouTube ──
+  sw.appendChild(h("hr",{class:"settings-divider"}));
+  sw.appendChild(h("div",{style:"font-size:18px;font-weight:500;color:var(--text);margin-bottom:6px"},"🎬 Worker do transkrypcji YouTube"));
+  sw.appendChild(h("div",{style:"font-size:12px;color:var(--text3);margin-bottom:14px;line-height:1.6"},"Po deployu Workera Cloudflare (free, ~5 min, zobacz worker/README.md w repo) wklej tu jego URL. Wtedy w Filmotece klikasz \"🤖 Auto pobierz\" zamiast wklejać SRT ręcznie."));
+  const wuInp=h("input",{type:"text",class:"key-inp",placeholder:"https://lingua-captions.TWOJA-NAZWA.workers.dev",value:S.workerUrl||"",oninput:(e)=>{S.workerUrl=e.target.value;}});
+  sw.appendChild(wuInp);
+  if(S.workerUrl) sw.appendChild(h("div",{class:"msg-ok"},"✓ Worker URL zapisany"));
+  const wuRow=h("div",{class:"row"});
+  wuRow.appendChild(h("button",{class:"primary",onclick:()=>{
+    const v=(wuInp.value||"").trim().replace(/\/+$/,"");
+    localStorage.setItem("lingua_worker_url",v);
+    S.workerUrl=v;
+    scheduleDriveSync();
+    render();
+  }},"Zapisz URL Workera"));
+  if(S.workerUrl) wuRow.appendChild(h("button",{class:"sbtn danger",onclick:()=>{
+    localStorage.removeItem("lingua_worker_url");
+    S.workerUrl="";
+    scheduleDriveSync();
+    render();
+  }},"Usuń"));
+  if(S.workerUrl) wuRow.appendChild(h("button",{class:"sbtn",onclick:async()=>{
+    try{
+      const r = await fetch(S.workerUrl.replace(/\/+$/,"")+"/?id=dQw4w9WgXcQ");
+      const data = await r.json();
+      if(r.ok && data.cueCount) alert("✓ Worker działa! Test: pobrano "+data.cueCount+" linii dla testowego klipu.");
+      else alert("⚠ Worker odpowiedział, ale: "+(data.error||"nieoczekiwana odpowiedź"));
+    }catch(e){ alert("Błąd połączenia z Workerem: "+e.message); }
+  }},"Testuj"));
+  sw.appendChild(wuRow);
+
   // ── Synchronizacja Google Drive ──
   sw.appendChild(h("hr",{class:"settings-divider"}));
   sw.appendChild(h("div",{style:"font-size:18px;font-weight:500;color:var(--text);margin-bottom:6px"},"☁ Synchronizacja Google Drive"));
@@ -5450,6 +5515,41 @@ async function fetchAndProcessTranscript(){
   }
 }
 
+async function fetchViaWorker(videoId){
+  if(!S.workerUrl){ throw new Error("Worker nie skonfigurowany — wejdź w Ustawienia → 🎬 Worker do transkrypcji YouTube"); }
+  const base = S.workerUrl.replace(/\/+$/, "");
+  const langMap = {EN:"en", FR:"fr", IT:"it"};
+  const lang = langMap[S.lang] || "en";
+  const url = `${base}/?id=${encodeURIComponent(videoId)}&lang=${lang}`;
+  const res = await fetch(url);
+  if(!res.ok){
+    const body = await res.json().catch(()=>({}));
+    throw new Error(body.error || ("Worker HTTP "+res.status));
+  }
+  const data = await res.json();
+  if(!data.cues || !Array.isArray(data.cues) || data.cues.length===0){
+    throw new Error("Worker zwrócił pustą transkrypcję");
+  }
+  return data;
+}
+
+async function fetchAndProcessViaWorker(){
+  const videoId = S.filmYtId;
+  if(!videoId){set({filmTranscriptError:"Wklej najpierw poprawny link YouTube"});return;}
+  if(!S.workerUrl){set({filmTranscriptError:"Najpierw skonfiguruj Worker w Ustawieniach"});return;}
+  if(!S.claudeKey){set({filmTranscriptError:"Wpisz klucz Claude (Anthropic) w Ustawieniach"});return;}
+  set({filmTranscriptLoading:true,filmTranscriptError:"",filmTranscriptText:"",filmTranscriptLesson:null});
+  try{
+    console.log("[LinguaAgent] Pobieram przez Worker:", S.workerUrl);
+    const data = await fetchViaWorker(videoId);
+    console.log("[LinguaAgent] Worker zwrócił "+data.cueCount+" cues w "+data.language);
+    await processTranscriptToLesson(data.srt || "", videoId, data.cues);
+  }catch(e){
+    console.error("[LinguaAgent] Worker fetch failed:", e);
+    set({filmTranscriptLoading:false,filmTranscriptProcessing:false,filmTranscriptError:"Worker: "+e.message});
+  }
+}
+
 async function processManualPasteTranscript(){
   const text=(S.filmManualPaste||"").trim();
   if(text.length<50){set({filmTranscriptError:"Wklej dłuższą transkrypcję (min ~50 znaków)"});return;}
@@ -5511,8 +5611,16 @@ function renderFilmoteka(){
       placeholder:"https://www.youtube.com/watch?v=...",value:S.filmYtInput,
       oninput:(e)=>{const v=e.target.value;const id=extractYtId(v);S.filmYtInput=v;S.filmYtId=id||"";saveFilmClipUrl(filmClipId, v);}});
     ytInpWrap.appendChild(ytInp);
-    ytInpWrap.appendChild(h("button",{class:"check-btn",style:"white-space:nowrap;padding:10px 18px",onclick:fetchAndProcessTranscript},"Pobierz →"));
+    if(S.workerUrl){
+      ytInpWrap.appendChild(h("button",{class:"check-btn",style:"white-space:nowrap;padding:10px 18px;background:var(--gold);color:#fff;border-color:var(--gold)",onclick:fetchAndProcessViaWorker},"🤖 Auto pobierz →"));
+    } else {
+      ytInpWrap.appendChild(h("button",{class:"check-btn",style:"white-space:nowrap;padding:10px 18px",onclick:fetchAndProcessTranscript,title:"Tryb RapidAPI (jeśli klucz skonfigurowany)"},"Pobierz →"));
+    }
     main.appendChild(ytInpWrap);
+    if(!S.workerUrl){
+      main.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-bottom:14px;padding:8px 12px;background:var(--surface2);border-radius:4px"},
+        "💡 Tip: skonfiguruj ",h("strong",{},"Worker Cloudflare")," w Ustawieniach → auto-pobieranie transkrypcji bez subskrypcji RapidAPI ani manualnego wklejania. Plik z kodem i instrukcją: ",h("code",{style:"font-size:10px;background:var(--bg2);padding:1px 4px"},"worker/README.md"),"."));
+    }
     if(filmYtId) main.appendChild(h("div",{style:"font-size:11px;color:var(--ok-text);margin-bottom:10px"},"✓ ID wideo: "+filmYtId));
     if(!rapidKey||!geminiKey) main.appendChild(h("div",{class:"msg-err",style:"margin-bottom:10px"},"⚠️ Wejdź w Ustawienia i wpisz klucze: "+((!rapidKey)?"RapidAPI ":"")+(!geminiKey?"Gemini API":"")));
     if(filmTranscriptError) main.appendChild(h("div",{class:"msg-err",style:"margin-bottom:10px;line-height:1.5"},filmTranscriptError));
