@@ -1841,6 +1841,72 @@ function getFilmClips(lang, filmId){
   return {sysClips,userClips,allClips:[...sysClips,...userClips]};
 }
 
+// Parses Claude's lesson response. Resilient to truncation, trailing commas,
+// inner unescaped quotes. Extracts whatever can be salvaged.
+function parseLessonJson(rawText){
+  if(!rawText) throw new Error("Pusta odpowiedź Claude'a");
+  // Try direct parse first
+  const m = rawText.match(/\{[\s\S]*\}/);
+  if(m){
+    try { return JSON.parse(m[0]); } catch(e){}
+    // Try removing trailing commas
+    try { return JSON.parse(m[0].replace(/,(\s*[}\]])/g, "$1")); } catch(e){}
+  }
+  // Recovery: brace-balance progressively shorter prefixes
+  const start = rawText.indexOf("{");
+  if(start < 0) throw new Error("Brak JSON w odpowiedzi");
+  let end = rawText.lastIndexOf("}");
+  while(end > start){
+    try{
+      const slice = rawText.slice(start, end+1);
+      return JSON.parse(slice.replace(/,(\s*[}\]])/g, "$1"));
+    }catch(e){ end = rawText.lastIndexOf("}", end-1); }
+  }
+  // Last resort: manually extract arrays via brace counting
+  const result = { title:"Lekcja (częściowa)", level:"A2", topic:"", dialog:[], vocab:[], phrases:[], fill:[], grammar:[] };
+  const extractArr = (key) => {
+    const idx = rawText.indexOf('"'+key+'"');
+    if(idx < 0) return [];
+    const arrStart = rawText.indexOf("[", idx);
+    if(arrStart < 0) return [];
+    const items = [];
+    let depth=0, itemStart=-1, inStr=false, esc=false;
+    for(let i=arrStart+1; i<rawText.length; i++){
+      const ch = rawText[i];
+      if(inStr){
+        if(esc){ esc=false; continue; }
+        if(ch==="\\"){ esc=true; continue; }
+        if(ch==='"') inStr=false;
+        continue;
+      }
+      if(ch==='"'){ inStr=true; continue; }
+      if(ch==="{"){ if(depth===0) itemStart=i; depth++; }
+      else if(ch==="}"){
+        depth--;
+        if(depth===0 && itemStart>=0){
+          try { items.push(JSON.parse(rawText.slice(itemStart, i+1).replace(/,(\s*[}\]])/g,"$1"))); } catch(e){}
+          itemStart = -1;
+        }
+      }
+      else if(ch==="]" && depth===0) break;
+    }
+    return items;
+  };
+  result.dialog = extractArr("dialog");
+  result.vocab = extractArr("vocab");
+  result.phrases = extractArr("phrases");
+  result.fill = extractArr("fill");
+  result.grammar = extractArr("grammar");
+  // Try to grab title/topic via simple regex
+  const titleM = rawText.match(/"title"\s*:\s*"([^"\\]+)"/);
+  if(titleM) result.title = titleM[1];
+  const topicM = rawText.match(/"topic"\s*:\s*"([^"\\]+)"/);
+  if(topicM) result.topic = topicM[1];
+  if(result.dialog.length === 0) throw new Error("Nie udało się odzyskać dialogu z odpowiedzi (pewnie obcięta)");
+  console.log("[LinguaAgent] Recovered partial lesson: "+result.dialog.length+" dialog, "+result.vocab.length+" vocab, "+result.phrases.length+" phrases");
+  return result;
+}
+
 function tolerantParseJson(text){
   if(!text) throw new Error("Pusta odpowiedź");
   // Try standard parse first
@@ -5553,7 +5619,7 @@ ${trimmedTranscript}`;
   const apiRes=await fetch("https://api.anthropic.com/v1/messages",{
     method:"POST",
     headers:{"x-api-key":S.claudeKey,"anthropic-version":"2023-06-01","content-type":"application/json","anthropic-dangerous-direct-browser-access":"true"},
-    body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:8000,messages:[{role:"user",content:[{type:"text",text:PROMPT}]}]})
+    body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:32000,messages:[{role:"user",content:[{type:"text",text:PROMPT}]}]})
   });
   if(!apiRes.ok){
     const e=await apiRes.json().catch(()=>({}));
@@ -5562,9 +5628,9 @@ ${trimmedTranscript}`;
   }
   const apiData=await apiRes.json();
   const rawText=apiData.content[0].text;
-  const m=rawText.match(/\{[\s\S]*\}/);
-  if(!m) throw new Error("Claude nie zwrócił poprawnego JSON — spróbuj ponownie");
-  const lesson=JSON.parse(m[0]);
+  console.log("[LinguaAgent] Claude response: "+rawText.length+" chars, stop_reason="+apiData.stop_reason);
+  const lesson = parseLessonJson(rawText);
+  if(!lesson.dialog || lesson.dialog.length===0) throw new Error("Claude nie zwrócił dialogu — spróbuj ponownie z krótszą sceną");
   lesson.id="film_"+Date.now(); lesson.type="dialog"; lesson.rawText=transcript;
   if(videoId) lesson.youtubeId=videoId;
   console.log("[LinguaAgent] Lekcja gotowa: "+lesson.dialog?.length+" kwestii, "+lesson.vocab?.length+" słówek");
