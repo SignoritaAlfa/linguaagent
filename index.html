@@ -1095,6 +1095,7 @@ let S={
   filmYtInput:"", filmYtId:"",
   filmTranscriptLoading:false, filmTranscriptError:"", filmTranscriptText:"",
   filmTranscriptProcessing:false, filmTranscriptLesson:null,
+  filmManualPaste:"",
   geminiKey:localStorage.getItem("lingua_gemini_key")||"",
   claudeKey:localStorage.getItem("lingua_claude_key")||"",
   rapidKey:localStorage.getItem("lingua_rapid_key")||"",
@@ -5170,23 +5171,18 @@ async function fetchYouTubeTranscript(videoId){
     console.log("Próba 2 failed:",e);
   }
 
-  throw new Error("Brak transkrypcji dla tego wideo — spróbuj inny klip lub wgraj plik MP3/MP4 ręcznie");
+  // All API attempts failed — explain options to user
+  throw new Error("Żadne z API transkrypcji nie zadziałało (Twój klucz RapidAPI nie ma subskrypcji albo to wideo nie ma transkrypcji). Rozwiązania: (1) wklej transkrypcję ręcznie poniżej, (2) subskrybuj API na rapidapi.com (szukaj „youtube-transcript3\" lub „youtube-transcriptor\" — free tier 500/mies.)");
 }
 
-async function fetchAndProcessTranscript(){
-  const videoId=S.filmYtId;
-  if(!videoId){set({filmTranscriptError:"Wklej poprawny link YouTube"});return;}
-  if(!S.rapidKey){set({filmTranscriptError:"Wpisz klucz RapidAPI w Ustawieniach"});return;}
-  if(!S.claudeKey){set({filmTranscriptError:"Wpisz klucz Claude (Anthropic) API w Ustawieniach"});return;}
-  set({filmTranscriptLoading:true,filmTranscriptError:"",filmTranscriptText:"",filmTranscriptLesson:null});
-  try{
-    const transcript=await fetchYouTubeTranscript(videoId);
-    if(!transcript||!transcript.trim()) throw new Error("Brak transkrypcji dla tego wideo (może być wyłączona na YouTube)");
-    console.log("[LinguaAgent] Transkrypcja pobrana, długość: "+transcript.length+" znaków");
-    set({filmTranscriptText:transcript,filmTranscriptLoading:false,filmTranscriptProcessing:true});
-    const langNames={EN:"angielski",FR:"francuski",IT:"włoski"};
-    const trimmedTranscript=transcript.slice(0,15000);
-    const PROMPT=`Masz surową transkrypcję z YouTube w języku ${langNames[S.lang]||"angielski"}. Twoim zadaniem jest przerobić ją na lekcję językową.
+async function processTranscriptToLesson(transcript, videoId){
+  if(!transcript||!transcript.trim()) throw new Error("Pusta transkrypcja");
+  if(!S.claudeKey) throw new Error("Wymagany klucz Claude (Anthropic) w Ustawieniach");
+  console.log("[LinguaAgent] Transkrypcja: "+transcript.length+" znaków");
+  set({filmTranscriptText:transcript,filmTranscriptLoading:false,filmTranscriptProcessing:true,filmTranscriptError:""});
+  const langNames={EN:"angielski",FR:"francuski",IT:"włoski"};
+  const trimmedTranscript=transcript.slice(0,15000);
+  const PROMPT=`Masz surową transkrypcję w języku ${langNames[S.lang]||"angielski"}. Twoim zadaniem jest przerobić ją na lekcję językową.
 
 NAJWAŻNIEJSZA ZASADA: Weź KAŻDE zdanie z transkrypcji DOSŁOWNIE. NIE zmieniaj tekstu, NIE skracaj, NIE łącz zdań, NIE pomijaj żadnych wypowiedzi. Każda wypowiedź z transkrypcji = osobna kwestia w dialogu z polem "s" (kto mówi), "l" (oryginalny tekst dosłownie), "t" (tłumaczenie PL).
 
@@ -5202,29 +5198,51 @@ Odpowiedz TYLKO czystym JSON bez markdown:
 
 TRANSKRYPCJA:
 ${trimmedTranscript}`;
-    console.log("[LinguaAgent] Wysyłam do Claude Sonnet, prompt: "+PROMPT.length+" znaków");
-    const apiRes=await fetch("https://api.anthropic.com/v1/messages",{
-      method:"POST",
-      headers:{"x-api-key":S.claudeKey,"anthropic-version":"2023-06-01","content-type":"application/json","anthropic-dangerous-direct-browser-access":"true"},
-      body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:8000,messages:[{role:"user",content:[{type:"text",text:PROMPT}]}]})
-    });
-    if(!apiRes.ok){
-      const e=await apiRes.json().catch(()=>({}));
-      const errMsg=e?.error?.message||"sprawdź klucz";
-      console.error("[LinguaAgent] Claude API error:",apiRes.status,errMsg);
-      throw new Error("Claude API błąd "+apiRes.status+": "+errMsg);
-    }
-    const apiData=await apiRes.json();
-    const rawText=apiData.content[0].text;
-    console.log("[LinguaAgent] Odpowiedź Claude, długość: "+rawText.length+" znaków");
-    const m=rawText.match(/\{[\s\S]*\}/);
-    if(!m) throw new Error("Claude nie zwrócił poprawnego JSON — spróbuj ponownie");
-    const lesson=JSON.parse(m[0]);
-    lesson.id="film_"+Date.now();lesson.type="dialog";lesson.youtubeId=videoId;lesson.rawText=transcript;
-    console.log("[LinguaAgent] Lekcja gotowa: "+lesson.dialog?.length+" kwestii dialogu, "+lesson.vocab?.length+" słówek");
-    set({filmTranscriptProcessing:false,filmTranscriptLesson:lesson});
+  const apiRes=await fetch("https://api.anthropic.com/v1/messages",{
+    method:"POST",
+    headers:{"x-api-key":S.claudeKey,"anthropic-version":"2023-06-01","content-type":"application/json","anthropic-dangerous-direct-browser-access":"true"},
+    body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:8000,messages:[{role:"user",content:[{type:"text",text:PROMPT}]}]})
+  });
+  if(!apiRes.ok){
+    const e=await apiRes.json().catch(()=>({}));
+    const errMsg=e?.error?.message||"sprawdź klucz";
+    throw new Error("Claude API błąd "+apiRes.status+": "+errMsg);
+  }
+  const apiData=await apiRes.json();
+  const rawText=apiData.content[0].text;
+  const m=rawText.match(/\{[\s\S]*\}/);
+  if(!m) throw new Error("Claude nie zwrócił poprawnego JSON — spróbuj ponownie");
+  const lesson=JSON.parse(m[0]);
+  lesson.id="film_"+Date.now(); lesson.type="dialog"; lesson.rawText=transcript;
+  if(videoId) lesson.youtubeId=videoId;
+  console.log("[LinguaAgent] Lekcja gotowa: "+lesson.dialog?.length+" kwestii, "+lesson.vocab?.length+" słówek");
+  set({filmTranscriptProcessing:false,filmTranscriptLesson:lesson});
+}
+
+async function fetchAndProcessTranscript(){
+  const videoId=S.filmYtId;
+  if(!videoId){set({filmTranscriptError:"Wklej poprawny link YouTube"});return;}
+  if(!S.rapidKey){set({filmTranscriptError:"Wpisz klucz RapidAPI w Ustawieniach (albo użyj wklejania ręcznego niżej)"});return;}
+  if(!S.claudeKey){set({filmTranscriptError:"Wpisz klucz Claude (Anthropic) w Ustawieniach"});return;}
+  set({filmTranscriptLoading:true,filmTranscriptError:"",filmTranscriptText:"",filmTranscriptLesson:null});
+  try{
+    const transcript=await fetchYouTubeTranscript(videoId);
+    await processTranscriptToLesson(transcript, videoId);
   }catch(e){
     console.error("[LinguaAgent] Błąd przetwarzania:",e);
+    set({filmTranscriptLoading:false,filmTranscriptProcessing:false,filmTranscriptError:"Błąd: "+e.message});
+  }
+}
+
+async function processManualPasteTranscript(){
+  const text=(S.filmManualPaste||"").trim();
+  if(text.length<50){set({filmTranscriptError:"Wklej dłuższą transkrypcję (min ~50 znaków)"});return;}
+  if(!S.claudeKey){set({filmTranscriptError:"Wpisz klucz Claude (Anthropic) w Ustawieniach"});return;}
+  set({filmTranscriptLoading:true,filmTranscriptError:"",filmTranscriptText:"",filmTranscriptLesson:null});
+  try{
+    await processTranscriptToLesson(text, S.filmYtId||null);
+  }catch(e){
+    console.error("[LinguaAgent] Błąd wklejania:",e);
     set({filmTranscriptLoading:false,filmTranscriptProcessing:false,filmTranscriptError:"Błąd: "+e.message});
   }
 }
@@ -5246,7 +5264,7 @@ function renderFilmoteka(){
     const w=h("div",{});
     w.appendChild(renderTopNav());
     const main=h("div",{class:"main"});
-    main.appendChild(h("button",{class:"back-btn",onclick:()=>set({filmClipId:null,filmYtInput:"",filmYtId:"",filmTranscriptError:"",filmTranscriptLesson:null,filmTranscriptText:""})},"← "+series.title));
+    main.appendChild(h("button",{class:"back-btn",onclick:()=>set({filmClipId:null,filmYtInput:"",filmYtId:"",filmTranscriptError:"",filmTranscriptLesson:null,filmTranscriptText:"",filmManualPaste:""})},"← "+series.title));
     main.appendChild(h("div",{style:"font-size:10px;color:var(--text3);letter-spacing:.2em;text-transform:uppercase;margin-bottom:8px"},clip.episode+" · "+clip.level));
     main.appendChild(h("div",{class:"page-title",style:"font-size:26px;margin-bottom:4px"},clip.title));
     main.appendChild(h("div",{style:"font-size:13px;color:var(--text2);margin-bottom:6px;line-height:1.6"},clip.desc));
@@ -5270,7 +5288,34 @@ function renderFilmoteka(){
     main.appendChild(ytInpWrap);
     if(filmYtId) main.appendChild(h("div",{style:"font-size:11px;color:var(--ok-text);margin-bottom:10px"},"✓ ID wideo: "+filmYtId));
     if(!rapidKey||!geminiKey) main.appendChild(h("div",{class:"msg-err",style:"margin-bottom:10px"},"⚠️ Wejdź w Ustawienia i wpisz klucze: "+((!rapidKey)?"RapidAPI ":"")+(!geminiKey?"Gemini API":"")));
-    if(filmTranscriptError) main.appendChild(h("div",{class:"msg-err",style:"margin-bottom:10px"},filmTranscriptError));
+    if(filmTranscriptError) main.appendChild(h("div",{class:"msg-err",style:"margin-bottom:10px;line-height:1.5"},filmTranscriptError));
+
+    // Manual paste fallback
+    if(!filmTranscriptLoading && !filmTranscriptProcessing && !filmTranscriptLesson){
+      const det=h("details",{style:"margin-top:18px;border:1px solid var(--border);border-radius:6px;padding:10px 14px;background:var(--surface)"});
+      const sum=h("summary",{style:"cursor:pointer;font-size:12px;font-weight:500;color:var(--text);user-select:none"},"📋 Albo wklej transkrypcję ręcznie (jeśli API nie działa)");
+      det.appendChild(sum);
+      const body=h("div",{style:"margin-top:12px"});
+      body.appendChild(h("div",{style:"font-size:12px;color:var(--text2);line-height:1.7;margin-bottom:10px"},
+        h("strong",{},"Jak skopiować transkrypcję z YouTube:"),h("br",{}),
+        "1. Otwórz wideo na youtube.com",h("br",{}),
+        "2. Pod wideo kliknij „...\" (więcej akcji) → „Pokaż transkrypcję\"",h("br",{}),
+        "3. W panelu po prawej kliknij „⋮\" → „Przełącz znaczniki czasu\" żeby wyłączyć liczby",h("br",{}),
+        "4. Zaznacz cały tekst (Ctrl/Cmd+A w panelu) → skopiuj (Ctrl/Cmd+C)",h("br",{}),
+        "5. Wklej tutaj poniżej i kliknij „Stwórz lekcję\""
+      ));
+      const ta=h("textarea",{
+        style:"width:100%;min-height:140px;padding:12px;border:1px solid var(--border);background:var(--surface);font-family:'DM Sans',sans-serif;font-size:13px;line-height:1.6;border-radius:4px;resize:vertical;outline:none;color:var(--text);box-sizing:border-box;margin-bottom:10px",
+        placeholder:"Wklej tutaj transkrypcję skopiowaną z YouTube...",
+        oninput:(e)=>{ S.filmManualPaste = e.target.value; }
+      });
+      ta.value = S.filmManualPaste||"";
+      body.appendChild(ta);
+      body.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-bottom:10px"},(S.filmManualPaste||"").length+" znaków"));
+      body.appendChild(h("button",{class:"check-btn",style:"padding:10px 18px",onclick:processManualPasteTranscript},"✨ Stwórz lekcję z wklejonej transkrypcji"));
+      det.appendChild(body);
+      main.appendChild(det);
+    }
     if(filmTranscriptLoading) main.appendChild(h("div",{style:"text-align:center;padding:28px;color:var(--text2);font-size:13px"},h("div",{style:"font-size:28px;margin-bottom:8px"},"⏳"),h("div",{},"Pobieranie transkrypcji z YouTube...")));
     else if(filmTranscriptProcessing) main.appendChild(h("div",{style:"text-align:center;padding:28px;color:var(--text2);font-size:13px"},h("div",{style:"font-size:28px;margin-bottom:8px"},"✨"),h("div",{},"Trwa analiza tekstu..."),h("div",{style:"font-size:11px;color:var(--text3);margin-top:4px"},"może potrwać kilkanaście sekund")));
     else if(filmTranscriptLesson){
@@ -5280,7 +5325,7 @@ function renderFilmoteka(){
         _sl.source="video";
         _sl.seriesTitle=series?.title||"";
         if(series?.title&&_sl.title&&!_sl.title.startsWith(series.title)) _sl.title=series.title+" — "+_sl.title;
-        saveMyLesson(lang,_sl);set({filmClipId:null,filmYtInput:"",filmYtId:"",filmTranscriptError:"",filmTranscriptLesson:null,filmTranscriptText:"",screen:"lang"});
+        saveMyLesson(lang,_sl);set({filmClipId:null,filmYtInput:"",filmYtId:"",filmTranscriptError:"",filmTranscriptLesson:null,filmTranscriptText:"",filmManualPaste:"",screen:"lang"});
       }},"+ Dodaj do Moich Lekcji"));
       main.appendChild(h("button",{style:"background:none;border:none;color:var(--text3);cursor:pointer;font-size:12px;margin-left:16px",onclick:()=>set({filmTranscriptLesson:null,filmYtInput:"",filmYtId:"",filmTranscriptText:""})},"← Spróbuj inny klip"));
     }
@@ -5331,7 +5376,7 @@ function renderFilmoteka(){
     allClips.forEach(clip=>{
       const isUserClip=userClipIds.has(clip.id);
       const row=h("div",{style:"background:var(--surface);padding:20px 24px;cursor:pointer;transition:background .15s;display:flex;justify-content:space-between;align-items:center",
-        onclick:()=>set({filmClipId:clip.id,filmYtInput:"",filmYtId:"",filmTranscriptError:"",filmTranscriptLesson:null,filmTranscriptText:""})});
+        onclick:()=>set({filmClipId:clip.id,filmYtInput:"",filmYtId:"",filmTranscriptError:"",filmTranscriptLesson:null,filmTranscriptText:"",filmManualPaste:""})});
       row.onmouseover=()=>{row.style.background="var(--surface2)";};
       row.onmouseout=()=>{row.style.background="var(--surface)";};
       const left=h("div",{style:"flex:1"});
