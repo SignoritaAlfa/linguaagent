@@ -2610,7 +2610,10 @@ function renderLesson(){
       ytLink.appendChild(ytInfo);
       ytWrap.appendChild(ytLink);
       if(isOwn){
-        const editRow = h("div",{style:"margin-top:6px;text-align:right"});
+        const editRow = h("div",{style:"margin-top:6px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap"});
+        const regenBtn = h("button",{class:"sbtn",style:"font-size:11px;padding:4px 10px",title:"Pobierz nowy transkrypt z YouTube i wygeneruj dialog/słówka/zwroty na nowo"},"🔄 Wygeneruj dialog z linku");
+        regenBtn.onclick = ()=>regenerateLessonDialog(lesson, lang);
+        editRow.appendChild(regenBtn);
         const editBtn = h("button",{class:"sbtn",style:"font-size:11px;padding:4px 10px"},"🔗 Zmień link wideo");
         editBtn.onclick = editVideoUrl;
         editRow.appendChild(editBtn);
@@ -4443,7 +4446,10 @@ function renderLesson(){
       ytLink.appendChild(ytInfo);
       ytWrap.appendChild(ytLink);
       if(isOwn){
-        const editRow = h("div",{style:"margin-top:6px;text-align:right"});
+        const editRow = h("div",{style:"margin-top:6px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap"});
+        const regenBtn = h("button",{class:"sbtn",style:"font-size:11px;padding:4px 10px",title:"Pobierz nowy transkrypt z YouTube i wygeneruj dialog/słówka/zwroty na nowo"},"🔄 Wygeneruj dialog z linku");
+        regenBtn.onclick = ()=>regenerateLessonDialog(lesson, lang);
+        editRow.appendChild(regenBtn);
         const editBtn = h("button",{class:"sbtn",style:"font-size:11px;padding:4px 10px"},"🔗 Zmień link wideo");
         editBtn.onclick = editVideoUrl;
         editRow.appendChild(editBtn);
@@ -5720,6 +5726,96 @@ function formatTime(sec){
   const m = Math.floor(s/60);
   const r = s%60;
   return m+":"+(r<10?"0"+r:r);
+}
+
+// Build a lesson object from a transcript without writing to state — used by
+// regenerate-in-place flow. Returns the parsed lesson without setting filmTranscriptLesson.
+async function buildLessonFromTranscript(transcript, videoId, cues, lang){
+  if(!transcript||!transcript.trim()) throw new Error("Pusta transkrypcja");
+  if(!S.claudeKey) throw new Error("Brak klucza Claude w Ustawieniach");
+  const langNames={EN:"angielski",FR:"francuski",IT:"włoski"};
+  const COMMON_SECTIONS = `
+DODATKOWE SEKCJE:
+- vocab: minimum 25 POJEDYNCZYCH słów z dialogu (rzeczowniki, czasowniki, przymiotniki). NIE wkładaj tu zwrotów wielowyrazowych.
+- phrases: minimum 15 ZWROTÓW i WYRAŻEŃ z dialogu (idiomy, czasowniki frazowe, kolokacje, utarte zwroty).
+- fill: minimum 10 ćwiczeń uzupełniania luk — (1) cat:"text" z dialogu (min 5), (2) cat:"grammar" (min 5)
+- grammar: minimum 4 zasady gramatyczne widoczne w dialogu`;
+  let PROMPT;
+  if(cues && cues.length>0){
+    const limit = Math.min(cues.length, 400);
+    const formatted = cues.slice(0,limit).map(c=>`[${c.start.toFixed(2)}-${c.end.toFixed(2)}] ${c.text}`).join("\n");
+    PROMPT = `Masz transkrypcję z timestampami w języku ${langNames[lang||S.lang]||"angielski"}. Każda linia: [start-end] tekst (sekundy).\n\nZADANIE:\n1. POŁĄCZ kolejne linie tej samej osoby w jedną kwestię. Zachowaj start pierwszej i end ostatniej.\n2. JEŚLI linia zawiera wypowiedzi DWÓCH+ postaci, ROZDZIEL.\n3. POPRAW INTERPUNKCJĘ I KAPITALIZACJĘ (transkrypcje YT są lowercase).\n4. Rozpoznaj kto mówi UWAŻNIE — Friends: Monica/Chandler/Ross/Joey/Rachel/Phoebe; inne seriale podobnie. Dla nieznanych Speaker1, Speaker2.\n5. Każda kwestia ma "start" i "end" (sekundy float) — KRYTYCZNE dla sync z wideo.\n6. Przetłumacz na polski naturalnie.${COMMON_SECTIONS}\n\nOdpowiedz TYLKO czystym JSON bez markdown:\n{"title":"tytuł","level":"A2","topic":"temat po polsku","dialog":[{"s":"imię","l":"tekst","t":"tłumaczenie","start":1.23,"end":4.56}],"vocab":[{"w":"słowo","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie","exT":"tłumaczenie"}],"phrases":[{"w":"zwrot","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie","exT":"tłumaczenie"}],"fill":[{"s":"zdanie z ___","a":"odp","h":"wskazówka","cat":"text"}],"grammar":[{"rule":"zasada","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie PL"}]}\n\nTRANSKRYPCJA Z TIMESTAMPAMI:\n${formatted}`;
+  } else {
+    const trim=transcript.slice(0,15000);
+    PROMPT=`Masz surową transkrypcję w języku ${langNames[lang||S.lang]||"angielski"}. Przerób na lekcję językową.\n\nZASADY: Weź każde zdanie DOSŁOWNIE, NIE skracaj. POPRAW interpunkcję/kapitalizację. Rozpoznaj kto mówi.${COMMON_SECTIONS}\n\nOdpowiedz TYLKO czystym JSON bez markdown:\n{"title":"tytuł","level":"A2","topic":"temat po polsku","dialog":[{"s":"imię","l":"tekst","t":"tłumaczenie"}],"vocab":[{"w":"słowo","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie","exT":"tłumaczenie"}],"phrases":[{"w":"zwrot","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie","exT":"tłumaczenie"}],"fill":[{"s":"zdanie z ___","a":"odp","h":"wskazówka","cat":"text"}],"grammar":[{"rule":"zasada","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie PL"}]}\n\nTRANSKRYPCJA:\n${trim}`;
+  }
+  const apiRes = await fetch("https://api.anthropic.com/v1/messages",{
+    method:"POST",
+    headers:{"x-api-key":S.claudeKey,"anthropic-version":"2023-06-01","content-type":"application/json","anthropic-dangerous-direct-browser-access":"true"},
+    body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:32000,messages:[{role:"user",content:[{type:"text",text:PROMPT}]}]})
+  });
+  if(!apiRes.ok){
+    const e=await apiRes.json().catch(()=>({}));
+    throw new Error("Claude API "+apiRes.status+": "+(e?.error?.message||"sprawdź klucz"));
+  }
+  const apiData = await apiRes.json();
+  const newLesson = parseLessonJson(apiData.content[0].text);
+  if(!newLesson.dialog || newLesson.dialog.length===0) throw new Error("Claude nie zwrócił dialogu");
+  return newLesson;
+}
+
+async function regenerateLessonDialog(lesson, lang){
+  const videoId = lesson.youtubeId;
+  if(!videoId){ alert("Lekcja nie ma linku YouTube — najpierw ustaw link"); return; }
+  if(!S.claudeKey){ alert("Skonfiguruj klucz Claude w Ustawieniach"); return; }
+  if(!confirm("Pobiorę nowy transkrypt z YouTube i wygeneruję na nowo: dialog, słówka, zwroty, ćwiczenia, gramatykę.\n\nObecne dane lekcji ZOSTANĄ NADPISANE. Ręcznie dodane słówka i zwroty zostaną utracone.\n\nKontynuować?")) return;
+  set({filmTranscriptLoading:true, filmTranscriptError:"", filmTranscriptDraft:""});
+  try{
+    let transcript, cues=null;
+    if(S.workerUrl){
+      try{
+        const data = await fetchViaWorker(videoId);
+        transcript = data.srt || "";
+        cues = data.cues || null;
+      }catch(e){
+        throw new Error("Worker: "+e.message+" — alternatywnie usuń lekcję i odpalisz Auto pobierz ręcznie z Filmoteki");
+      }
+    } else if(S.rapidKey){
+      transcript = await fetchYouTubeTranscript(videoId);
+      if(transcript && isSrtFormat(transcript)) cues = parseSrt(transcript);
+    } else {
+      throw new Error("Skonfiguruj Worker albo klucz RapidAPI w Ustawieniach (potrzebne do pobrania transkrypcji)");
+    }
+    if(!transcript || transcript.length<30) throw new Error("Pobrana transkrypcja jest pusta");
+    const newLesson = await buildLessonFromTranscript(transcript, videoId, cues, lang);
+    // Overwrite fields, KEEP id/clipId/folder/youtubeId/source/seriesTitle/clipTitle
+    const ml = Object.assign({}, S.myLessons);
+    const li = (ml[lang]||[]).findIndex(l => l.id === lesson.id);
+    if(li < 0){ throw new Error("Nie znaleziono lekcji do nadpisania"); }
+    const old = ml[lang][li];
+    ml[lang][li] = Object.assign({}, old, {
+      title: newLesson.title || old.title,
+      topic: newLesson.topic || old.topic || "",
+      level: newLesson.level || old.level || "A2",
+      dialog: newLesson.dialog || [],
+      vocab: newLesson.vocab || [],
+      phrases: newLesson.phrases || [],
+      fill: newLesson.fill || [],
+      grammar: newLesson.grammar || [],
+      rawText: transcript
+    });
+    S.myLessons = ml;
+    localStorage.setItem("lingua_my_lessons", JSON.stringify(ml));
+    scheduleDriveSync();
+    // Update the live lesson object so screen=="lesson" reflects changes
+    Object.assign(lesson, ml[lang][li]);
+    set({filmTranscriptLoading:false});
+    alert("✓ Lekcja zregenerowana: "+(newLesson.dialog||[]).length+" kwestii, "+(newLesson.vocab||[]).length+" słówek, "+(newLesson.phrases||[]).length+" zwrotów");
+  }catch(e){
+    console.error("[Regenerate]", e);
+    set({filmTranscriptLoading:false, filmTranscriptError:"Błąd: "+e.message});
+    alert("Błąd regeneracji: "+e.message);
+  }
 }
 
 async function processTranscriptToLesson(transcript, videoId, cues){
