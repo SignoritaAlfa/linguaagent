@@ -2842,9 +2842,12 @@ function renderLesson(){
       ytWrap.appendChild(ytLink);
       if(isOwn){
         const editRow = h("div",{style:"margin-top:6px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap"});
-        const regenBtn = h("button",{class:"sbtn",style:"font-size:11px;padding:4px 10px",title:"Pobierz nowy transkrypt z YouTube i wygeneruj dialog/słówka/zwroty na nowo"},"🔄 Wygeneruj dialog z linku");
-        regenBtn.onclick = ()=>regenerateLessonDialog(lesson, lang);
-        editRow.appendChild(regenBtn);
+        const regenSavedBtn = h("button",{class:"sbtn",style:"font-size:11px;padding:4px 10px",title:"Wygeneruj dialog na nowo z zapisanego tekstu lekcji (jeśli go nie ma — pobierze z YouTube)"},"🔄 Wygeneruj z zapisanego tekstu");
+        regenSavedBtn.onclick = ()=>regenerateLessonDialog(lesson, lang);
+        editRow.appendChild(regenSavedBtn);
+        const regenYtBtn = h("button",{class:"sbtn",style:"font-size:11px;padding:4px 10px",title:"Pobierz świeży transkrypt z YouTube i wygeneruj (przydatne gdy zmieniłaś link wideo)"},"🌐 Pobierz z YouTube na nowo");
+        regenYtBtn.onclick = ()=>regenerateLessonDialog(lesson, lang, {forceFetch:true});
+        editRow.appendChild(regenYtBtn);
         const editBtn = h("button",{class:"sbtn",style:"font-size:11px;padding:4px 10px"},"🔗 Zmień link wideo");
         editBtn.onclick = editVideoUrl;
         editRow.appendChild(editBtn);
@@ -4719,9 +4722,12 @@ function renderLesson(){
       ytWrap.appendChild(ytLink);
       if(isOwn){
         const editRow = h("div",{style:"margin-top:6px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap"});
-        const regenBtn = h("button",{class:"sbtn",style:"font-size:11px;padding:4px 10px",title:"Pobierz nowy transkrypt z YouTube i wygeneruj dialog/słówka/zwroty na nowo"},"🔄 Wygeneruj dialog z linku");
-        regenBtn.onclick = ()=>regenerateLessonDialog(lesson, lang);
-        editRow.appendChild(regenBtn);
+        const regenSavedBtn = h("button",{class:"sbtn",style:"font-size:11px;padding:4px 10px",title:"Wygeneruj dialog na nowo z zapisanego tekstu lekcji (jeśli go nie ma — pobierze z YouTube)"},"🔄 Wygeneruj z zapisanego tekstu");
+        regenSavedBtn.onclick = ()=>regenerateLessonDialog(lesson, lang);
+        editRow.appendChild(regenSavedBtn);
+        const regenYtBtn = h("button",{class:"sbtn",style:"font-size:11px;padding:4px 10px",title:"Pobierz świeży transkrypt z YouTube i wygeneruj (przydatne gdy zmieniłaś link wideo)"},"🌐 Pobierz z YouTube na nowo");
+        regenYtBtn.onclick = ()=>regenerateLessonDialog(lesson, lang, {forceFetch:true});
+        editRow.appendChild(regenYtBtn);
         const editBtn = h("button",{class:"sbtn",style:"font-size:11px;padding:4px 10px"},"🔗 Zmień link wideo");
         editBtn.onclick = editVideoUrl;
         editRow.appendChild(editBtn);
@@ -6077,29 +6083,50 @@ DODATKOWE SEKCJE:
   return newLesson;
 }
 
-async function regenerateLessonDialog(lesson, lang){
-  const videoId = lesson.youtubeId;
-  if(!videoId){ alert("Lekcja nie ma linku YouTube — najpierw ustaw link"); return; }
+async function regenerateLessonDialog(lesson, lang, opts){
+  opts = opts || {};
   if(!S.claudeKey){ alert("Skonfiguruj klucz Claude w Ustawieniach"); return; }
-  if(!confirm("Pobiorę nowy transkrypt z YouTube i wygeneruję na nowo: dialog, słówka, zwroty, ćwiczenia, gramatykę.\n\nObecne dane lekcji ZOSTANĄ NADPISANE. Ręcznie dodane słówka i zwroty zostaną utracone.\n\nKontynuować?")) return;
+  const videoId = lesson.youtubeId || null;
+  const savedRaw = (lesson.rawText||"").trim();
+  const haveSaved = savedRaw.length > 100;
+  const forceFetch = !!opts.forceFetch;
+  // Choose source: existing rawText takes priority unless caller forces a fresh YouTube fetch
+  let transcript = "", cues = null, sourceLabel = "";
+  if(!forceFetch && haveSaved){
+    transcript = savedRaw;
+    if(isSrtFormat(transcript)) cues = parseSrt(transcript);
+    sourceLabel = "zapisany tekst lekcji" + (cues ? " (SRT, "+cues.length+" cues)" : "");
+  } else {
+    if(!videoId){
+      alert("Lekcja nie ma zapisanego tekstu ani linku YouTube — nic do regeneracji"); return;
+    }
+    if(!S.workerUrl && !S.rapidKey){
+      alert("Lekcja nie ma zapisanego tekstu, a brakuje Workera/RapidAPI do pobrania z YouTube. Dodaj rawText lub skonfiguruj w Ustawieniach.");
+      return;
+    }
+    sourceLabel = "pobrać świeży transkrypt z YouTube ("+videoId+")";
+  }
+  if(!confirm("Regeneracja użyje: "+sourceLabel+".\n\nObecne dialog, słówka, zwroty, ćwiczenia i gramatyka ZOSTANĄ NADPISANE. Ręcznie dodane pozycje zostaną utracone.\n\nKontynuować?")) return;
   set({filmTranscriptLoading:true, filmTranscriptError:"", filmTranscriptDraft:""});
   try{
-    let transcript, cues=null;
-    if(S.workerUrl){
-      try{
-        const data = await fetchViaWorker(videoId);
-        transcript = data.srt || "";
-        cues = data.cues || null;
-      }catch(e){
-        throw new Error("Worker: "+e.message+" — alternatywnie usuń lekcję i odpalisz Auto pobierz ręcznie z Filmoteki");
+    if(forceFetch || !haveSaved){
+      // Fetch from YouTube
+      if(S.workerUrl){
+        try{
+          const data = await fetchViaWorker(videoId);
+          transcript = data.srt || "";
+          cues = data.cues || null;
+        }catch(e){
+          throw new Error("Worker: "+e.message);
+        }
+      } else if(S.rapidKey){
+        transcript = await fetchYouTubeTranscript(videoId);
+        if(transcript && isSrtFormat(transcript)) cues = parseSrt(transcript);
+      } else {
+        throw new Error("Skonfiguruj Worker albo klucz RapidAPI w Ustawieniach");
       }
-    } else if(S.rapidKey){
-      transcript = await fetchYouTubeTranscript(videoId);
-      if(transcript && isSrtFormat(transcript)) cues = parseSrt(transcript);
-    } else {
-      throw new Error("Skonfiguruj Worker albo klucz RapidAPI w Ustawieniach (potrzebne do pobrania transkrypcji)");
     }
-    if(!transcript || transcript.length<30) throw new Error("Pobrana transkrypcja jest pusta");
+    if(!transcript || transcript.length<30) throw new Error("Transkrypt jest pusty");
     const newLesson = await buildLessonFromTranscript(transcript, videoId, cues, lang);
     // Overwrite fields, KEEP id/clipId/folder/youtubeId/source/seriesTitle/clipTitle
     const ml = Object.assign({}, S.myLessons);
