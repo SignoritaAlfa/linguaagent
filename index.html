@@ -1133,7 +1133,7 @@ let S={
   filmClipUrls:(()=>{try{return JSON.parse(localStorage.getItem("lingua_film_clip_urls")||"{}")}catch{return {}}})(),
   workerUrl:localStorage.getItem("lingua_worker_url")||"",
   showAddFilm:false,addFilmTitle:"",addFilmType:"serial",addFilmLevel:"A2",
-  showAddClip:false,addClipTitle:"",addClipEpisode:"",addClipDesc:"",addClipTopic:"",
+  showAddClip:false,addClipTitle:"",addClipEpisode:"",addClipDesc:"",addClipTopic:"",addClipUrl:"",addClipAutoFilling:false,
   showUpload:false,uploadLang:"FR",uploadStep:0,uploadFile:null,uploadPreview:null,uploadProcessing:false,uploadError:"",
   elKeyInput:"",elMsg:"",
   voiceRate:parseFloat(localStorage.getItem("lingua_rate")||"1.0"),
@@ -1829,8 +1829,82 @@ function addClipToMyFilm(lang, filmId, clip){
   }
   film.clips.push(clip);
   localStorage.setItem("lingua_my_films",JSON.stringify(mf));
-  set({myFilms:mf,showAddClip:false,addClipTitle:"",addClipEpisode:"",addClipDesc:"",addClipTopic:""});
+  set({myFilms:mf,showAddClip:false,addClipTitle:"",addClipEpisode:"",addClipDesc:"",addClipTopic:"",addClipUrl:""});
 }
+async function autoFillClipFromUrl(seriesTitle, langCode){
+  const url = (S.addClipUrl||"").trim();
+  if(!url){ alert("Wklej najpierw URL YouTube"); return; }
+  const videoId = extractYtId(url);
+  if(!videoId){ alert("To nie wygląda na poprawny URL YouTube"); return; }
+  if(!S.claudeKey){ alert("Skonfiguruj klucz Claude w Ustawieniach"); return; }
+  set({addClipAutoFilling:true});
+  try{
+    // Step 1: YouTube oEmbed for title + author (CORS-friendly, no auth)
+    let ytTitle = "", ytAuthor = "";
+    try{
+      const oeRes = await fetch("https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v="+videoId+"&format=json");
+      if(oeRes.ok){
+        const oe = await oeRes.json();
+        ytTitle = oe.title || "";
+        ytAuthor = oe.author_name || "";
+      }
+    }catch(e){ console.log("[Auto-fill] oEmbed failed:", e); }
+
+    // Step 2: optional transcript preview via Worker
+    let transcriptPreview = "";
+    if(S.workerUrl){
+      try{
+        const data = await fetchViaWorker(videoId);
+        if(data && data.cues){
+          transcriptPreview = data.cues.slice(0, 30).map(c=>c.text).join(" ").slice(0, 1500);
+        }
+      }catch(e){ console.log("[Auto-fill] Worker transcript skipped:", e.message); }
+    }
+
+    // Step 3: Claude generates metadata
+    const langName = {EN:"angielskim",FR:"francuskim",IT:"włoskim"}[langCode]||"obcym";
+    const prompt = `Generujesz metadata sceny do nauki języka ${langName}, w polskim. Na podstawie informacji o klipie YouTube zaproponuj zwięzłe pola opisujące scenę.
+
+DANE:
+- Seria/film: "${seriesTitle||"nieznana"}"
+- Tytuł YouTube: "${ytTitle||"(nieznany)"}"
+- Kanał: "${ytAuthor||"(nieznany)"}"
+${transcriptPreview ? '- Fragment transkrypcji (początek):\n"""\n' + transcriptPreview + '\n"""' : "- Brak transkrypcji (klip bez napisów)"}
+
+WYGENERUJ JSON:
+- title: zwięzły tytuł sceny w języku oryginału (np. "Joey hires Chandler", "Garden Scene"). Max 60 znaków. NIE wklejaj URL ani całego tytułu YouTube.
+- episode: oznaczenie odcinka jeśli się da wywnioskować (np. "S06E12") lub krótki tag (np. "Friends scene")
+- desc: opis sceny po polsku, 1-2 zdania, naturalne (np. "Joey zatrudnia Chandlera jako asystenta — slang, codzienne wyrażenia")
+- topic: temat językowy po polsku, 3-5 słów kluczy oddzielonych przecinkami (np. "Slang, idiomy, codzienne wyrażenia")
+- level: poziom CEFR (A1/A2/B1/B2/C1) — dobierz odpowiedni do trudności sceny
+
+Odpowiedz TYLKO czystym JSON bez markdown:
+{"title":"...","episode":"...","desc":"...","topic":"...","level":"..."}`;
+
+    const res = await fetch("https://api.anthropic.com/v1/messages",{
+      method:"POST",
+      headers:{"x-api-key":S.claudeKey,"anthropic-version":"2023-06-01","content-type":"application/json","anthropic-dangerous-direct-browser-access":"true"},
+      body:JSON.stringify({model:"claude-haiku-4-5-20251001",max_tokens:600,messages:[{role:"user",content:[{type:"text",text:prompt}]}]})
+    });
+    if(!res.ok){ throw new Error("Claude API "+res.status); }
+    const data = await res.json();
+    const m = data.content[0].text.match(/\{[\s\S]*\}/);
+    if(!m) throw new Error("Brak JSON w odpowiedzi");
+    const meta = JSON.parse(m[0]);
+    set({
+      addClipTitle: meta.title || S.addClipTitle,
+      addClipEpisode: meta.episode || S.addClipEpisode,
+      addClipDesc: meta.desc || S.addClipDesc,
+      addClipTopic: meta.topic || S.addClipTopic,
+      addClipAutoFilling: false
+    });
+  }catch(e){
+    console.error("[Auto-fill]", e);
+    alert("Błąd auto-uzupełniania: "+e.message);
+    set({addClipAutoFilling:false});
+  }
+}
+
 function editClipMetadata(lang, filmId, clipId){
   const mf = Object.assign({},S.myFilms);
   const film = (mf[lang]||[]).find(f=>f.id===filmId);
@@ -6310,6 +6384,16 @@ function renderFilmoteka(){
     if(S.showAddClip){
       const acw=h("div",{style:"background:var(--surface);border:1px solid var(--border);padding:20px;margin-bottom:20px"});
       acw.appendChild(h("div",{style:"font-size:13px;color:var(--text);margin-bottom:12px;font-weight:600"},"Nowy klip"));
+      // URL + Auto-fill button (NEW)
+      const urlRow=h("div",{style:"display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;align-items:center"});
+      const acUrl=h("input",{type:"text",class:"fill-inp",style:"flex:1;min-width:240px;margin:0;font-size:13px",placeholder:"URL YouTube (opcjonalnie — pozwala na auto-uzupełnienie)",value:S.addClipUrl||"",oninput:e=>set({addClipUrl:e.target.value})});
+      urlRow.appendChild(acUrl);
+      const autoBtn=h("button",{class:"sbtn",style:"font-size:11px;padding:8px 14px;border-color:var(--gold);color:var(--gold);white-space:nowrap;flex-shrink:0"},S.addClipAutoFilling?"⏳ Generuję...":"✨ Auto-uzupełnij");
+      autoBtn.disabled = !!S.addClipAutoFilling;
+      autoBtn.onclick = ()=>autoFillClipFromUrl(series.title, lang);
+      urlRow.appendChild(autoBtn);
+      acw.appendChild(urlRow);
+      acw.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-bottom:12px;line-height:1.5"},S.workerUrl?"Wklej URL i klik Auto-uzupełnij — pobierze tytuł i transkrypt z YouTube, Claude wygeneruje opis/temat/poziom.":"Wklej URL + klik Auto-uzupełnij. Bez Workera użyje samego tytułu YouTube (oEmbed) — wynik może być mniej trafny."));
       const acEp=h("input",{type:"text",class:"fill-inp",style:"margin-bottom:8px;font-size:13px",placeholder:"Odcinek, np. S01E01",value:S.addClipEpisode,oninput:e=>set({addClipEpisode:e.target.value})});
       const acTi=h("input",{type:"text",class:"fill-inp",style:"margin-bottom:8px;font-size:13px",placeholder:"Tytuł klipu (np. 'Joey hires Chandler') — wymagany",value:S.addClipTitle,oninput:e=>set({addClipTitle:e.target.value})});
       const acDe=h("input",{type:"text",class:"fill-inp",style:"margin-bottom:8px;font-size:13px",placeholder:"Opis sceny (1-2 zdania, opcjonalnie)",value:S.addClipDesc||"",oninput:e=>set({addClipDesc:e.target.value})});
@@ -6318,7 +6402,10 @@ function renderFilmoteka(){
       acw.appendChild(h("div",{style:"display:flex;gap:8px"},
         h("button",{class:"primary",style:"font-size:12px;padding:8px 16px",onclick:()=>{
           if(!S.addClipTitle.trim()) return;
-          addClipToMyFilm(lang,series.id,{id:"clip_"+Date.now(),episode:S.addClipEpisode||"Clip",title:S.addClipTitle.trim(),level:series.level||"A2",topic:(S.addClipTopic||"").trim(),desc:(S.addClipDesc||"").trim(),ytSearch:series.title+" "+S.addClipTitle.trim()});
+          const newClipId = "clip_"+Date.now();
+          addClipToMyFilm(lang,series.id,{id:newClipId,episode:S.addClipEpisode||"Clip",title:S.addClipTitle.trim(),level:series.level||"A2",topic:(S.addClipTopic||"").trim(),desc:(S.addClipDesc||"").trim(),ytSearch:series.title+" "+S.addClipTitle.trim()});
+          // Save the URL for the new clip so user doesn't have to re-paste later
+          if((S.addClipUrl||"").trim()) saveFilmClipUrl(newClipId, S.addClipUrl.trim());
         }},"Zapisz klip"),
         h("button",{class:"sbtn",style:"font-size:12px;padding:8px 16px",onclick:()=>set({showAddClip:false})},"Anuluj")
       ));
