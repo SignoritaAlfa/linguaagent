@@ -6083,6 +6083,19 @@ DODATKOWE SEKCJE:
   return newLesson;
 }
 
+function showRegenStatus(text, type){
+  document.querySelectorAll('.regen-status-banner').forEach(el=>el.remove());
+  if(!text) return null;
+  const banner = document.createElement("div");
+  banner.className = "regen-status-banner";
+  const bgMap = {error:"var(--err)",success:"var(--ok)",info:"var(--gold)"};
+  const fgMap = {error:"var(--err-text)",success:"var(--ok-text)",info:"#fff"};
+  banner.style.cssText = "position:fixed;top:20px;left:50%;transform:translateX(-50%);background:"+(bgMap[type]||"var(--gold)")+";color:"+(fgMap[type]||"#fff")+";padding:14px 24px;border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,0.25);z-index:10000;font-size:13px;font-family:inherit;min-width:280px;max-width:90vw;text-align:center;line-height:1.5";
+  banner.textContent = text;
+  document.body.appendChild(banner);
+  return banner;
+}
+
 async function regenerateLessonDialog(lesson, lang, opts){
   opts = opts || {};
   if(!S.claudeKey){ alert("Skonfiguruj klucz Claude w Ustawieniach"); return; }
@@ -6095,7 +6108,7 @@ async function regenerateLessonDialog(lesson, lang, opts){
   if(!forceFetch && haveSaved){
     transcript = savedRaw;
     if(isSrtFormat(transcript)) cues = parseSrt(transcript);
-    sourceLabel = "zapisany tekst lekcji" + (cues ? " (SRT, "+cues.length+" cues)" : "");
+    sourceLabel = "zapisany tekst lekcji" + (cues ? " (SRT, "+cues.length+" cues)" : " ("+savedRaw.length+" znaków)");
   } else {
     if(!videoId){
       alert("Lekcja nie ma zapisanego tekstu ani linku YouTube — nic do regeneracji"); return;
@@ -6108,6 +6121,8 @@ async function regenerateLessonDialog(lesson, lang, opts){
   }
   if(!confirm("Regeneracja użyje: "+sourceLabel+".\n\nObecne dialog, słówka, zwroty, ćwiczenia i gramatyka ZOSTANĄ NADPISANE. Ręcznie dodane pozycje zostaną utracone.\n\nKontynuować?")) return;
   set({filmTranscriptLoading:true, filmTranscriptError:"", filmTranscriptDraft:""});
+  showRegenStatus("🔄 Regeneruję lekcję z: "+sourceLabel+" — to potrwa 30-60s. Nie zamykaj karty.", "info");
+  console.log("[Regenerate] Starting, source:", sourceLabel, "transcript chars:", transcript.length);
   try{
     if(forceFetch || !haveSaved){
       // Fetch from YouTube
@@ -6150,11 +6165,21 @@ async function regenerateLessonDialog(lesson, lang, opts){
     // Update the live lesson object so screen=="lesson" reflects changes
     Object.assign(lesson, ml[lang][li]);
     set({filmTranscriptLoading:false});
-    alert("✓ Lekcja zregenerowana: "+(newLesson.dialog||[]).length+" kwestii, "+(newLesson.vocab||[]).length+" słówek, "+(newLesson.phrases||[]).length+" zwrotów");
+    console.log("[Regenerate] Done:", (newLesson.dialog||[]).length, "dialog,", (newLesson.vocab||[]).length, "vocab,", (newLesson.phrases||[]).length, "phrases");
+    const ok = showRegenStatus("✓ Zregenerowana: "+(newLesson.dialog||[]).length+" kwestii, "+(newLesson.vocab||[]).length+" słówek, "+(newLesson.phrases||[]).length+" zwrotów", "success");
+    setTimeout(()=>{ if(ok) ok.remove(); }, 4000);
   }catch(e){
     console.error("[Regenerate]", e);
     set({filmTranscriptLoading:false, filmTranscriptError:"Błąd: "+e.message});
-    alert("Błąd regeneracji: "+e.message);
+    const errBanner = showRegenStatus("❌ Błąd regeneracji: "+e.message, "error");
+    if(errBanner){
+      const closeBtn = document.createElement("button");
+      closeBtn.style.cssText = "margin-left:14px;background:none;border:none;color:inherit;cursor:pointer;font-size:18px;line-height:1;padding:0 4px";
+      closeBtn.textContent = "✕";
+      closeBtn.onclick = ()=>errBanner.remove();
+      errBanner.appendChild(closeBtn);
+      setTimeout(()=>{ if(errBanner && errBanner.parentNode) errBanner.remove(); }, 8000);
+    }
   }
 }
 
