@@ -1831,6 +1831,39 @@ function addClipToMyFilm(lang, filmId, clip){
   localStorage.setItem("lingua_my_films",JSON.stringify(mf));
   set({myFilms:mf,showAddClip:false,addClipTitle:"",addClipEpisode:"",addClipDesc:"",addClipTopic:""});
 }
+function editClipMetadata(lang, filmId, clipId){
+  const mf = Object.assign({},S.myFilms);
+  const film = (mf[lang]||[]).find(f=>f.id===filmId);
+  if(!film || !film.clips) return;
+  const ci = film.clips.findIndex(c=>c.id===clipId);
+  if(ci<0) return;
+  const clip = film.clips[ci];
+  const titleLooksUrl = /^https?:\/\//.test((clip.title||"").trim());
+  const newTitle = prompt("Tytuł klipu (np. 'Joey hires Chandler'):", titleLooksUrl ? "" : (clip.title||""));
+  if(newTitle === null) return;
+  const newEpisode = prompt("Odcinek / tag (np. 'S06E12'):", clip.episode||"");
+  if(newEpisode === null) return;
+  const newDesc = prompt("Opis sceny (1-2 zdania):", clip.desc||"");
+  if(newDesc === null) return;
+  const newTopic = prompt("Temat językowy (np. 'Slang, idiomy'):", clip.topic||"");
+  if(newTopic === null) return;
+  const newLevel = prompt("Poziom (A1/A2/B1/B2/C1):", clip.level||"A2");
+  if(newLevel === null) return;
+  const fin = (s,d)=>{const t=(s||"").trim();return t || d;};
+  film.clips = film.clips.slice();
+  film.clips[ci] = Object.assign({}, clip, {
+    title: fin(newTitle, clip.title),
+    episode: fin(newEpisode, clip.episode),
+    desc: newDesc.trim(),
+    topic: newTopic.trim(),
+    level: fin(newLevel, clip.level||"A2")
+  });
+  S.myFilms = mf;
+  localStorage.setItem("lingua_my_films", JSON.stringify(mf));
+  scheduleDriveSync();
+  render();
+}
+
 function deleteClipFromMyFilm(lang, filmId, clipId){
   const mf=Object.assign({},S.myFilms);
   const film=(mf[lang]||[]).find(f=>f.id===filmId);
@@ -6006,36 +6039,7 @@ function renderFilmoteka(){
     const overlayFilm = ((S.myFilms[lang])||[]).find(f=>f.id===filmSeries);
     const isCustomClip = !!(overlayFilm && overlayFilm.clips && overlayFilm.clips.some(c=>c.id===filmClipId));
     if(isCustomClip){
-      titleRow.appendChild(h("button",{class:"sbtn",style:"font-size:11px;padding:4px 10px",title:"Zmień tytuł / odcinek / temat / opis",onclick:()=>{
-        const newTitle = prompt("Tytuł klipu (np. 'Joey hires Chandler'):", titleLooksUrl ? "" : (clip.title||""));
-        if(newTitle === null) return;
-        const newEpisode = prompt("Odcinek / tag (np. 'S06E12'):", clip.episode||"");
-        if(newEpisode === null) return;
-        const newDesc = prompt("Opis sceny (1-2 zdania, np. 'Joey zatrudnia Chandlera jako asystenta — slang, codzienne wyrażenia'):", clip.desc||"");
-        if(newDesc === null) return;
-        const newTopic = prompt("Temat językowy (np. 'Slang, idiomy, codzienne wyrażenia'):", clip.topic||"");
-        if(newTopic === null) return;
-        const newLevel = prompt("Poziom (A1/A2/B1/B2/C1):", clip.level||"A2");
-        if(newLevel === null) return;
-        const mf = Object.assign({},S.myFilms);
-        const film = (mf[lang]||[]).find(f=>f.id===filmSeries);
-        if(!film || !film.clips) return;
-        const ci = film.clips.findIndex(c=>c.id===filmClipId);
-        if(ci<0) return;
-        film.clips = film.clips.slice();
-        const fin = (s,d)=>{const t=(s||"").trim();return t || d;};
-        film.clips[ci] = Object.assign({}, film.clips[ci], {
-          title: fin(newTitle, film.clips[ci].title),
-          episode: fin(newEpisode, film.clips[ci].episode),
-          desc: newDesc.trim(),
-          topic: newTopic.trim(),
-          level: fin(newLevel, film.clips[ci].level||"A2")
-        });
-        S.myFilms = mf;
-        localStorage.setItem("lingua_my_films", JSON.stringify(mf));
-        scheduleDriveSync();
-        render();
-      }},"✏ Edytuj klip"));
+      titleRow.appendChild(h("button",{class:"sbtn",style:"font-size:11px;padding:4px 10px",title:"Zmień tytuł / odcinek / temat / opis",onclick:()=>editClipMetadata(lang, filmSeries, filmClipId)},"✏ Edytuj klip"));
     }
     main.appendChild(titleRow);
     if(clip.desc) main.appendChild(h("div",{style:"font-size:13px;color:var(--text2);margin-bottom:6px;line-height:1.6"},clip.desc));
@@ -6338,7 +6342,11 @@ function renderFilmoteka(){
       row.appendChild(left);
       const rightCol=h("div",{style:"display:flex;align-items:center;gap:10px;flex-shrink:0"});
       if(isUserClip){
-        const delBtn=h("button",{style:"background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px;padding:4px",onclick:(e)=>{e.stopPropagation();if(confirm("Usunąć klip \""+clip.title+"\"?")) deleteClipFromMyFilm(lang,series.id,clip.id);}},"✕");
+        const editBtn=h("button",{style:"background:none;border:1px solid transparent;color:var(--text3);cursor:pointer;font-size:12px;padding:4px 8px;border-radius:4px;transition:all .15s",title:"Edytuj tytuł, opis, temat",onclick:(e)=>{e.stopPropagation();editClipMetadata(lang,series.id,clip.id);}},"✏");
+        editBtn.onmouseover=()=>{editBtn.style.borderColor="var(--gold)";editBtn.style.color="var(--gold)";};
+        editBtn.onmouseout=()=>{editBtn.style.borderColor="transparent";editBtn.style.color="var(--text3)";};
+        rightCol.appendChild(editBtn);
+        const delBtn=h("button",{style:"background:none;border:none;color:var(--text3);cursor:pointer;font-size:14px;padding:4px",title:"Usuń klip",onclick:(e)=>{e.stopPropagation();if(confirm("Usunąć klip \""+(clip.title||clip.episode)+"\"?")) deleteClipFromMyFilm(lang,series.id,clip.id);}},"✕");
         delBtn.onmouseover=()=>{delBtn.style.color="var(--err-text)";};
         delBtn.onmouseout=()=>{delBtn.style.color="var(--text3)";};
         rightCol.appendChild(delBtn);
