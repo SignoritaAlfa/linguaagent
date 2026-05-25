@@ -1243,8 +1243,8 @@ async function driveFindFile(){
 }
 
 async function pushToDrive(){
-  if(!S.driveToken){ S.driveError="Brak tokenu Drive — połącz ponownie"; S.driveStatus="error"; render(); return false; }
-  S.driveStatus="syncing"; render();
+  if(!S.driveToken){ S.driveError="Brak tokenu Drive — połącz ponownie"; S.driveStatus="error"; renderIfStatusVisible(); return false; }
+  S.driveStatus="syncing"; renderIfStatusVisible();
   try{
     const payload = buildSyncPayload();
     const body = JSON.stringify(payload);
@@ -1278,7 +1278,7 @@ async function pushToDrive(){
         driveInvalidateToken();
         S.driveStatus = "disconnected";
         S.driveError = "Token wygasł — kliknij Połącz ponownie";
-        render();
+        renderIfStatusVisible();
         return false;
       }
       throw new Error("Drive push HTTP "+res.status+": "+errText.slice(0,200));
@@ -1292,10 +1292,10 @@ async function pushToDrive(){
     localStorage.setItem("lingua_local_last_modified", String(S.localLastModified));
     S.driveStatus = "connected";
     S.driveError = "";
-    render();
+    renderIfStatusVisible();
     return true;
   }catch(e){
-    S.driveStatus="error"; S.driveError=e.message; render();
+    S.driveStatus="error"; S.driveError=e.message; renderIfStatusVisible();
     console.error("[Drive] push failed:", e);
     return false;
   }
@@ -1318,7 +1318,7 @@ async function pullFromDrive(){
         driveInvalidateToken();
         S.driveStatus = "disconnected";
         S.driveError = "Token wygasł — kliknij Połącz ponownie";
-        render();
+        renderIfStatusVisible();
         return null;
       }
       throw new Error("Drive pull HTTP "+res.status+": "+errText.slice(0,200));
@@ -1326,13 +1326,13 @@ async function pullFromDrive(){
     return await res.json();
   }catch(e){
     console.error("[Drive] pull failed:", e);
-    S.driveStatus="error"; S.driveError=e.message; render();
+    S.driveStatus="error"; S.driveError=e.message; renderIfStatusVisible();
     return null;
   }
 }
 
 async function driveSync(_preferRemote){
-  S.driveStatus="syncing"; render();
+  S.driveStatus="syncing"; renderIfStatusVisible();
   const remote = await pullFromDrive();
   if(remote && remote.lastModified){
     const localLast = S.localLastModified || 0;
@@ -1350,7 +1350,7 @@ async function driveSync(_preferRemote){
     S.localLastModified = remoteLast;
     localStorage.setItem("lingua_drive_last_sync", String(S.driveLastSync));
     localStorage.setItem("lingua_local_last_modified", String(S.localLastModified));
-    S.driveStatus="connected"; render();
+    S.driveStatus="connected"; renderIfStatusVisible();
   } else {
     // No remote file yet → push current local
     await pushToDrive();
@@ -1420,6 +1420,12 @@ function scheduleDriveSync(){
   if(!S.driveAutoSync || !S.driveToken) return;
   if(_driveSyncTimer) clearTimeout(_driveSyncTimer);
   _driveSyncTimer = setTimeout(()=>{ pushToDrive(); }, 3000);
+}
+
+// Re-render only if user can actually see the Drive status (avoids wiping
+// imperatively-built UI like AI suggestion panels when background sync ticks)
+function renderIfStatusVisible(){
+  if(S.screen === "settings") render();
 }
 
 function set(p){Object.assign(S,p);render();}
@@ -5505,7 +5511,8 @@ async function processTranscriptToLesson(transcript, videoId, cues){
   const langNames={EN:"angielski",FR:"francuski",IT:"włoski"};
   const COMMON_SECTIONS = `
 DODATKOWE SEKCJE:
-- vocab: minimum 25 słów/zwrotów z dialogu (slang, idiomy, kolokwializmy, ciekawe wyrażenia) z IPA i tłumaczeniem PL
+- vocab: minimum 25 POJEDYNCZYCH słów z dialogu (rzeczowniki, czasowniki, przymiotniki, ciekawe pojedyncze wyrazy) z IPA i tłumaczeniem PL. NIE wkładaj tu zwrotów wielowyrazowych — te idą do "phrases".
+- phrases: minimum 15 ZWROTÓW i WYRAŻEŃ z dialogu (idiomy, kolokwializmy, czasowniki frazowe typu "look up to", kolokacje typu "make sense", utarte zwroty typu "How come?", "You bet"). Wielowyrazowe konstrukcje godne osobnej nauki. Z IPA, tłumaczeniem PL i przykładem z dialogu.
 - fill: minimum 10 ćwiczeń uzupełniania luk — DWIE KATEGORIE: (1) cat:"text" — zdania z dialogu z brakującym słowem (min 5), (2) cat:"grammar" — ćwiczenia gramatyczne na zasady z dialogu (min 5)
 - grammar: minimum 4 zasady gramatyczne widoczne w dialogu`;
   let PROMPT;
@@ -5524,7 +5531,7 @@ ZADANIE:
 ${COMMON_SECTIONS}
 
 Odpowiedz TYLKO czystym JSON bez markdown:
-{"title":"tytuł sceny","level":"A2","topic":"temat po polsku","dialog":[{"s":"imię","l":"dokładny tekst","t":"tłumaczenie polskie","start":1.23,"end":4.56}],"vocab":[{"w":"słowo/zwrot","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie z dialogu","exT":"tłumaczenie"}],"fill":[{"s":"zdanie z ___","a":"odpowiedź","h":"wskazówka PL","cat":"text"},{"s":"gramatyczne z ___","a":"odpowiedź","h":"wskazówka","cat":"grammar"}],"grammar":[{"rule":"zasada","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie PL"}]}
+{"title":"tytuł sceny","level":"A2","topic":"temat po polsku","dialog":[{"s":"imię","l":"dokładny tekst","t":"tłumaczenie polskie","start":1.23,"end":4.56}],"vocab":[{"w":"pojedyncze słowo","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie z dialogu","exT":"tłumaczenie"}],"phrases":[{"w":"zwrot wielowyrazowy","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie z dialogu","exT":"tłumaczenie"}],"fill":[{"s":"zdanie z ___","a":"odpowiedź","h":"wskazówka PL","cat":"text"},{"s":"gramatyczne z ___","a":"odpowiedź","h":"wskazówka","cat":"grammar"}],"grammar":[{"rule":"zasada","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie PL"}]}
 
 TRANSKRYPCJA Z TIMESTAMPAMI:
 ${formatted}`;
@@ -5538,7 +5545,7 @@ POSTACIE: Zidentyfikuj kto mówi na podstawie kontekstu. Dla znanych seriali (np
 ${COMMON_SECTIONS}
 
 Odpowiedz TYLKO czystym JSON bez markdown:
-{"title":"tytuł sceny","level":"A2","topic":"temat po polsku","dialog":[{"s":"imię postaci","l":"dokładny tekst z transkrypcji","t":"tłumaczenie polskie"}],"vocab":[{"w":"słowo/zwrot","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie z dialogu","exT":"tłumaczenie"}],"fill":[{"s":"zdanie z ___","a":"odpowiedź","h":"wskazówka PL","cat":"text"},{"s":"gramatyczne z ___","a":"odpowiedź","h":"wskazówka","cat":"grammar"}],"grammar":[{"rule":"zasada","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie PL"}]}
+{"title":"tytuł sceny","level":"A2","topic":"temat po polsku","dialog":[{"s":"imię postaci","l":"dokładny tekst z transkrypcji","t":"tłumaczenie polskie"}],"vocab":[{"w":"pojedyncze słowo","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie z dialogu","exT":"tłumaczenie"}],"phrases":[{"w":"zwrot wielowyrazowy","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie z dialogu","exT":"tłumaczenie"}],"fill":[{"s":"zdanie z ___","a":"odpowiedź","h":"wskazówka PL","cat":"text"},{"s":"gramatyczne z ___","a":"odpowiedź","h":"wskazówka","cat":"grammar"}],"grammar":[{"rule":"zasada","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie PL"}]}
 
 TRANSKRYPCJA:
 ${trimmedTranscript}`;
