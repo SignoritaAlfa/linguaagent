@@ -1127,6 +1127,7 @@ let S={
   driveUserEmail:localStorage.getItem("lingua_drive_user_email")||"",
   localLastModified:parseInt(localStorage.getItem("lingua_local_last_modified")||"0",10),
   myFilms:(()=>{try{return JSON.parse(localStorage.getItem("lingua_my_films")||"{}")}catch{return {}}})(),
+  filmClipUrls:(()=>{try{return JSON.parse(localStorage.getItem("lingua_film_clip_urls")||"{}")}catch{return {}}})(),
   showAddFilm:false,addFilmTitle:"",addFilmType:"serial",addFilmLevel:"A2",
   showAddClip:false,addClipTitle:"",addClipEpisode:"",
   showUpload:false,uploadLang:"FR",uploadStep:0,uploadFile:null,uploadPreview:null,uploadProcessing:false,uploadError:"",
@@ -1178,6 +1179,7 @@ function buildSyncPayload(){
     myLessons: S.myLessons,
     lessonFolders: S.lessonFolders,
     myFilms: S.myFilms,
+    filmClipUrls: S.filmClipUrls,
     srs: S.srs,
     wordStatus: JSON.parse(localStorage.getItem("lingua_word_status")||"{}"),
     claudeKey: S.claudeKey || "",
@@ -1197,6 +1199,7 @@ function applyDriveData(remote){
   if(remote.myLessons){ S.myLessons=remote.myLessons; localStorage.setItem("lingua_my_lessons", JSON.stringify(S.myLessons)); }
   if(remote.lessonFolders){ S.lessonFolders=remote.lessonFolders; localStorage.setItem("lingua_lesson_folders", JSON.stringify(S.lessonFolders)); }
   if(remote.myFilms){ S.myFilms=remote.myFilms; localStorage.setItem("lingua_my_films", JSON.stringify(S.myFilms)); }
+  if(remote.filmClipUrls){ S.filmClipUrls=remote.filmClipUrls; localStorage.setItem("lingua_film_clip_urls", JSON.stringify(S.filmClipUrls)); }
   if(remote.srs){ S.srs=remote.srs; localStorage.setItem("lingua_srs", JSON.stringify(S.srs)); }
   if(remote.wordStatus) localStorage.setItem("lingua_word_status", JSON.stringify(remote.wordStatus));
   if(remote.lessonAudio){ S.lessonAudio=remote.lessonAudio; localStorage.setItem("lingua_audio", JSON.stringify(S.lessonAudio)); }
@@ -1754,6 +1757,19 @@ function deleteClipFromMyFilm(lang, filmId, clipId){
   const film=(mf[lang]||[]).find(f=>f.id===filmId);
   if(film){film.clips=film.clips.filter(c=>c.id!==clipId);localStorage.setItem("lingua_my_films",JSON.stringify(mf));set({myFilms:mf,filmClipId:null});}
 }
+function saveFilmClipUrl(clipId, url){
+  if(!clipId) return;
+  const map = Object.assign({}, S.filmClipUrls||{});
+  if(url && url.trim()){
+    map[clipId] = url.trim();
+  } else {
+    delete map[clipId];
+  }
+  S.filmClipUrls = map;
+  localStorage.setItem("lingua_film_clip_urls", JSON.stringify(map));
+  scheduleDriveSync();
+}
+
 function getFilmClips(lang, filmId){
   // Merge system clips + user-added clips for any film
   const sysFilm=(FILMS[lang]||[]).find(f=>f.id===filmId);
@@ -5485,9 +5501,15 @@ function renderFilmoteka(){
     main.appendChild(h("div",{style:"font-size:12px;color:var(--text3);margin-bottom:14px;line-height:1.8"},
       "1. Znajdź klip na YouTube (przycisk powyżej)",h("br",{}),"2. Skopiuj link z paska adresu",h("br",{}),"3. Wklej poniżej → kliknij Pobierz i stwórz lekcję"));
     const ytInpWrap=h("div",{style:"display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap"});
+    // Pre-fill from saved URL if not yet set in input
+    const savedUrl = (S.filmClipUrls||{})[filmClipId];
+    if(savedUrl && !filmYtInput){
+      S.filmYtInput = savedUrl;
+      S.filmYtId = extractYtId(savedUrl) || "";
+    }
     const ytInp=h("input",{type:"text",class:"fill-inp",style:"flex:1;min-width:300px;font-size:14px;padding:12px 14px",
-      placeholder:"https://www.youtube.com/watch?v=...",value:filmYtInput,
-      oninput:(e)=>{const v=e.target.value;const id=extractYtId(v);set({filmYtInput:v,filmYtId:id||""});}});
+      placeholder:"https://www.youtube.com/watch?v=...",value:S.filmYtInput,
+      oninput:(e)=>{const v=e.target.value;const id=extractYtId(v);S.filmYtInput=v;S.filmYtId=id||"";saveFilmClipUrl(filmClipId, v);}});
     ytInpWrap.appendChild(ytInp);
     ytInpWrap.appendChild(h("button",{class:"check-btn",style:"white-space:nowrap;padding:10px 18px",onclick:fetchAndProcessTranscript},"Pobierz →"));
     main.appendChild(ytInpWrap);
