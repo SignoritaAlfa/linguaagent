@@ -12,6 +12,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://www.youtube.com/iframe_api"></script>
 <style>
 html, body { background: #ffffff !important; color: #0e1117 !important; color-scheme: light; overscroll-behavior: none; }
 html { min-height: 100%; min-height: -webkit-fill-available; }
@@ -541,6 +542,20 @@ body{
 
 /* ── VOCAB LIST ── */
 .vocab-list-wrap{max-width:700px}
+/* Filmoteka karaoke */
+.film-karaoke{display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start;margin-bottom:32px}
+@media (max-width:900px){.film-karaoke{grid-template-columns:1fr}}
+.film-video-col{position:sticky;top:70px}
+.film-video-frame{width:100%;aspect-ratio:16/9;background:#000;border-radius:6px;overflow:hidden}
+.film-video-frame iframe{width:100%;height:100%;border:0;display:block}
+.film-cues-col{max-height:75vh;overflow-y:auto;padding-right:6px}
+.film-cue{padding:10px 14px;margin-bottom:6px;border-left:3px solid transparent;border-radius:4px;cursor:pointer;transition:all .15s;background:var(--surface)}
+.film-cue:hover{background:var(--surface2)}
+.film-cue-spk{font-size:10px;font-weight:600;color:var(--text3);letter-spacing:.1em;text-transform:uppercase;margin-bottom:3px;display:flex;justify-content:space-between;align-items:center}
+.film-cue-l{font-size:14px;color:var(--text);line-height:1.5;margin-bottom:2px}
+.film-cue-t{font-size:12px;color:var(--text3);font-style:italic;line-height:1.5}
+.film-cue-active{background:var(--gold-dim);border-left-color:var(--gold)}
+.film-cue-active .film-cue-l{color:var(--text);font-weight:500}
 .vocab-list-row{display:grid;grid-template-columns:40px 1fr 1fr;gap:8px 20px;padding:14px 0;border-bottom:1px solid var(--border);align-items:start}
 .vocab-list-row:last-child{border-bottom:none}
 .vocab-list-word{font-size:15px;font-weight:500;color:var(--text)}
@@ -1561,6 +1576,83 @@ function stopVocabPlayback(){
   set({vocabPlaying:false, vocabPlayingIdx:-1, vocabPlayingList:null});
 }
 
+// ── Filmoteka karaoke: YT IFrame Player + highlight loop ─────────────────────
+let _ytPlayer = null;
+let _ytHighlightInterval = null;
+let _ytApiReady = false;
+let _ytLastActiveIdx = -1;
+window.onYouTubeIframeAPIReady = function(){ _ytApiReady = true; console.log("[YT] API ready"); };
+
+function destroyYtPlayer(){
+  if(_ytHighlightInterval){ clearInterval(_ytHighlightInterval); _ytHighlightInterval=null; }
+  if(_ytPlayer){
+    try{ _ytPlayer.destroy(); }catch(e){}
+    _ytPlayer = null;
+  }
+  _ytLastActiveIdx = -1;
+}
+
+function initYtPlayer(videoId, containerId){
+  destroyYtPlayer();
+  const start = ()=>{
+    try{
+      _ytPlayer = new YT.Player(containerId,{
+        videoId: videoId,
+        playerVars:{rel:0, modestbranding:1, playsinline:1},
+        events:{
+          onReady: ()=>{
+            console.log("[YT] Player ready for "+videoId);
+            _ytHighlightInterval = setInterval(highlightCurrentCue, 200);
+          }
+        }
+      });
+    }catch(e){ console.error("[YT] init failed:",e); }
+  };
+  if(_ytApiReady && window.YT && window.YT.Player) start();
+  else {
+    const wait = setInterval(()=>{
+      if(_ytApiReady && window.YT && window.YT.Player){ clearInterval(wait); start(); }
+    },120);
+    setTimeout(()=>clearInterval(wait), 8000);
+  }
+}
+
+function highlightCurrentCue(){
+  if(!_ytPlayer || typeof _ytPlayer.getCurrentTime !== "function") return;
+  let t;
+  try{ t = _ytPlayer.getCurrentTime(); }catch(e){ return; }
+  const cues = document.querySelectorAll(".film-cue");
+  if(!cues.length) return;
+  let activeIdx = -1;
+  cues.forEach((cue,i)=>{
+    const s = parseFloat(cue.dataset.start);
+    const e = parseFloat(cue.dataset.end);
+    if(t >= s && t < e + 0.3) activeIdx = i;
+  });
+  if(activeIdx !== _ytLastActiveIdx){
+    cues.forEach(c=>c.classList.remove("film-cue-active"));
+    if(activeIdx >= 0){
+      const c = cues[activeIdx];
+      c.classList.add("film-cue-active");
+      const col = c.closest(".film-cues-col");
+      if(col){
+        const colRect = col.getBoundingClientRect();
+        const cRect = c.getBoundingClientRect();
+        const offset = cRect.top - colRect.top - col.clientHeight/2 + c.clientHeight/2;
+        col.scrollBy({top: offset, behavior:"smooth"});
+      }
+    }
+    _ytLastActiveIdx = activeIdx;
+  }
+}
+
+function seekYtTo(seconds){
+  if(_ytPlayer && _ytPlayer.seekTo){
+    _ytPlayer.seekTo(seconds, true);
+    if(_ytPlayer.playVideo) _ytPlayer.playVideo();
+  }
+}
+
 // ── HELPERS ──────────────────────────────────────────────────────────────────
 function saveMyLesson(lang, lesson){
   const ml = Object.assign({}, S.myLessons);
@@ -2334,7 +2426,33 @@ function renderLesson(){
     main.appendChild(videoWrap);
   }
 
-  if(S.lessonTab==="dialog"){
+  const __isFilmKaraoke = lesson.youtubeId && lesson.dialog && lesson.dialog.length>0 && typeof lesson.dialog[0].start === "number";
+  if(S.lessonTab==="dialog" && __isFilmKaraoke){
+    const layout = h("div",{class:"film-karaoke"});
+    const videoCol = h("div",{class:"film-video-col"});
+    const frame = h("div",{class:"film-video-frame"});
+    frame.appendChild(h("div",{id:"yt-player-target"}));
+    videoCol.appendChild(frame);
+    layout.appendChild(videoCol);
+    const cuesCol = h("div",{class:"film-cues-col"});
+    cuesCol.appendChild(h("div",{class:"sec-label",style:"margin-bottom:12px"},"Dialog ("+lesson.dialog.length+" kwestii)"));
+    lesson.dialog.forEach((line,i)=>{
+      const cue = h("div",{class:"film-cue",onclick:()=>seekYtTo(line.start)});
+      cue.dataset.start = String(line.start);
+      cue.dataset.end = String((line.end!=null?line.end:(line.start+3)));
+      const spkRow = h("div",{class:"film-cue-spk"});
+      spkRow.appendChild(h("span",{},line.s || ("Speaker"+(i+1))));
+      spkRow.appendChild(h("span",{style:"color:var(--text3);font-weight:400"},formatTime(line.start)));
+      cue.appendChild(spkRow);
+      cue.appendChild(h("div",{class:"film-cue-l"},line.l));
+      if(line.t) cue.appendChild(h("div",{class:"film-cue-t"},line.t));
+      cuesCol.appendChild(cue);
+    });
+    layout.appendChild(cuesCol);
+    main.appendChild(layout);
+    setTimeout(()=>initYtPlayer(lesson.youtubeId, "yt-player-target"), 60);
+  }
+  if(S.lessonTab==="dialog" && !__isFilmKaraoke){
     const dw=h("div",{class:"dialog-wrap"});
     const lessonAudio = S.lessonAudio[lesson.id]||{};
     const hasAudio = lessonAudio.full || lessonAudio.female || lessonAudio.male;
@@ -4047,7 +4165,33 @@ function renderLesson(){
     main.appendChild(videoWrap);
   }
 
-  if(S.lessonTab==="dialog"){
+  const __isFilmKaraoke = lesson.youtubeId && lesson.dialog && lesson.dialog.length>0 && typeof lesson.dialog[0].start === "number";
+  if(S.lessonTab==="dialog" && __isFilmKaraoke){
+    const layout = h("div",{class:"film-karaoke"});
+    const videoCol = h("div",{class:"film-video-col"});
+    const frame = h("div",{class:"film-video-frame"});
+    frame.appendChild(h("div",{id:"yt-player-target"}));
+    videoCol.appendChild(frame);
+    layout.appendChild(videoCol);
+    const cuesCol = h("div",{class:"film-cues-col"});
+    cuesCol.appendChild(h("div",{class:"sec-label",style:"margin-bottom:12px"},"Dialog ("+lesson.dialog.length+" kwestii)"));
+    lesson.dialog.forEach((line,i)=>{
+      const cue = h("div",{class:"film-cue",onclick:()=>seekYtTo(line.start)});
+      cue.dataset.start = String(line.start);
+      cue.dataset.end = String((line.end!=null?line.end:(line.start+3)));
+      const spkRow = h("div",{class:"film-cue-spk"});
+      spkRow.appendChild(h("span",{},line.s || ("Speaker"+(i+1))));
+      spkRow.appendChild(h("span",{style:"color:var(--text3);font-weight:400"},formatTime(line.start)));
+      cue.appendChild(spkRow);
+      cue.appendChild(h("div",{class:"film-cue-l"},line.l));
+      if(line.t) cue.appendChild(h("div",{class:"film-cue-t"},line.t));
+      cuesCol.appendChild(cue);
+    });
+    layout.appendChild(cuesCol);
+    main.appendChild(layout);
+    setTimeout(()=>initYtPlayer(lesson.youtubeId, "yt-player-target"), 60);
+  }
+  if(S.lessonTab==="dialog" && !__isFilmKaraoke){
     const dw=h("div",{class:"dialog-wrap"});
     const lessonAudio = S.lessonAudio[lesson.id]||{};
     const hasAudio = lessonAudio.full || lessonAudio.female || lessonAudio.male;
@@ -5175,29 +5319,85 @@ async function fetchYouTubeTranscript(videoId){
   throw new Error("Żadne z API transkrypcji nie zadziałało (Twój klucz RapidAPI nie ma subskrypcji albo to wideo nie ma transkrypcji). Rozwiązania: (1) wklej transkrypcję ręcznie poniżej, (2) subskrybuj API na rapidapi.com (szukaj „youtube-transcript3\" lub „youtube-transcriptor\" — free tier 500/mies.)");
 }
 
-async function processTranscriptToLesson(transcript, videoId){
+function isSrtFormat(text){
+  if(!text) return false;
+  return /\d+:\d+:\d+[.,]\d+\s*-->\s*\d+:\d+:\d+[.,]\d+/.test(text);
+}
+
+function parseSrt(text){
+  if(!text) return null;
+  const blocks = text.replace(/\r\n/g,"\n").split(/\n\s*\n/);
+  const cues = [];
+  for(const block of blocks){
+    const lines = block.trim().split("\n").map(l=>l.trim()).filter(l=>l);
+    if(lines.length < 2) continue;
+    let tsIdx = -1;
+    for(let i=0; i<lines.length; i++){ if(lines[i].includes("-->")){ tsIdx = i; break; } }
+    if(tsIdx < 0) continue;
+    const m = lines[tsIdx].match(/(\d+):(\d+):(\d+)[.,](\d+)\s*-->\s*(\d+):(\d+):(\d+)[.,](\d+)/);
+    if(!m) continue;
+    const start = parseInt(m[1])*3600 + parseInt(m[2])*60 + parseInt(m[3]) + parseInt(m[4])/1000;
+    const end = parseInt(m[5])*3600 + parseInt(m[6])*60 + parseInt(m[7]) + parseInt(m[8])/1000;
+    const textLines = lines.slice(tsIdx+1);
+    const txt = textLines.join(" ").replace(/<[^>]+>/g,"").replace(/\{[^}]+\}/g,"").trim();
+    if(txt) cues.push({start, end, text:txt});
+  }
+  return cues.length > 0 ? cues : null;
+}
+
+function formatTime(sec){
+  if(!isFinite(sec)) return "0:00";
+  const s = Math.floor(sec);
+  const m = Math.floor(s/60);
+  const r = s%60;
+  return m+":"+(r<10?"0"+r:r);
+}
+
+async function processTranscriptToLesson(transcript, videoId, cues){
   if(!transcript||!transcript.trim()) throw new Error("Pusta transkrypcja");
   if(!S.claudeKey) throw new Error("Wymagany klucz Claude (Anthropic) w Ustawieniach");
-  console.log("[LinguaAgent] Transkrypcja: "+transcript.length+" znaków");
+  console.log("[LinguaAgent] Transkrypcja: "+transcript.length+" znaków"+(cues?", cues="+cues.length:", bez timestampów"));
   set({filmTranscriptText:transcript,filmTranscriptLoading:false,filmTranscriptProcessing:true,filmTranscriptError:""});
   const langNames={EN:"angielski",FR:"francuski",IT:"włoski"};
-  const trimmedTranscript=transcript.slice(0,15000);
-  const PROMPT=`Masz surową transkrypcję w języku ${langNames[S.lang]||"angielski"}. Twoim zadaniem jest przerobić ją na lekcję językową.
+  const COMMON_SECTIONS = `
+DODATKOWE SEKCJE:
+- vocab: minimum 25 słów/zwrotów z dialogu (slang, idiomy, kolokwializmy, ciekawe wyrażenia) z IPA i tłumaczeniem PL
+- fill: minimum 10 ćwiczeń uzupełniania luk — DWIE KATEGORIE: (1) cat:"text" — zdania z dialogu z brakującym słowem (min 5), (2) cat:"grammar" — ćwiczenia gramatyczne na zasady z dialogu (min 5)
+- grammar: minimum 4 zasady gramatyczne widoczne w dialogu`;
+  let PROMPT;
+  if(cues && cues.length>0){
+    const limit = Math.min(cues.length, 400);
+    const formatted = cues.slice(0,limit).map(c=>`[${c.start.toFixed(2)}-${c.end.toFixed(2)}] ${c.text}`).join("\n");
+    PROMPT = `Masz transkrypcję z timestampami w języku ${langNames[S.lang]||"angielski"}. Każda linia ma format: [start-end] tekst, gdzie start/end to czas w sekundach.
+
+ZADANIE:
+1. POŁĄCZ kolejne linie tej samej osoby w jedną kwestię dialogu. Zachowaj start pierwszej i end ostatniej.
+2. NIE zmieniaj tekstu, NIE skracaj, NIE pomijaj.
+3. Rozpoznaj kto mówi (Friends: Monica, Chandler, Ross, Joey, Rachel, Phoebe; inne seriale podobnie). Dla nieznanych Speaker1, Speaker2.
+4. Każda kwestia ma pole "start" (sekundy float) i "end" (sekundy float) — KRYTYCZNE dla synchronizacji z wideo.
+5. Przetłumacz każdą kwestię na polski.
+${COMMON_SECTIONS}
+
+Odpowiedz TYLKO czystym JSON bez markdown:
+{"title":"tytuł sceny","level":"A2","topic":"temat po polsku","dialog":[{"s":"imię","l":"dokładny tekst","t":"tłumaczenie polskie","start":1.23,"end":4.56}],"vocab":[{"w":"słowo/zwrot","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie z dialogu","exT":"tłumaczenie"}],"fill":[{"s":"zdanie z ___","a":"odpowiedź","h":"wskazówka PL","cat":"text"},{"s":"gramatyczne z ___","a":"odpowiedź","h":"wskazówka","cat":"grammar"}],"grammar":[{"rule":"zasada","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie PL"}]}
+
+TRANSKRYPCJA Z TIMESTAMPAMI:
+${formatted}`;
+  } else {
+    const trimmedTranscript=transcript.slice(0,15000);
+    PROMPT=`Masz surową transkrypcję w języku ${langNames[S.lang]||"angielski"}. Twoim zadaniem jest przerobić ją na lekcję językową.
 
 NAJWAŻNIEJSZA ZASADA: Weź KAŻDE zdanie z transkrypcji DOSŁOWNIE. NIE zmieniaj tekstu, NIE skracaj, NIE łącz zdań, NIE pomijaj żadnych wypowiedzi. Każda wypowiedź z transkrypcji = osobna kwestia w dialogu z polem "s" (kto mówi), "l" (oryginalny tekst dosłownie), "t" (tłumaczenie PL).
 
 POSTACIE: Zidentyfikuj kto mówi na podstawie kontekstu. Dla znanych seriali (np. Friends: Monica, Chandler, Ross, Joey, Rachel, Phoebe) użyj prawdziwych imion. Dla nieznanych użyj Speaker1, Speaker2. Kobiety i mężczyźni muszą być poprawnie rozpoznani.
-
-DODATKOWE SEKCJE:
-- vocab: minimum 25 słów/zwrotów z dialogu (slang, idiomy, kolokwializmy, ciekawe wyrażenia) z IPA i tłumaczeniem PL
-- fill: minimum 10 ćwiczeń uzupełniania luk — DWIE KATEGORIE: (1) cat:"text" — zdania z dialogu z brakującym słowem (min 5), (2) cat:"grammar" — ćwiczenia gramatyczne na zasady z dialogu (min 5)
-- grammar: minimum 4 zasady gramatyczne widoczne w dialogu
+${COMMON_SECTIONS}
 
 Odpowiedz TYLKO czystym JSON bez markdown:
 {"title":"tytuł sceny","level":"A2","topic":"temat po polsku","dialog":[{"s":"imię postaci","l":"dokładny tekst z transkrypcji","t":"tłumaczenie polskie"}],"vocab":[{"w":"słowo/zwrot","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie z dialogu","exT":"tłumaczenie"}],"fill":[{"s":"zdanie z ___","a":"odpowiedź","h":"wskazówka PL","cat":"text"},{"s":"gramatyczne z ___","a":"odpowiedź","h":"wskazówka","cat":"grammar"}],"grammar":[{"rule":"zasada","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie PL"}]}
 
 TRANSKRYPCJA:
 ${trimmedTranscript}`;
+  }
   const apiRes=await fetch("https://api.anthropic.com/v1/messages",{
     method:"POST",
     headers:{"x-api-key":S.claudeKey,"anthropic-version":"2023-06-01","content-type":"application/json","anthropic-dangerous-direct-browser-access":"true"},
@@ -5240,7 +5440,12 @@ async function processManualPasteTranscript(){
   if(!S.claudeKey){set({filmTranscriptError:"Wpisz klucz Claude (Anthropic) w Ustawieniach"});return;}
   set({filmTranscriptLoading:true,filmTranscriptError:"",filmTranscriptText:"",filmTranscriptLesson:null});
   try{
-    await processTranscriptToLesson(text, S.filmYtId||null);
+    let cues = null;
+    if(isSrtFormat(text)){
+      cues = parseSrt(text);
+      if(cues) console.log("[LinguaAgent] SRT/VTT wykryte, "+cues.length+" cues");
+    }
+    await processTranscriptToLesson(text, S.filmYtId||null, cues);
   }catch(e){
     console.error("[LinguaAgent] Błąd wklejania:",e);
     set({filmTranscriptLoading:false,filmTranscriptProcessing:false,filmTranscriptError:"Błąd: "+e.message});
@@ -5297,12 +5502,14 @@ function renderFilmoteka(){
       det.appendChild(sum);
       const body=h("div",{style:"margin-top:12px"});
       body.appendChild(h("div",{style:"font-size:12px;color:var(--text2);line-height:1.7;margin-bottom:10px"},
-        h("strong",{},"Jak skopiować transkrypcję z YouTube:"),h("br",{}),
-        "1. Otwórz wideo na youtube.com",h("br",{}),
-        "2. Pod wideo kliknij „...\" (więcej akcji) → „Pokaż transkrypcję\"",h("br",{}),
-        "3. W panelu po prawej kliknij „⋮\" → „Przełącz znaczniki czasu\" żeby wyłączyć liczby",h("br",{}),
-        "4. Zaznacz cały tekst (Ctrl/Cmd+A w panelu) → skopiuj (Ctrl/Cmd+C)",h("br",{}),
-        "5. Wklej tutaj poniżej i kliknij „Stwórz lekcję\""
+        h("strong",{},"Najlepiej: pobierz SRT z timestampami (potrzebne do podświetlania w trakcie odtwarzania)"),h("br",{}),
+        "1. Wejdź na ",h("strong",{},"downsub.com")," (albo savesubs.com / dvdvideosoft.com — wszystkie free, bez API key)",h("br",{}),
+        "2. Wklej URL YouTube → wybierz język → pobierz format ",h("strong",{},"SRT"),h("br",{}),
+        "3. Otwórz pobrany plik .srt (notatnik / TextEdit) → Ctrl/Cmd+A → Ctrl/Cmd+C",h("br",{}),
+        "4. Wklej poniżej → kliknij „Stwórz lekcję\" — apka wykryje SRT i zsynchronizuje dialog z wideo",h("br",{}),
+        h("br",{}),
+        h("strong",{},"Alternatywnie: zwykły tekst (bez podświetlania w czasie rzeczywistym)"),h("br",{}),
+        "Otwórz wideo → klik „...\" pod opisem → „Pokaż transkrypcję\" → kopiuj cały tekst z panelu. Działa, ale bez sync z wideo."
       ));
       const ta=h("textarea",{
         style:"width:100%;min-height:140px;padding:12px;border:1px solid var(--border);background:var(--surface);font-family:'DM Sans',sans-serif;font-size:13px;line-height:1.6;border-radius:4px;resize:vertical;outline:none;color:var(--text);box-sizing:border-box;margin-bottom:10px",
@@ -5879,6 +6086,9 @@ function applyPalette(paletteId){
 applyTheme(S.theme);
 
 function render(){
+  // Cleanup YouTube karaoke player if user navigated away from a film lesson dialog tab
+  const stillKaraoke = S.screen==="lesson" && S.lessonTab==="dialog" && S.lesson && S.lesson.youtubeId && S.lesson.dialog && typeof (S.lesson.dialog[0]||{}).start === "number";
+  if(!stillKaraoke && _ytPlayer) destroyYtPlayer();
   const root=document.getElementById("root");
   root.innerHTML="";
   const{screen}=S;
