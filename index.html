@@ -3223,8 +3223,8 @@ function renderLesson(){
         try{
           const currentText=rawTextToPlain(lesson.rawText);
           const prompt=type==="vocab"
-            ? `Z poniższego tekstu wyciągnij MAKSYMALNIE DUŻO słów wartych nauki — celuj w 60-100 pozycji, absolutne minimum 50. NIE PRZESTAWAJ na 30 ani 40 — kontynuuj aż wyczerpiesz wszystkie wartościowe słowa z tekstu. Wybierz słowa kluczowe, idiomy, kolokwializmy, trudniejsze słowa, słowa specyficzne dla kontekstu, a także słówka B1-C1. Dla każdego podaj tłumaczenie PL, wymowę IPA i przykład z tekstu. Odpowiedz TYLKO czystym JSON: {"items":[{"w":"słowo","tr":"tłumaczenie PL","ipa":"IPA","pl":"fonetyka","ex":"przykład","exT":"tłumaczenie przykładu"}]}\n\nTEKST:\n${currentText.slice(0,15000)}`
-            : `Z poniższego tekstu wyciągnij MAKSYMALNIE DUŻO użytecznych zwrotów, wyrażeń i kolokacji — celuj w 50-80 pozycji, absolutne minimum 40. NIE PRZESTAWAJ na 20 ani 30 — kontynuuj aż wyczerpiesz wszystkie wartościowe zwroty z tekstu. Szukaj: idiomów, wyrażeń potocznych, zwrotów konwersacyjnych, czasowników frazowych, przyimkowych konstrukcji, kolokacji rzeczownik+czasownik, utartych zwrotów. Odpowiedz TYLKO czystym JSON: {"items":[{"w":"zwrot","tr":"tłumaczenie PL","ipa":"IPA","pl":"fonetyka","ex":"przykład użycia","exT":"tłumaczenie"}]}\n\nTEKST:\n${currentText.slice(0,15000)}`;
+            ? `Z poniższego tekstu wyciągnij MAKSYMALNIE DUŻO słów wartych nauki — celuj w 60-100 pozycji, absolutne minimum 50. NIE PRZESTAWAJ na 30 ani 40 — kontynuuj aż wyczerpiesz wszystkie wartościowe słowa z tekstu. Wybierz słowa kluczowe, idiomy, kolokwializmy, trudniejsze słowa, słowa specyficzne dla kontekstu, a także słówka B1-C1. Dla każdego podaj tłumaczenie PL, wymowę IPA i przykład z tekstu. Odpowiedz TYLKO czystym JSON: {"items":[{"w":"słowo","tr":"tłumaczenie PL","ipa":"IPA","pl":"fonetyka","ex":"przykład","exT":"tłumaczenie przykładu"}]}\n\nTEKST:\n${currentText.slice(0,30000)}`
+            : `Z poniższego tekstu wyciągnij MAKSYMALNIE DUŻO użytecznych zwrotów, wyrażeń i kolokacji — celuj w 50-80 pozycji, absolutne minimum 40. NIE PRZESTAWAJ na 20 ani 30 — kontynuuj aż wyczerpiesz wszystkie wartościowe zwroty z tekstu. Szukaj: idiomów, wyrażeń potocznych, zwrotów konwersacyjnych, czasowników frazowych, przyimkowych konstrukcji, kolokacji rzeczownik+czasownik, utartych zwrotów. Odpowiedz TYLKO czystym JSON: {"items":[{"w":"zwrot","tr":"tłumaczenie PL","ipa":"IPA","pl":"fonetyka","ex":"przykład użycia","exT":"tłumaczenie"}]}\n\nTEKST:\n${currentText.slice(0,30000)}`;
           const res=await fetch("https://api.anthropic.com/v1/messages",{
             method:"POST",
             headers:{"x-api-key":S.claudeKey,"anthropic-version":"2023-06-01","content-type":"application/json","anthropic-dangerous-direct-browser-access":"true"},
@@ -5100,8 +5100,8 @@ function renderLesson(){
         try{
           const currentText=rawTextToPlain(lesson.rawText);
           const prompt=type==="vocab"
-            ? `Z poniższego tekstu wyciągnij MAKSYMALNIE DUŻO słów wartych nauki — celuj w 60-100 pozycji, absolutne minimum 50. NIE PRZESTAWAJ na 30 ani 40 — kontynuuj aż wyczerpiesz wszystkie wartościowe słowa z tekstu. Wybierz słowa kluczowe, idiomy, kolokwializmy, trudniejsze słowa, słowa specyficzne dla kontekstu, a także słówka B1-C1. Dla każdego podaj tłumaczenie PL, wymowę IPA i przykład z tekstu. Odpowiedz TYLKO czystym JSON: {"items":[{"w":"słowo","tr":"tłumaczenie PL","ipa":"IPA","pl":"fonetyka","ex":"przykład","exT":"tłumaczenie przykładu"}]}\n\nTEKST:\n${currentText.slice(0,15000)}`
-            : `Z poniższego tekstu wyciągnij MAKSYMALNIE DUŻO użytecznych zwrotów, wyrażeń i kolokacji — celuj w 50-80 pozycji, absolutne minimum 40. NIE PRZESTAWAJ na 20 ani 30 — kontynuuj aż wyczerpiesz wszystkie wartościowe zwroty z tekstu. Szukaj: idiomów, wyrażeń potocznych, zwrotów konwersacyjnych, czasowników frazowych, przyimkowych konstrukcji, kolokacji rzeczownik+czasownik, utartych zwrotów. Odpowiedz TYLKO czystym JSON: {"items":[{"w":"zwrot","tr":"tłumaczenie PL","ipa":"IPA","pl":"fonetyka","ex":"przykład użycia","exT":"tłumaczenie"}]}\n\nTEKST:\n${currentText.slice(0,15000)}`;
+            ? `Z poniższego tekstu wyciągnij MAKSYMALNIE DUŻO słów wartych nauki — celuj w 60-100 pozycji, absolutne minimum 50. NIE PRZESTAWAJ na 30 ani 40 — kontynuuj aż wyczerpiesz wszystkie wartościowe słowa z tekstu. Wybierz słowa kluczowe, idiomy, kolokwializmy, trudniejsze słowa, słowa specyficzne dla kontekstu, a także słówka B1-C1. Dla każdego podaj tłumaczenie PL, wymowę IPA i przykład z tekstu. Odpowiedz TYLKO czystym JSON: {"items":[{"w":"słowo","tr":"tłumaczenie PL","ipa":"IPA","pl":"fonetyka","ex":"przykład","exT":"tłumaczenie przykładu"}]}\n\nTEKST:\n${currentText.slice(0,30000)}`
+            : `Z poniższego tekstu wyciągnij MAKSYMALNIE DUŻO użytecznych zwrotów, wyrażeń i kolokacji — celuj w 50-80 pozycji, absolutne minimum 40. NIE PRZESTAWAJ na 20 ani 30 — kontynuuj aż wyczerpiesz wszystkie wartościowe zwroty z tekstu. Szukaj: idiomów, wyrażeń potocznych, zwrotów konwersacyjnych, czasowników frazowych, przyimkowych konstrukcji, kolokacji rzeczownik+czasownik, utartych zwrotów. Odpowiedz TYLKO czystym JSON: {"items":[{"w":"zwrot","tr":"tłumaczenie PL","ipa":"IPA","pl":"fonetyka","ex":"przykład użycia","exT":"tłumaczenie"}]}\n\nTEKST:\n${currentText.slice(0,30000)}`;
           const res=await fetch("https://api.anthropic.com/v1/messages",{
             method:"POST",
             headers:{"x-api-key":S.claudeKey,"anthropic-version":"2023-06-01","content-type":"application/json","anthropic-dangerous-direct-browser-access":"true"},
@@ -6055,17 +6055,17 @@ DODATKOWE SEKCJE:
 - grammar: minimum 4 zasady gramatyczne widoczne w dialogu`;
   let PROMPT;
   if(cues && cues.length>0){
-    const limit = Math.min(cues.length, 400);
+    const limit = Math.min(cues.length, 1500);
     const formatted = cues.slice(0,limit).map(c=>`[${c.start.toFixed(2)}-${c.end.toFixed(2)}] ${c.text}`).join("\n");
     PROMPT = `Masz transkrypcję z timestampami w języku ${langNames[lang||S.lang]||"angielski"}. Każda linia: [start-end] tekst (sekundy).\n\nZADANIE:\n1. POŁĄCZ kolejne linie tej samej osoby w jedną kwestię. Zachowaj start pierwszej i end ostatniej.\n2. JEŚLI linia zawiera wypowiedzi DWÓCH+ postaci, ROZDZIEL.\n3. POPRAW INTERPUNKCJĘ I KAPITALIZACJĘ (transkrypcje YT są lowercase).\n4. Rozpoznaj kto mówi UWAŻNIE — Friends: Monica/Chandler/Ross/Joey/Rachel/Phoebe; inne seriale podobnie. Dla nieznanych Speaker1, Speaker2.\n5. Każda kwestia ma "start" i "end" (sekundy float) — KRYTYCZNE dla sync z wideo.\n6. Przetłumacz na polski naturalnie.${COMMON_SECTIONS}\n\nOdpowiedz TYLKO czystym JSON bez markdown:\n{"title":"tytuł","level":"A2","topic":"temat po polsku","dialog":[{"s":"imię","l":"tekst","t":"tłumaczenie","start":1.23,"end":4.56}],"vocab":[{"w":"słowo","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie","exT":"tłumaczenie"}],"phrases":[{"w":"zwrot","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie","exT":"tłumaczenie"}],"fill":[{"s":"zdanie z ___","a":"odp","h":"wskazówka","cat":"text"}],"grammar":[{"rule":"zasada","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie PL"}]}\n\nTRANSKRYPCJA Z TIMESTAMPAMI:\n${formatted}`;
   } else {
-    const trim=transcript.slice(0,15000);
+    const trim=transcript.slice(0,40000);
     PROMPT=`Masz surową transkrypcję w języku ${langNames[lang||S.lang]||"angielski"}. Przerób na lekcję językową.\n\nZASADY: Weź każde zdanie DOSŁOWNIE, NIE skracaj. POPRAW interpunkcję/kapitalizację. Rozpoznaj kto mówi.${COMMON_SECTIONS}\n\nOdpowiedz TYLKO czystym JSON bez markdown:\n{"title":"tytuł","level":"A2","topic":"temat po polsku","dialog":[{"s":"imię","l":"tekst","t":"tłumaczenie"}],"vocab":[{"w":"słowo","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie","exT":"tłumaczenie"}],"phrases":[{"w":"zwrot","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie","exT":"tłumaczenie"}],"fill":[{"s":"zdanie z ___","a":"odp","h":"wskazówka","cat":"text"}],"grammar":[{"rule":"zasada","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie PL"}]}\n\nTRANSKRYPCJA:\n${trim}`;
   }
   const apiRes = await fetch("https://api.anthropic.com/v1/messages",{
     method:"POST",
     headers:{"x-api-key":S.claudeKey,"anthropic-version":"2023-06-01","content-type":"application/json","anthropic-dangerous-direct-browser-access":"true"},
-    body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:32000,messages:[{role:"user",content:[{type:"text",text:PROMPT}]}]})
+    body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:64000,messages:[{role:"user",content:[{type:"text",text:PROMPT}]}]})
   });
   if(!apiRes.ok){
     const e=await apiRes.json().catch(()=>({}));
@@ -6145,7 +6145,7 @@ DODATKOWE SEKCJE:
 - grammar: minimum 4 zasady gramatyczne widoczne w dialogu`;
   let PROMPT;
   if(cues && cues.length>0){
-    const limit = Math.min(cues.length, 400);
+    const limit = Math.min(cues.length, 1500);
     const formatted = cues.slice(0,limit).map(c=>`[${c.start.toFixed(2)}-${c.end.toFixed(2)}] ${c.text}`).join("\n");
     PROMPT = `Masz transkrypcję z timestampami w języku ${langNames[S.lang]||"angielski"}. Każda linia ma format: [start-end] tekst, gdzie start/end to czas w sekundach.
 
@@ -6164,7 +6164,7 @@ Odpowiedz TYLKO czystym JSON bez markdown:
 TRANSKRYPCJA Z TIMESTAMPAMI:
 ${formatted}`;
   } else {
-    const trimmedTranscript=transcript.slice(0,15000);
+    const trimmedTranscript=transcript.slice(0,40000);
     PROMPT=`Masz surową transkrypcję w języku ${langNames[S.lang]||"angielski"}. Twoim zadaniem jest przerobić ją na lekcję językową.
 
 NAJWAŻNIEJSZA ZASADA: Weź KAŻDE zdanie z transkrypcji DOSŁOWNIE. NIE zmieniaj tekstu, NIE skracaj, NIE łącz zdań, NIE pomijaj żadnych wypowiedzi. Każda wypowiedź z transkrypcji = osobna kwestia w dialogu z polem "s" (kto mówi), "l" (oryginalny tekst dosłownie), "t" (tłumaczenie PL).
@@ -6181,7 +6181,7 @@ ${trimmedTranscript}`;
   const apiRes=await fetch("https://api.anthropic.com/v1/messages",{
     method:"POST",
     headers:{"x-api-key":S.claudeKey,"anthropic-version":"2023-06-01","content-type":"application/json","anthropic-dangerous-direct-browser-access":"true"},
-    body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:32000,messages:[{role:"user",content:[{type:"text",text:PROMPT}]}]})
+    body:JSON.stringify({model:"claude-sonnet-4-6",max_tokens:64000,messages:[{role:"user",content:[{type:"text",text:PROMPT}]}]})
   });
   if(!apiRes.ok){
     const e=await apiRes.json().catch(()=>({}));
