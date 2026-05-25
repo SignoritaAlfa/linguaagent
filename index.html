@@ -2606,17 +2606,58 @@ function renderLesson(){
           const parsed=tolerantParseJson(data.content[0].text);
           const items=parsed.items||[];
           if(!items.length) throw new Error("Brak wyników");
-          // Show results with "Add to flashcards" button
+          // Show results with checkboxes + per-item + and bulk-add buttons
           const resultDiv=document.getElementById(`gen-result-${type}`);
           resultDiv.innerHTML="";
           resultDiv.style.display="block";
+          const headerRow=document.createElement("div");
+          headerRow.style.cssText="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px";
           const header=document.createElement("div");
-          header.style.cssText="font-size:11px;color:var(--text3);letter-spacing:.1em;text-transform:uppercase;margin-bottom:12px";
+          header.style.cssText="font-size:11px;color:var(--text3);letter-spacing:.1em;text-transform:uppercase";
           header.textContent=(type==="vocab"?"Słówka":"Zwroty")+" z tekstu ("+items.length+")";
-          resultDiv.appendChild(header);
+          headerRow.appendChild(header);
+          const toggleAllBtn=document.createElement("button");
+          toggleAllBtn.style.cssText="background:none;border:1px solid var(--border);color:var(--text2);border-radius:4px;padding:4px 10px;cursor:pointer;font-size:11px;font-family:inherit";
+          toggleAllBtn.textContent="☑ Zaznacz wszystkie";
+          headerRow.appendChild(toggleAllBtn);
+          resultDiv.appendChild(headerRow);
+
+          const selectedIndexes=new Set();
+          const addedIndexes=new Set();
+          const itemRefs=[];
+          let bulkBtn=null;
+          const updateBulkBtn=()=>{
+            if(!bulkBtn) return;
+            const c=selectedIndexes.size;
+            if(c===0){
+              bulkBtn.disabled=true;
+              bulkBtn.style.opacity="0.45";
+              bulkBtn.style.cursor="default";
+              bulkBtn.textContent="Zaznacz pozycje wyżej i dodaj kilka naraz";
+            } else {
+              bulkBtn.disabled=false;
+              bulkBtn.style.opacity="1";
+              bulkBtn.style.cursor="pointer";
+              bulkBtn.textContent="+ Dodaj zaznaczone ("+c+") do "+(type==="phrases"?"zwrotów":"fiszek");
+            }
+            const selectable=items.length-addedIndexes.size;
+            toggleAllBtn.textContent=(c===selectable && selectable>0) ? "☐ Odznacz wszystkie" : "☑ Zaznacz wszystkie";
+          };
+
           items.forEach((item,i)=>{
             const row=document.createElement("div");
-            row.style.cssText="display:grid;grid-template-columns:1fr 1fr 40px;gap:8px 16px;padding:10px 0;border-bottom:1px solid var(--border);align-items:start";
+            row.style.cssText="display:grid;grid-template-columns:24px 1fr 1fr 36px;gap:8px 16px;padding:10px 0;border-bottom:1px solid var(--border);align-items:start";
+            const cbCol=document.createElement("div");
+            cbCol.style.cssText="display:flex;align-items:center;padding-top:4px";
+            const checkbox=document.createElement("input");
+            checkbox.type="checkbox";
+            checkbox.style.cssText="cursor:pointer;width:18px;height:18px;accent-color:var(--gold)";
+            checkbox.onchange=(e)=>{
+              if(e.target.checked) selectedIndexes.add(i);
+              else selectedIndexes.delete(i);
+              updateBulkBtn();
+            };
+            cbCol.appendChild(checkbox);
             const left=document.createElement("div");
             left.innerHTML=`<div style="font-weight:500;color:var(--text);font-size:14px">${item.w}</div><div style="font-family:monospace;font-size:11px;color:var(--text3)">${item.ipa||""}</div><div style="font-size:11px;color:var(--text3)">${item.pl||""}</div>`;
             const right=document.createElement("div");
@@ -2629,39 +2670,94 @@ function renderLesson(){
               const arr = type==="phrases" ? "phrases" : "vocab";
               if(!lesson[arr]) lesson[arr]=[];
               const exists=lesson[arr].some(v=>v.w===item.w);
-              if(exists){addBtn.textContent="✓";addBtn.style.color="var(--ok-text)";return;}
-              lesson[arr].push({w:item.w,tr:item.tr,ipa:item.ipa||"" ,pl:item.pl||"" ,ex:item.ex||"" ,exT:item.exT||""});
-              const ml=Object.assign({},S.myLessons);
-              const li=(ml[S.lang]||[]).findIndex(l=>l.id===lesson.id);
-              if(li>=0){ml[S.lang][li][arr]=lesson[arr];S.myLessons=ml;localStorage.setItem("lingua_my_lessons",JSON.stringify(ml));scheduleDriveSync();}
+              if(!exists){
+                lesson[arr].push({w:item.w,tr:item.tr,ipa:item.ipa||"" ,pl:item.pl||"" ,ex:item.ex||"" ,exT:item.exT||""});
+                const ml=Object.assign({},S.myLessons);
+                const li=(ml[S.lang]||[]).findIndex(l=>l.id===lesson.id);
+                if(li>=0){ml[S.lang][li][arr]=lesson[arr];S.myLessons=ml;localStorage.setItem("lingua_my_lessons",JSON.stringify(ml));scheduleDriveSync();}
+              }
               addBtn.textContent="✓";addBtn.style.color="var(--ok-text)";addBtn.disabled=true;
+              checkbox.checked=false; checkbox.disabled=true;
+              selectedIndexes.delete(i); addedIndexes.add(i);
+              updateBulkBtn();
             };
-            row.appendChild(left);row.appendChild(right);row.appendChild(addBtn);
+            itemRefs.push({checkbox, addBtn});
+            row.appendChild(cbCol); row.appendChild(left); row.appendChild(right); row.appendChild(addBtn);
             resultDiv.appendChild(row);
           });
-          // "Dodaj wszystkie" button
-          const addAllBtn=document.createElement("button");
-          addAllBtn.textContent = type==="phrases" ? "+ Dodaj wszystkie do zwrotów" : "+ Dodaj wszystkie do fiszek";
-          addAllBtn.style.cssText="margin-top:14px;padding:10px 20px;background:none;border:1px solid var(--gold);color:var(--gold);cursor:pointer;font-size:12px;font-family:inherit;letter-spacing:.04em;width:100%";
-          addAllBtn.onclick=()=>{
+
+          toggleAllBtn.onclick=()=>{
+            const selectable=items.length-addedIndexes.size;
+            const allSelected=selectedIndexes.size===selectable && selectable>0;
+            if(allSelected){
+              selectedIndexes.clear();
+              itemRefs.forEach(ref=>{ if(!ref.checkbox.disabled) ref.checkbox.checked=false; });
+            } else {
+              itemRefs.forEach((ref,i)=>{
+                if(!ref.checkbox.disabled){ ref.checkbox.checked=true; selectedIndexes.add(i); }
+              });
+            }
+            updateBulkBtn();
+          };
+
+          const btnRow=document.createElement("div");
+          btnRow.style.cssText="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap";
+          bulkBtn=document.createElement("button");
+          bulkBtn.style.cssText="flex:2;min-width:240px;padding:10px 20px;background:var(--gold);color:#fff;cursor:default;font-size:12px;font-family:inherit;letter-spacing:.04em;border:1px solid var(--gold);opacity:0.45;border-radius:4px";
+          bulkBtn.disabled=true;
+          bulkBtn.textContent="Zaznacz pozycje wyżej i dodaj kilka naraz";
+          bulkBtn.onclick=()=>{
             const arr = type==="phrases" ? "phrases" : "vocab";
             if(!lesson[arr]) lesson[arr]=[];
             let added=0;
-            items.forEach(item=>{
+            const toAdd=Array.from(selectedIndexes).sort((a,b)=>a-b);
+            toAdd.forEach(idx=>{
+              const item=items[idx];
               if(!lesson[arr].some(v=>v.w===item.w)){
                 lesson[arr].push({w:item.w,tr:item.tr,ipa:item.ipa||"",pl:item.pl||"",ex:item.ex||"",exT:item.exT||""});
                 added++;
               }
+              addedIndexes.add(idx);
+              const ref=itemRefs[idx];
+              if(ref){ ref.checkbox.checked=false; ref.checkbox.disabled=true; ref.addBtn.textContent="✓"; ref.addBtn.style.color="var(--ok-text)"; ref.addBtn.disabled=true; }
             });
             const ml=Object.assign({},S.myLessons);
             const li=(ml[S.lang]||[]).findIndex(l=>l.id===lesson.id);
             if(li>=0){ml[S.lang][li][arr]=lesson[arr];S.myLessons=ml;localStorage.setItem("lingua_my_lessons",JSON.stringify(ml));scheduleDriveSync();}
+            selectedIndexes.clear();
+            bulkBtn.textContent="✓ Dodano "+added+" do "+(arr==="phrases"?"zwrotów":"fiszek");
+            bulkBtn.style.background="var(--ok-text)"; bulkBtn.style.borderColor="var(--ok-text)"; bulkBtn.style.opacity="1"; bulkBtn.disabled=true;
+            setTimeout(()=>{ bulkBtn.style.background="var(--gold)"; bulkBtn.style.borderColor="var(--gold)"; updateBulkBtn(); }, 2500);
+          };
+          btnRow.appendChild(bulkBtn);
+
+          const addAllBtn=document.createElement("button");
+          addAllBtn.textContent = type==="phrases" ? "+ Dodaj wszystkie do zwrotów" : "+ Dodaj wszystkie do fiszek";
+          addAllBtn.style.cssText="flex:1;min-width:180px;padding:10px 20px;background:none;border:1px solid var(--gold);color:var(--gold);cursor:pointer;font-size:12px;font-family:inherit;letter-spacing:.04em;border-radius:4px";
+          addAllBtn.onclick=()=>{
+            const arr = type==="phrases" ? "phrases" : "vocab";
+            if(!lesson[arr]) lesson[arr]=[];
+            let added=0;
+            items.forEach((item,idx)=>{
+              if(!lesson[arr].some(v=>v.w===item.w)){
+                lesson[arr].push({w:item.w,tr:item.tr,ipa:item.ipa||"",pl:item.pl||"",ex:item.ex||"",exT:item.exT||""});
+                added++;
+              }
+              addedIndexes.add(idx);
+              const ref=itemRefs[idx];
+              if(ref){ ref.checkbox.checked=false; ref.checkbox.disabled=true; ref.addBtn.textContent="✓"; ref.addBtn.style.color="var(--ok-text)"; ref.addBtn.disabled=true; }
+            });
+            const ml=Object.assign({},S.myLessons);
+            const li=(ml[S.lang]||[]).findIndex(l=>l.id===lesson.id);
+            if(li>=0){ml[S.lang][li][arr]=lesson[arr];S.myLessons=ml;localStorage.setItem("lingua_my_lessons",JSON.stringify(ml));scheduleDriveSync();}
+            selectedIndexes.clear();
             addAllBtn.textContent = "✓ Dodano "+added+" nowych do "+(arr==="phrases"?"zwrotów":"fiszek");
             addAllBtn.style.color="var(--ok-text)";addAllBtn.style.borderColor="var(--ok-text)";
             addAllBtn.disabled=true;
-            resultDiv.querySelectorAll("button").forEach(b=>{if(b.textContent==="+"){b.textContent="✓";b.style.color="var(--ok-text)";b.disabled=true;}});
+            updateBulkBtn();
           };
-          resultDiv.appendChild(addAllBtn);
+          btnRow.appendChild(addAllBtn);
+          resultDiv.appendChild(btnRow);
         }catch(e){
           btn.innerHTML=type==="vocab"?"📝 <strong>Generuj słówka z tekstu</strong><br><span style='font-size:11px;color:var(--text2);font-weight:normal'>AI wyciągnie słówka — dodaj wybrane do fiszek</span>":"💬 <strong>Generuj zwroty z tekstu</strong><br><span style='font-size:11px;color:var(--text2);font-weight:normal'>AI wyciągnie zwroty i idiomy — dodaj do fiszek</span>";
           btn.disabled=false;
@@ -4028,17 +4124,58 @@ function renderLesson(){
           const parsed=tolerantParseJson(data.content[0].text);
           const items=parsed.items||[];
           if(!items.length) throw new Error("Brak wyników");
-          // Show results with "Add to flashcards" button
+          // Show results with checkboxes + per-item + and bulk-add buttons
           const resultDiv=document.getElementById(`gen-result-${type}`);
           resultDiv.innerHTML="";
           resultDiv.style.display="block";
+          const headerRow=document.createElement("div");
+          headerRow.style.cssText="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px";
           const header=document.createElement("div");
-          header.style.cssText="font-size:11px;color:var(--text3);letter-spacing:.1em;text-transform:uppercase;margin-bottom:12px";
+          header.style.cssText="font-size:11px;color:var(--text3);letter-spacing:.1em;text-transform:uppercase";
           header.textContent=(type==="vocab"?"Słówka":"Zwroty")+" z tekstu ("+items.length+")";
-          resultDiv.appendChild(header);
+          headerRow.appendChild(header);
+          const toggleAllBtn=document.createElement("button");
+          toggleAllBtn.style.cssText="background:none;border:1px solid var(--border);color:var(--text2);border-radius:4px;padding:4px 10px;cursor:pointer;font-size:11px;font-family:inherit";
+          toggleAllBtn.textContent="☑ Zaznacz wszystkie";
+          headerRow.appendChild(toggleAllBtn);
+          resultDiv.appendChild(headerRow);
+
+          const selectedIndexes=new Set();
+          const addedIndexes=new Set();
+          const itemRefs=[];
+          let bulkBtn=null;
+          const updateBulkBtn=()=>{
+            if(!bulkBtn) return;
+            const c=selectedIndexes.size;
+            if(c===0){
+              bulkBtn.disabled=true;
+              bulkBtn.style.opacity="0.45";
+              bulkBtn.style.cursor="default";
+              bulkBtn.textContent="Zaznacz pozycje wyżej i dodaj kilka naraz";
+            } else {
+              bulkBtn.disabled=false;
+              bulkBtn.style.opacity="1";
+              bulkBtn.style.cursor="pointer";
+              bulkBtn.textContent="+ Dodaj zaznaczone ("+c+") do "+(type==="phrases"?"zwrotów":"fiszek");
+            }
+            const selectable=items.length-addedIndexes.size;
+            toggleAllBtn.textContent=(c===selectable && selectable>0) ? "☐ Odznacz wszystkie" : "☑ Zaznacz wszystkie";
+          };
+
           items.forEach((item,i)=>{
             const row=document.createElement("div");
-            row.style.cssText="display:grid;grid-template-columns:1fr 1fr 40px;gap:8px 16px;padding:10px 0;border-bottom:1px solid var(--border);align-items:start";
+            row.style.cssText="display:grid;grid-template-columns:24px 1fr 1fr 36px;gap:8px 16px;padding:10px 0;border-bottom:1px solid var(--border);align-items:start";
+            const cbCol=document.createElement("div");
+            cbCol.style.cssText="display:flex;align-items:center;padding-top:4px";
+            const checkbox=document.createElement("input");
+            checkbox.type="checkbox";
+            checkbox.style.cssText="cursor:pointer;width:18px;height:18px;accent-color:var(--gold)";
+            checkbox.onchange=(e)=>{
+              if(e.target.checked) selectedIndexes.add(i);
+              else selectedIndexes.delete(i);
+              updateBulkBtn();
+            };
+            cbCol.appendChild(checkbox);
             const left=document.createElement("div");
             left.innerHTML=`<div style="font-weight:500;color:var(--text);font-size:14px">${item.w}</div><div style="font-family:monospace;font-size:11px;color:var(--text3)">${item.ipa||""}</div><div style="font-size:11px;color:var(--text3)">${item.pl||""}</div>`;
             const right=document.createElement("div");
@@ -4051,39 +4188,94 @@ function renderLesson(){
               const arr = type==="phrases" ? "phrases" : "vocab";
               if(!lesson[arr]) lesson[arr]=[];
               const exists=lesson[arr].some(v=>v.w===item.w);
-              if(exists){addBtn.textContent="✓";addBtn.style.color="var(--ok-text)";return;}
-              lesson[arr].push({w:item.w,tr:item.tr,ipa:item.ipa||"" ,pl:item.pl||"" ,ex:item.ex||"" ,exT:item.exT||""});
-              const ml=Object.assign({},S.myLessons);
-              const li=(ml[S.lang]||[]).findIndex(l=>l.id===lesson.id);
-              if(li>=0){ml[S.lang][li][arr]=lesson[arr];S.myLessons=ml;localStorage.setItem("lingua_my_lessons",JSON.stringify(ml));scheduleDriveSync();}
+              if(!exists){
+                lesson[arr].push({w:item.w,tr:item.tr,ipa:item.ipa||"" ,pl:item.pl||"" ,ex:item.ex||"" ,exT:item.exT||""});
+                const ml=Object.assign({},S.myLessons);
+                const li=(ml[S.lang]||[]).findIndex(l=>l.id===lesson.id);
+                if(li>=0){ml[S.lang][li][arr]=lesson[arr];S.myLessons=ml;localStorage.setItem("lingua_my_lessons",JSON.stringify(ml));scheduleDriveSync();}
+              }
               addBtn.textContent="✓";addBtn.style.color="var(--ok-text)";addBtn.disabled=true;
+              checkbox.checked=false; checkbox.disabled=true;
+              selectedIndexes.delete(i); addedIndexes.add(i);
+              updateBulkBtn();
             };
-            row.appendChild(left);row.appendChild(right);row.appendChild(addBtn);
+            itemRefs.push({checkbox, addBtn});
+            row.appendChild(cbCol); row.appendChild(left); row.appendChild(right); row.appendChild(addBtn);
             resultDiv.appendChild(row);
           });
-          // "Dodaj wszystkie" button
-          const addAllBtn=document.createElement("button");
-          addAllBtn.textContent = type==="phrases" ? "+ Dodaj wszystkie do zwrotów" : "+ Dodaj wszystkie do fiszek";
-          addAllBtn.style.cssText="margin-top:14px;padding:10px 20px;background:none;border:1px solid var(--gold);color:var(--gold);cursor:pointer;font-size:12px;font-family:inherit;letter-spacing:.04em;width:100%";
-          addAllBtn.onclick=()=>{
+
+          toggleAllBtn.onclick=()=>{
+            const selectable=items.length-addedIndexes.size;
+            const allSelected=selectedIndexes.size===selectable && selectable>0;
+            if(allSelected){
+              selectedIndexes.clear();
+              itemRefs.forEach(ref=>{ if(!ref.checkbox.disabled) ref.checkbox.checked=false; });
+            } else {
+              itemRefs.forEach((ref,i)=>{
+                if(!ref.checkbox.disabled){ ref.checkbox.checked=true; selectedIndexes.add(i); }
+              });
+            }
+            updateBulkBtn();
+          };
+
+          const btnRow=document.createElement("div");
+          btnRow.style.cssText="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap";
+          bulkBtn=document.createElement("button");
+          bulkBtn.style.cssText="flex:2;min-width:240px;padding:10px 20px;background:var(--gold);color:#fff;cursor:default;font-size:12px;font-family:inherit;letter-spacing:.04em;border:1px solid var(--gold);opacity:0.45;border-radius:4px";
+          bulkBtn.disabled=true;
+          bulkBtn.textContent="Zaznacz pozycje wyżej i dodaj kilka naraz";
+          bulkBtn.onclick=()=>{
             const arr = type==="phrases" ? "phrases" : "vocab";
             if(!lesson[arr]) lesson[arr]=[];
             let added=0;
-            items.forEach(item=>{
+            const toAdd=Array.from(selectedIndexes).sort((a,b)=>a-b);
+            toAdd.forEach(idx=>{
+              const item=items[idx];
               if(!lesson[arr].some(v=>v.w===item.w)){
                 lesson[arr].push({w:item.w,tr:item.tr,ipa:item.ipa||"",pl:item.pl||"",ex:item.ex||"",exT:item.exT||""});
                 added++;
               }
+              addedIndexes.add(idx);
+              const ref=itemRefs[idx];
+              if(ref){ ref.checkbox.checked=false; ref.checkbox.disabled=true; ref.addBtn.textContent="✓"; ref.addBtn.style.color="var(--ok-text)"; ref.addBtn.disabled=true; }
             });
             const ml=Object.assign({},S.myLessons);
             const li=(ml[S.lang]||[]).findIndex(l=>l.id===lesson.id);
             if(li>=0){ml[S.lang][li][arr]=lesson[arr];S.myLessons=ml;localStorage.setItem("lingua_my_lessons",JSON.stringify(ml));scheduleDriveSync();}
+            selectedIndexes.clear();
+            bulkBtn.textContent="✓ Dodano "+added+" do "+(arr==="phrases"?"zwrotów":"fiszek");
+            bulkBtn.style.background="var(--ok-text)"; bulkBtn.style.borderColor="var(--ok-text)"; bulkBtn.style.opacity="1"; bulkBtn.disabled=true;
+            setTimeout(()=>{ bulkBtn.style.background="var(--gold)"; bulkBtn.style.borderColor="var(--gold)"; updateBulkBtn(); }, 2500);
+          };
+          btnRow.appendChild(bulkBtn);
+
+          const addAllBtn=document.createElement("button");
+          addAllBtn.textContent = type==="phrases" ? "+ Dodaj wszystkie do zwrotów" : "+ Dodaj wszystkie do fiszek";
+          addAllBtn.style.cssText="flex:1;min-width:180px;padding:10px 20px;background:none;border:1px solid var(--gold);color:var(--gold);cursor:pointer;font-size:12px;font-family:inherit;letter-spacing:.04em;border-radius:4px";
+          addAllBtn.onclick=()=>{
+            const arr = type==="phrases" ? "phrases" : "vocab";
+            if(!lesson[arr]) lesson[arr]=[];
+            let added=0;
+            items.forEach((item,idx)=>{
+              if(!lesson[arr].some(v=>v.w===item.w)){
+                lesson[arr].push({w:item.w,tr:item.tr,ipa:item.ipa||"",pl:item.pl||"",ex:item.ex||"",exT:item.exT||""});
+                added++;
+              }
+              addedIndexes.add(idx);
+              const ref=itemRefs[idx];
+              if(ref){ ref.checkbox.checked=false; ref.checkbox.disabled=true; ref.addBtn.textContent="✓"; ref.addBtn.style.color="var(--ok-text)"; ref.addBtn.disabled=true; }
+            });
+            const ml=Object.assign({},S.myLessons);
+            const li=(ml[S.lang]||[]).findIndex(l=>l.id===lesson.id);
+            if(li>=0){ml[S.lang][li][arr]=lesson[arr];S.myLessons=ml;localStorage.setItem("lingua_my_lessons",JSON.stringify(ml));scheduleDriveSync();}
+            selectedIndexes.clear();
             addAllBtn.textContent = "✓ Dodano "+added+" nowych do "+(arr==="phrases"?"zwrotów":"fiszek");
             addAllBtn.style.color="var(--ok-text)";addAllBtn.style.borderColor="var(--ok-text)";
             addAllBtn.disabled=true;
-            resultDiv.querySelectorAll("button").forEach(b=>{if(b.textContent==="+"){b.textContent="✓";b.style.color="var(--ok-text)";b.disabled=true;}});
+            updateBulkBtn();
           };
-          resultDiv.appendChild(addAllBtn);
+          btnRow.appendChild(addAllBtn);
+          resultDiv.appendChild(btnRow);
         }catch(e){
           btn.innerHTML=type==="vocab"?"📝 <strong>Generuj słówka z tekstu</strong><br><span style='font-size:11px;color:var(--text2);font-weight:normal'>AI wyciągnie słówka — dodaj wybrane do fiszek</span>":"💬 <strong>Generuj zwroty z tekstu</strong><br><span style='font-size:11px;color:var(--text2);font-weight:normal'>AI wyciągnie zwroty i idiomy — dodaj do fiszek</span>";
           btn.disabled=false;
