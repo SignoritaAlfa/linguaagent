@@ -1117,6 +1117,7 @@ let S={
   rapidKey:localStorage.getItem("lingua_rapid_key")||"",
   myLessons:(()=>{try{return JSON.parse(localStorage.getItem("lingua_my_lessons")||"{}")}catch{return {}}})(),
   lessonFolders:(()=>{try{return JSON.parse(localStorage.getItem("lingua_lesson_folders")||"{}")}catch{return {}}})(),
+  foldersCollapsed:(()=>{try{return JSON.parse(localStorage.getItem("lingua_folders_collapsed")||"{}")}catch{return {}}})(),
   // Google Drive sync
   driveClientId:localStorage.getItem("lingua_drive_client_id")||"",
   driveToken:(()=>{const t=localStorage.getItem("lingua_drive_token");const e=parseInt(localStorage.getItem("lingua_drive_token_expires")||"0",10);return (t && e > Date.now()+30000) ? t : null;})(),
@@ -1184,6 +1185,7 @@ function buildSyncPayload(){
     lastModified: Date.now(),
     myLessons: S.myLessons,
     lessonFolders: S.lessonFolders,
+    foldersCollapsed: S.foldersCollapsed,
     myFilms: S.myFilms,
     filmClipUrls: S.filmClipUrls,
     workerUrl: S.workerUrl || "",
@@ -1205,6 +1207,7 @@ function applyDriveData(remote){
   if(!remote || typeof remote!=="object") return;
   if(remote.myLessons){ S.myLessons=remote.myLessons; localStorage.setItem("lingua_my_lessons", JSON.stringify(S.myLessons)); }
   if(remote.lessonFolders){ S.lessonFolders=remote.lessonFolders; localStorage.setItem("lingua_lesson_folders", JSON.stringify(S.lessonFolders)); }
+  if(remote.foldersCollapsed){ S.foldersCollapsed=remote.foldersCollapsed; localStorage.setItem("lingua_folders_collapsed", JSON.stringify(S.foldersCollapsed)); }
   if(remote.myFilms){ S.myFilms=remote.myFilms; localStorage.setItem("lingua_my_films", JSON.stringify(S.myFilms)); }
   if(remote.filmClipUrls){ S.filmClipUrls=remote.filmClipUrls; localStorage.setItem("lingua_film_clip_urls", JSON.stringify(S.filmClipUrls)); }
   if(typeof remote.workerUrl === "string"){ S.workerUrl=remote.workerUrl; if(remote.workerUrl) localStorage.setItem("lingua_worker_url", remote.workerUrl); else localStorage.removeItem("lingua_worker_url"); }
@@ -1757,6 +1760,20 @@ function deleteFolder(lang, name){
   localStorage.setItem("lingua_lesson_folders", JSON.stringify(lf));
   set({lessonFolders:lf, myLessons:ml});
   scheduleDriveSync();
+}
+
+function toggleFolderCollapsed(lang, folderKey){
+  const fc = Object.assign({}, S.foldersCollapsed||{});
+  fc[lang] = Object.assign({}, fc[lang]||{});
+  fc[lang][folderKey] = !fc[lang][folderKey];
+  S.foldersCollapsed = fc;
+  localStorage.setItem("lingua_folders_collapsed", JSON.stringify(fc));
+  scheduleDriveSync();
+  render();
+}
+
+function isFolderCollapsed(lang, folderKey){
+  return !!((S.foldersCollapsed||{})[lang]||{})[folderKey];
 }
 
 function renameLesson(lang, lessonIdx){
@@ -2471,18 +2488,30 @@ function renderLang(){
     row.appendChild(acts);
     return row;
   }
-  function renderFolderHead(folderName, count){
-    const head=h("div",{style:"display:flex;align-items:center;gap:8px;margin:20px 0 10px 0"});
-    head.appendChild(h("div",{style:"font-size:16px"},"📁"));
-    head.appendChild(h("div",{style:"font-size:13px;color:var(--text2);font-weight:500;letter-spacing:.04em;flex:1"},folderName+" ("+count+")"));
-    head.appendChild(h("button",{class:"sbtn",style:"padding:4px 10px;font-size:11px",onclick:()=>renameFolder(lang,folderName)},"✏ Zmień nazwę"));
-    head.appendChild(h("button",{class:"sbtn",style:"padding:4px 10px;font-size:11px;border-color:var(--red);color:var(--red)",onclick:()=>deleteFolder(lang,folderName)},"✕ Usuń folder"));
+  function renderSectionHead(folderKey, icon, label, count, actions){
+    const collapsed = isFolderCollapsed(lang, folderKey);
+    const head=h("div",{
+      style:"display:flex;align-items:center;gap:8px;margin:20px 0 10px 0;cursor:pointer;user-select:none;padding:6px 4px;border-radius:4px;transition:background .15s",
+      onclick:()=>toggleFolderCollapsed(lang, folderKey)
+    });
+    head.onmouseover=()=>{ head.style.background="var(--surface2)"; };
+    head.onmouseout=()=>{ head.style.background="transparent"; };
+    head.appendChild(h("div",{style:"font-size:11px;color:var(--text3);width:14px;text-align:center;transition:transform .15s"},collapsed?"▶":"▼"));
+    head.appendChild(h("div",{style:"font-size:16px"},icon));
+    head.appendChild(h("div",{style:"font-size:13px;color:var(--text2);font-weight:500;letter-spacing:.04em;flex:1"},label+" ("+count+")"));
+    (actions||[]).forEach(btn=>head.appendChild(btn));
     return head;
+  }
+  function renderFolderHead(folderName, count){
+    const renameBtn = h("button",{class:"sbtn",style:"padding:4px 10px;font-size:11px",onclick:(e)=>{e.stopPropagation();renameFolder(lang,folderName);}},"✏ Zmień nazwę");
+    const deleteBtn = h("button",{class:"sbtn",style:"padding:4px 10px;font-size:11px;border-color:var(--red);color:var(--red)",onclick:(e)=>{e.stopPropagation();deleteFolder(lang,folderName);}},"✕ Usuń folder");
+    return renderSectionHead("folder:"+folderName, "📁", folderName, count, [renameBtn, deleteBtn]);
   }
   // User-defined folders
   folders.forEach(folderName=>{
     const items=byFolder[folderName]||[];
     main.appendChild(renderFolderHead(folderName, items.length));
+    if(isFolderCollapsed(lang, "folder:"+folderName)) return;
     if(items.length===0){
       main.appendChild(h("div",{style:"padding:14px;color:var(--text3);font-size:12px;font-style:italic;text-align:center;border:1px dashed var(--border);border-radius:4px"},"Folder pusty — przenieś tu lekcje wybierając folder w wierszu lekcji"));
     } else {
@@ -2490,18 +2519,16 @@ function renderLang(){
     }
   });
   if(unfolderedVideo.length>0){
-    const vfHead=h("div",{style:"display:flex;align-items:center;gap:8px;margin:20px 0 10px 0"});
-    vfHead.appendChild(h("div",{style:"font-size:16px"},"🎬"));
-    vfHead.appendChild(h("div",{style:"font-size:13px;color:var(--text2);font-weight:500;letter-spacing:.04em"},"Z filmów i YouTube ("+unfolderedVideo.length+")"));
-    main.appendChild(vfHead);
-    unfolderedVideo.forEach(({lesson,idx})=>main.appendChild(renderLessonRow(lesson,idx)));
+    main.appendChild(renderSectionHead("__video", "🎬", "Z filmów i YouTube", unfolderedVideo.length, []));
+    if(!isFolderCollapsed(lang, "__video")){
+      unfolderedVideo.forEach(({lesson,idx})=>main.appendChild(renderLessonRow(lesson,idx)));
+    }
   }
   if(unfolderedText.length>0){
-    const tfHead=h("div",{style:"display:flex;align-items:center;gap:8px;margin:20px 0 10px 0"});
-    tfHead.appendChild(h("div",{style:"font-size:16px"},"📄"));
-    tfHead.appendChild(h("div",{style:"font-size:13px;color:var(--text2);font-weight:500;letter-spacing:.04em"},"Z plików i tekstów ("+unfolderedText.length+")"));
-    main.appendChild(tfHead);
-    unfolderedText.forEach(({lesson,idx})=>main.appendChild(renderLessonRow(lesson,idx)));
+    main.appendChild(renderSectionHead("__text", "📄", "Z plików i tekstów", unfolderedText.length, []));
+    if(!isFolderCollapsed(lang, "__text")){
+      unfolderedText.forEach(({lesson,idx})=>main.appendChild(renderLessonRow(lesson,idx)));
+    }
   }
 
   if(S.showUpload && S.uploadLang===lang) main.appendChild(renderUploadPanel());
