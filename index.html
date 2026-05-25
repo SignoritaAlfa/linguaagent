@@ -1718,6 +1718,24 @@ function deleteFolder(lang, name){
   scheduleDriveSync();
 }
 
+function renameLesson(lang, lessonIdx){
+  const ml = Object.assign({}, S.myLessons);
+  const lessons = (ml[lang]||[]);
+  if(!lessons[lessonIdx]) return;
+  const cur = lessons[lessonIdx].title || "";
+  const newTitle = prompt("Nowa nazwa lekcji:", cur);
+  if(newTitle === null) return;
+  const trimmed = newTitle.trim();
+  if(!trimmed){ alert("Nazwa nie może być pusta"); return; }
+  if(trimmed === cur) return;
+  ml[lang] = lessons.slice();
+  ml[lang][lessonIdx] = Object.assign({}, lessons[lessonIdx], {title: trimmed});
+  localStorage.setItem("lingua_my_lessons", JSON.stringify(ml));
+  S.myLessons = ml;
+  scheduleDriveSync();
+  render();
+}
+
 function moveLessonToFolder(lang, lessonIdx, folderName){
   const ml = Object.assign({}, S.myLessons);
   if(!ml[lang]||!ml[lang][lessonIdx]) return;
@@ -2300,9 +2318,19 @@ function renderLang(){
       title:"Otwórz lekcję",
       onclick:()=>set({screen:"lesson",lesson,mode:"dialog",lessonTab:"dialog",playing:false,playingLine:-1})
     });
-    info.onmouseover=()=>{info.style.opacity="0.7";};
+    info.onmouseover=()=>{info.style.opacity="0.85";};
     info.onmouseout=()=>{info.style.opacity="1";};
-    info.appendChild(h("div",{class:"my-lesson-title"},lesson.title||"Bez tytułu"));
+    const titleRow = h("div",{style:"display:flex;align-items:baseline;gap:8px"});
+    titleRow.appendChild(h("div",{class:"my-lesson-title"},lesson.title||"Bez tytułu"));
+    const renameBtn = h("button",{
+      style:"background:none;border:1px solid transparent;cursor:pointer;font-size:11px;color:var(--text3);padding:2px 6px;border-radius:4px;transition:all .15s",
+      title:"Zmień nazwę lekcji",
+      onclick:(e)=>{e.stopPropagation();renameLesson(lang, idx);}
+    },"✏");
+    renameBtn.onmouseover=()=>{renameBtn.style.borderColor="var(--gold)";renameBtn.style.color="var(--gold)";};
+    renameBtn.onmouseout=()=>{renameBtn.style.borderColor="transparent";renameBtn.style.color="var(--text3)";};
+    titleRow.appendChild(renameBtn);
+    info.appendChild(titleRow);
     info.appendChild(h("div",{class:"my-lesson-meta"},(lesson.level||"")+" · "+(lesson.vocab||[]).length+" słówek · "+(lesson.dialog||[]).length+" linii"));
     row.appendChild(info);
     const acts=h("div",{class:"my-lesson-actions"});
