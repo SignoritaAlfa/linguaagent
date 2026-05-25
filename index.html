@@ -3953,6 +3953,23 @@ function renderSettings(){
   setupDetails.appendChild(setupBody);
   sw.appendChild(setupDetails);
 
+  // ── Cache lekcji ──
+  sw.appendChild(h("hr",{class:"settings-divider"}));
+  sw.appendChild(h("div",{style:"font-size:14px;font-weight:500;color:var(--text);margin-bottom:6px"},"💾 Cache lekcji"));
+  let cacheCount = 0; try{ cacheCount = Object.keys(JSON.parse(localStorage.getItem(LESSON_CACHE_KEY)||"{}")).length; }catch(e){}
+  sw.appendChild(h("div",{style:"font-size:12px;color:var(--text3);margin-bottom:12px;line-height:1.6"},
+    "Cache zapamiętuje wyniki Claude'a dla każdego transkryptu. Drugie kliknięcie „Wygeneruj z zapisanego tekstu\" dla tej samej lekcji = ",
+    h("strong",{},"$0 kosztu"),
+    " (instant). Cache trzyma do 30 ostatnich lekcji. Aktualnie zapisane: ",
+    h("strong",{},""+cacheCount+" wpisów")
+  ));
+  sw.appendChild(h("button",{class:"sbtn",style:"font-size:11px",onclick:()=>{
+    if(confirm("Usunąć cache wszystkich "+cacheCount+" lekcji? Następne regeneracje znów będą kosztować kredyty Claude.")){
+      clearLessonCache();
+      render();
+    }
+  }},"🗑 Wyczyść cache lekcji"));
+
   // ── Eksport / Import danych ──
   sw.appendChild(h("hr",{class:"settings-divider"}));
   sw.appendChild(h("div",{style:"font-size:14px;font-weight:500;color:var(--text);margin-bottom:12px"},"Eksport / Import danych (lokalnie, plik)"));
@@ -5833,6 +5850,23 @@ function renderSettings(){
   setupDetails.appendChild(setupBody);
   sw.appendChild(setupDetails);
 
+  // ── Cache lekcji ──
+  sw.appendChild(h("hr",{class:"settings-divider"}));
+  sw.appendChild(h("div",{style:"font-size:14px;font-weight:500;color:var(--text);margin-bottom:6px"},"💾 Cache lekcji"));
+  let cacheCount = 0; try{ cacheCount = Object.keys(JSON.parse(localStorage.getItem(LESSON_CACHE_KEY)||"{}")).length; }catch(e){}
+  sw.appendChild(h("div",{style:"font-size:12px;color:var(--text3);margin-bottom:12px;line-height:1.6"},
+    "Cache zapamiętuje wyniki Claude'a dla każdego transkryptu. Drugie kliknięcie „Wygeneruj z zapisanego tekstu\" dla tej samej lekcji = ",
+    h("strong",{},"$0 kosztu"),
+    " (instant). Cache trzyma do 30 ostatnich lekcji. Aktualnie zapisane: ",
+    h("strong",{},""+cacheCount+" wpisów")
+  ));
+  sw.appendChild(h("button",{class:"sbtn",style:"font-size:11px",onclick:()=>{
+    if(confirm("Usunąć cache wszystkich "+cacheCount+" lekcji? Następne regeneracje znów będą kosztować kredyty Claude.")){
+      clearLessonCache();
+      render();
+    }
+  }},"🗑 Wyczyść cache lekcji"));
+
   // ── Eksport / Import danych ──
   sw.appendChild(h("hr",{class:"settings-divider"}));
   sw.appendChild(h("div",{style:"font-size:14px;font-weight:500;color:var(--text);margin-bottom:12px"},"Eksport / Import danych (lokalnie, plik)"));
@@ -6047,10 +6081,70 @@ function formatTime(sec){
   return m+":"+(r<10?"0"+r:r);
 }
 
+// ── Lesson cache: same transcript+lang doesn't cost Claude credits twice ─────
+const LESSON_CACHE_KEY = "lingua_lesson_cache";
+const LESSON_CACHE_MAX = 30;
+
+function lessonCacheKey(transcript, lang){
+  const t = (transcript||"").trim();
+  // Quick deterministic fingerprint: length + first 200 + last 200 chars + lang
+  // Doesn't need to be cryptographic — just needs to differ for different content
+  return (lang||"") + "|" + t.length + "|" + t.slice(0,200).replace(/\s+/g," ").trim() + "||" + t.slice(-200).replace(/\s+/g," ").trim();
+}
+
+function getCachedLesson(transcript, lang){
+  try{
+    const cache = JSON.parse(localStorage.getItem(LESSON_CACHE_KEY)||"{}");
+    const k = lessonCacheKey(transcript, lang);
+    const entry = cache[k];
+    if(!entry) return null;
+    // Refresh timestamp (LRU access)
+    entry.lastAccess = Date.now();
+    localStorage.setItem(LESSON_CACHE_KEY, JSON.stringify(cache));
+    return entry.lesson || null;
+  }catch(e){ return null; }
+}
+
+function setCachedLesson(transcript, lang, lesson){
+  try{
+    let cache = JSON.parse(localStorage.getItem(LESSON_CACHE_KEY)||"{}");
+    const k = lessonCacheKey(transcript, lang);
+    // LRU eviction if over capacity
+    const entries = Object.entries(cache);
+    if(entries.length >= LESSON_CACHE_MAX){
+      entries.sort((a,b)=>((a[1].lastAccess||a[1].timestamp||0)-(b[1].lastAccess||b[1].timestamp||0)));
+      const toRemove = entries.length - LESSON_CACHE_MAX + 1;
+      for(let i=0; i<toRemove; i++) delete cache[entries[i][0]];
+    }
+    cache[k] = { lesson, timestamp: Date.now(), lastAccess: Date.now() };
+    localStorage.setItem(LESSON_CACHE_KEY, JSON.stringify(cache));
+    console.log("[LessonCache] saved, total entries:", Object.keys(cache).length);
+  }catch(e){
+    console.log("[LessonCache] save failed (likely quota):", e.message);
+    // Try clearing and saving just this one
+    try{
+      localStorage.setItem(LESSON_CACHE_KEY, JSON.stringify({[lessonCacheKey(transcript,lang)]:{lesson, timestamp:Date.now(), lastAccess:Date.now()}}));
+    }catch(e2){ console.log("[LessonCache] retry also failed"); }
+  }
+}
+
+function clearLessonCache(){
+  localStorage.removeItem(LESSON_CACHE_KEY);
+}
+
 // Build a lesson object from a transcript without writing to state — used by
 // regenerate-in-place flow. Returns the parsed lesson without setting filmTranscriptLesson.
-async function buildLessonFromTranscript(transcript, videoId, cues, lang){
+async function buildLessonFromTranscript(transcript, videoId, cues, lang, opts){
   if(!transcript||!transcript.trim()) throw new Error("Pusta transkrypcja");
+  opts = opts || {};
+  // CACHE: skip Claude call if we've processed this exact transcript+lang before
+  if(!opts.bypassCache){
+    const cached = getCachedLesson(transcript, lang);
+    if(cached){
+      console.log("[LessonCache] HIT — using cached lesson, $0 cost");
+      return JSON.parse(JSON.stringify(cached));  // deep copy so caller mutations don't leak
+    }
+  }
   if(!S.claudeKey) throw new Error("Brak klucza Claude w Ustawieniach");
   const langNames={EN:"angielski",FR:"francuski",IT:"włoski"};
   const COMMON_SECTIONS = `
@@ -6080,6 +6174,8 @@ DODATKOWE SEKCJE:
   const apiData = await apiRes.json();
   const newLesson = parseLessonJson(apiData.content[0].text);
   if(!newLesson.dialog || newLesson.dialog.length===0) throw new Error("Claude nie zwrócił dialogu");
+  // Cache the result so the same transcript doesn't cost again
+  setCachedLesson(transcript, lang, newLesson);
   return newLesson;
 }
 
@@ -6185,6 +6281,16 @@ async function regenerateLessonDialog(lesson, lang, opts){
 
 async function processTranscriptToLesson(transcript, videoId, cues){
   if(!transcript||!transcript.trim()) throw new Error("Pusta transkrypcja");
+  // CACHE: skip Claude call if same transcript was processed before
+  const cachedLesson = getCachedLesson(transcript, S.lang);
+  if(cachedLesson){
+    console.log("[LessonCache] HIT in processTranscriptToLesson — $0 cost");
+    const lesson = JSON.parse(JSON.stringify(cachedLesson));
+    lesson.id="film_"+Date.now(); lesson.type="dialog"; lesson.rawText=transcript;
+    if(videoId) lesson.youtubeId=videoId;
+    set({filmTranscriptProcessing:false,filmTranscriptLesson:lesson});
+    return;
+  }
   if(!S.claudeKey) throw new Error("Wymagany klucz Claude (Anthropic) w Ustawieniach");
   console.log("[LinguaAgent] Transkrypcja: "+transcript.length+" znaków"+(cues?", cues="+cues.length:", bez timestampów"));
   set({filmTranscriptText:transcript,filmTranscriptLoading:false,filmTranscriptProcessing:true,filmTranscriptError:""});
@@ -6245,6 +6351,8 @@ ${trimmedTranscript}`;
   console.log("[LinguaAgent] Claude response: "+rawText.length+" chars, stop_reason="+apiData.stop_reason);
   const lesson = parseLessonJson(rawText);
   if(!lesson.dialog || lesson.dialog.length===0) throw new Error("Claude nie zwrócił dialogu — spróbuj ponownie z krótszą sceną");
+  // Cache the raw lesson (without id/youtubeId — those are call-specific)
+  setCachedLesson(transcript, S.lang, lesson);
   lesson.id="film_"+Date.now(); lesson.type="dialog"; lesson.rawText=transcript;
   if(videoId) lesson.youtubeId=videoId;
   console.log("[LinguaAgent] Lekcja gotowa: "+lesson.dialog?.length+" kwestii, "+lesson.vocab?.length+" słówek");
