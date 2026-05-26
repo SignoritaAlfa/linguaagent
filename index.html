@@ -1093,7 +1093,7 @@ let S={
   lang:"FR",
   lesson:null,
   mode:"dialog",   // dialog | flashcard | fill | grammar
-  cards:[],idx:0,revealed:false,dir:"to_pl",
+  cards:[],idx:0,revealed:false,dir:"to_pl",dirMode:"to_pl",
   score:{c:0,t:0},input:"",submitted:false,
   playingLine:-1,playing:false,abort:{v:false},
   elKey:localStorage.getItem("lingua_el_key")||"",
@@ -2459,12 +2459,14 @@ Odpowiedz TYLKO czystym JSON (bez markdown, bez komentarzy):
 function startPractice(lesson,mode){
   const cards=mode==="flashcard"?lesson.vocab:lesson.fill;
   set({screen:"practice",lesson,mode,cards,idx:0,revealed:false,
-    dir:"to_pl",score:{c:0,t:0},input:"",submitted:false});
+    dir:"to_pl",dirMode:"to_pl",score:{c:0,t:0},input:"",submitted:false});
 }
 function nextCard(){
-  const{idx,cards}=S;
+  const{idx,cards,dirMode,dir}=S;
   if(idx+1>=cards.length){set({screen:"results"});return;}
-  set({idx:idx+1,revealed:false,dir:Math.random()>.5?"to_pl":"to_lang",input:"",submitted:false});
+  // Losowanie kierunku TYLKO w trybie mix; w stałych trybach trzymaj wybór użytkownika
+  const nextDir = dirMode==="mix" ? (Math.random()>.5?"to_pl":"to_lang") : (dirMode || dir);
+  set({idx:idx+1,revealed:false,dir:nextDir,input:"",submitted:false});
 }
 function rateLabel(v){
   if(v<=0.78)return "Bardzo wolno";
@@ -3448,8 +3450,9 @@ function renderPractice(){
     const fw=h("div",{class:"fc-wrap"});
     const dr=h("div",{class:"dir-row"});
     [["to_pl",LANGS[lang].flag+" → 🇵🇱"],["to_lang","🇵🇱 → "+LANGS[lang].flag],["mix","🔀 Mix"]].forEach(([d,label])=>{
-      dr.appendChild(h("button",{class:"dir-btn"+(dir===d?" sel":""),
-        onclick:()=>set({dir:d==="mix"?(Math.random()>.5?"to_pl":"to_lang"):d,revealed:false})},label));
+      // Aktywny przycisk = dirMode (nie aktualny dir, który w mix może być losowy)
+      dr.appendChild(h("button",{class:"dir-btn"+((S.dirMode||dir)===d?" sel":""),
+        onclick:()=>set({dirMode:d, dir:d==="mix"?(Math.random()>.5?"to_pl":"to_lang"):d, revealed:false})},label));
     });
     fw.appendChild(dr);
 
@@ -5451,8 +5454,9 @@ function renderPractice(){
     const fw=h("div",{class:"fc-wrap"});
     const dr=h("div",{class:"dir-row"});
     [["to_pl",LANGS[lang].flag+" → 🇵🇱"],["to_lang","🇵🇱 → "+LANGS[lang].flag],["mix","🔀 Mix"]].forEach(([d,label])=>{
-      dr.appendChild(h("button",{class:"dir-btn"+(dir===d?" sel":""),
-        onclick:()=>set({dir:d==="mix"?(Math.random()>.5?"to_pl":"to_lang"):d,revealed:false})},label));
+      // Aktywny przycisk = dirMode (nie aktualny dir, który w mix może być losowy)
+      dr.appendChild(h("button",{class:"dir-btn"+((S.dirMode||dir)===d?" sel":""),
+        onclick:()=>set({dirMode:d, dir:d==="mix"?(Math.random()>.5?"to_pl":"to_lang"):d, revealed:false})},label));
     });
     fw.appendChild(dr);
 
