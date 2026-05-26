@@ -2264,6 +2264,77 @@ function getFilmClips(lang, filmId){
 
 // Parses Claude's lesson response. Resilient to truncation, trailing commas,
 // inner unescaped quotes. Extracts whatever can be salvaged.
+// Batch fix istniejących słówek bez rodzajnika — AI dopisuje le/la/un/une (FR),
+// il/la/lo/un/una/uno (IT). Czasowniki też normalizuje do bezokolicznika.
+const FR_ARTICLE_RE = /^(le |la |l'|les |un |une |des |du |de la |au |aux |à la )/i;
+const IT_ARTICLE_RE = /^(il |la |lo |l'|i |gli |le |un |uno |una |un'|del |della |dello )/i;
+function vocabItemNeedsFix(item, lang){
+  const w = (item.w||"").trim();
+  if(!w) return false;
+  if(lang === "FR") return !FR_ARTICLE_RE.test(w);
+  if(lang === "IT") return !IT_ARTICLE_RE.test(w);
+  return false; // EN — nie ruszamy
+}
+async function fixVocabArticles(lesson, lang){
+  if(lang !== "FR" && lang !== "IT"){ alert("Rodzajniki dotyczą tylko francuskiego i włoskiego"); return; }
+  if(!S.geminiKey && !S.claudeKey){ alert("Wymagany klucz AI w Ustawieniach"); return; }
+  const vocab = lesson.vocab || [];
+  // Filtruj te, które WYGLĄDAJĄ na rzeczowniki bez rodzajnika (nie zaczynają się od rodzajnika ani od "to "/"se "/"s'" itp.)
+  const candidates = [];
+  vocab.forEach((item, idx)=>{
+    const w = (item.w||"").trim();
+    if(!w) return;
+    // Pomiń jeśli ma już rodzajnik
+    if(lang==="FR" && FR_ARTICLE_RE.test(w)) return;
+    if(lang==="IT" && IT_ARTICLE_RE.test(w)) return;
+    // Pomiń jeśli wygląda na czasownik (FR: zaczyna od "se ", "s'" lub kończy "-er/-ir/-re/-oir"; IT: "-are/-ere/-ire" + ev. "si ")
+    if(lang==="FR" && /^(se |s')/i.test(w)) return;
+    if(lang==="FR" && /(er|ir|re|oir)$/i.test(w) && w.split(/\s+/).length===1) return;
+    if(lang==="IT" && /^si /i.test(w)) return;
+    if(lang==="IT" && /(are|ere|ire|arsi|ersi|irsi)$/i.test(w) && w.split(/\s+/).length===1) return;
+    // Pomiń przymiotniki: brak heurystyki, ale jeśli ma >1 słowa lub kończy się na -e/-a/-o (IT)/-i/-é to mogłoby być przymiotnikiem — AI rozpozna
+    candidates.push({idx, w, tr:item.tr});
+  });
+  if(candidates.length===0){ alert("Wszystkie słówka mają już rodzajniki (albo nie są rzeczownikami)"); return; }
+  const langName = lang==="FR" ? "francuski" : "włoski";
+  const articleHint = lang==="FR" ? "le, la, l', un, une (wybierz właściwy rodzajnik gramatyczny)" : "il, la, lo, l', un, una, uno (wybierz właściwy)";
+  const prompt = `Mam listę słów po ${langName}u. Dla KAŻDEGO słowa zdecyduj:
+- Jeśli to RZECZOWNIK → dopisz rodzajnik (${articleHint}) na początku. Wybierz określony (le/la, il/la) dla rzeczowników konkretnych, lub nieokreślony jeśli pasuje. Sprawdź rodzaj gramatyczny słowa.
+- Jeśli to CZASOWNIK → zmień na bezokolicznik (np. "parle" → "parler", "parla" → "parlare").
+- Jeśli to PRZYMIOTNIK lub PRZYSŁÓWEK → zostaw bez zmian.
+
+Zwróć JSON: {"items":[{"old":"oryginalne słowo","new":"poprawione słowo","kind":"noun|verb|adj|adv|other"}]}
+
+Lista:
+${candidates.map((c,i)=>`${i+1}. "${c.w}" (PL: ${c.tr})`).join("\n")}`;
+
+  const banner = showRegenStatus("⏳ AI poprawia rodzajniki ("+candidates.length+" pozycji)...", "info");
+  try{
+    const raw = await callLessonModel(prompt);
+    const parsed = tolerantParseJson(raw);
+    const items = parsed.items || [];
+    if(!items.length) throw new Error("Brak odpowiedzi");
+    // Apply changes — match by 'old' field to candidate indices
+    let changed = 0;
+    items.forEach(fix=>{
+      if(!fix || !fix.old || !fix.new || fix.old===fix.new) return;
+      const cand = candidates.find(c => c.w === fix.old);
+      if(!cand) return;
+      lesson.vocab[cand.idx].w = fix.new;
+      changed++;
+    });
+    // Persist
+    const ml = Object.assign({},S.myLessons);
+    const li = (ml[lang]||[]).findIndex(l=>l.id===lesson.id);
+    if(li>=0){ ml[lang][li].vocab = lesson.vocab; S.myLessons=ml; localStorage.setItem("lingua_my_lessons",JSON.stringify(ml)); scheduleDriveSync(); }
+    showRegenStatus("✓ Poprawione: "+changed+" słówek (rodzajniki/bezokoliczniki)", "success");
+    setTimeout(()=>{ document.querySelectorAll('.regen-status-banner').forEach(el=>el.remove()); render(); }, 1800);
+  }catch(e){
+    showRegenStatus("Błąd: "+e.message, "error");
+    setTimeout(()=>document.querySelectorAll('.regen-status-banner').forEach(el=>el.remove()), 3500);
+  }
+}
+
 // Helper: tworzy przycisk "Generuj słówka/zwroty AI" + kontener wyników.
 // Source text: rawText jeśli jest, inaczej fallback do dialogu lekcji.
 // Używane w zakładkach Słówka, Zwroty, Tekst — żeby user widziała przycisk
@@ -3363,6 +3434,20 @@ function renderLesson(){
     // Generator AI — działa dla każdej lekcji (rawText lub dialog jako źródło)
     const genV = renderAIGenerateButton(lesson, lang, "vocab");
     if(genV) vw.appendChild(genV);
+    // Popraw rodzajniki AI (FR/IT) — tylko dla Twoich lekcji + gdy klucz AI dostępny
+    if(isOwn && (lang==="FR" || lang==="IT") && (S.geminiKey || S.claudeKey)){
+      const v = lesson.vocab || [];
+      const needsFix = v.filter(it => vocabItemNeedsFix(it, lang)).length;
+      if(needsFix > 0){
+        const fixBtn = h("button",{
+          class:"sbtn",
+          style:"margin-bottom:14px;border-color:var(--gold);color:var(--gold);padding:10px 16px;display:block;max-width:760px",
+          title:"AI dopisze rodzajniki do rzeczowników i zamieni czasowniki na bezokolicznik",
+          onclick:()=>fixVocabArticles(lesson, lang)
+        },"🔧 Popraw rodzajniki AI ("+needsFix+" słówek bez rodzajnika)");
+        vw.appendChild(fixBtn);
+      }
+    }
     const v = lesson.vocab||[];
     if(v.length>0){
       const head=h("div",{style:"display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;max-width:760px;gap:10px;flex-wrap:wrap"});
@@ -5430,6 +5515,20 @@ function renderLesson(){
     // Generator AI — działa dla każdej lekcji (rawText lub dialog jako źródło)
     const genV = renderAIGenerateButton(lesson, lang, "vocab");
     if(genV) vw.appendChild(genV);
+    // Popraw rodzajniki AI (FR/IT) — tylko dla Twoich lekcji + gdy klucz AI dostępny
+    if(isOwn && (lang==="FR" || lang==="IT") && (S.geminiKey || S.claudeKey)){
+      const v = lesson.vocab || [];
+      const needsFix = v.filter(it => vocabItemNeedsFix(it, lang)).length;
+      if(needsFix > 0){
+        const fixBtn = h("button",{
+          class:"sbtn",
+          style:"margin-bottom:14px;border-color:var(--gold);color:var(--gold);padding:10px 16px;display:block;max-width:760px",
+          title:"AI dopisze rodzajniki do rzeczowników i zamieni czasowniki na bezokolicznik",
+          onclick:()=>fixVocabArticles(lesson, lang)
+        },"🔧 Popraw rodzajniki AI ("+needsFix+" słówek bez rodzajnika)");
+        vw.appendChild(fixBtn);
+      }
+    }
     const v = lesson.vocab||[];
     if(v.length>0){
       const head=h("div",{style:"display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;max-width:760px;gap:10px;flex-wrap:wrap"});
