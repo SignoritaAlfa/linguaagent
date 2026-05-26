@@ -4208,7 +4208,13 @@ function showWordPopup(wordRaw, wordClean, lang, anchorEl){
         method:"POST", headers:{"Content-Type":"application/json"},
         body:JSON.stringify({
           contents:[{parts:[{text:prompt}]}],
-          generationConfig:{temperature:0.1, maxOutputTokens:300}
+          generationConfig:{
+            temperature:0.1,
+            maxOutputTokens:500,
+            // Wyłącz "thinking mode" Gemini 2.5 — przy krótkich tłumaczeniach
+            // myślenie zżerało cały budżet tokenów i zwracał pustą odpowiedź
+            thinkingConfig:{thinkingBudget:0}
+          }
         })
       }).then(async r=>{
         if(!r.ok){
@@ -4218,9 +4224,17 @@ function showWordPopup(wordRaw, wordClean, lang, anchorEl){
         return r.json();
       }).then(data=>{
         const txt = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        if(!txt){
+          // Empty response → log full payload do konsoli żeby user mógł zgłosić
+          console.warn("[Lingua] Gemini empty response for", wordRaw, "— full payload:", data);
+          throw new Error("Gemini zwrócił pustą odpowiedź (sprawdź konsolę)");
+        }
         // Wyciągnij JSON regexem zamiast tylko stripować markdown — odporne na dodatkowy tekst
         const m = txt.match(/\{[\s\S]*\}/);
-        if(!m) throw new Error("Brak JSON w odpowiedzi");
+        if(!m){
+          console.warn("[Lingua] Gemini no-JSON response for", wordRaw, "— raw text:", txt);
+          throw new Error("Brak JSON w odpowiedzi (sprawdź konsolę)");
+        }
         const parsed = JSON.parse(m[0]);
         showWordPopup._cache[cacheKey] = parsed;
         fillPopup(parsed);
