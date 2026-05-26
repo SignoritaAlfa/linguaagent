@@ -3028,37 +3028,18 @@ function renderLesson(){
       render();
     };
     if(lesson.youtubeId){
-      const ytWrap=h("div",{style:"max-width:680px;margin-bottom:24px"});
-      // Sprawdź czy dialog ma timestampy — wtedy karaoke renderuje własny player niżej.
-      // Bez timestampów: pokaż wbudowany iframe tutaj (inaczej user widział tylko link).
-      const _hasTimestamps = Array.isArray(lesson.dialog) && lesson.dialog.length>0 && typeof lesson.dialog[0].start === "number";
-      if(_hasTimestamps){
-        // Karaoke obsługa niżej — tu tylko skromny link jako fallback
-        const ytLink=h("a",{href:"https://www.youtube.com/watch?v="+lesson.youtubeId,target:"_blank",
-          style:"display:flex;align-items:center;gap:14px;padding:16px 20px;border:1px solid var(--border);background:var(--surface);text-decoration:none;transition:all .2s;cursor:pointer"});
-        ytLink.onmouseover=()=>{ytLink.style.borderColor="var(--gold)";};
-        ytLink.onmouseout=()=>{ytLink.style.borderColor="var(--border)";};
-        ytLink.appendChild(h("div",{style:"font-size:32px"},"▶️"));
-        const ytInfo=h("div",{style:"flex:1"});
-        ytInfo.appendChild(h("div",{style:"font-size:14px;color:var(--text);font-weight:500"},"Słuchaj oryginalnych głosów aktorów"));
-        ytInfo.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-top:3px"},"Karaoke aktywne poniżej · ID: "+lesson.youtubeId));
-        ytLink.appendChild(ytInfo);
-        ytWrap.appendChild(ytLink);
-      } else {
-        // Brak timestampów → renderuj iframe wprost żeby user mógł obejrzeć wideo w apce
-        const ytFrame = h("div",{style:"position:relative;width:100%;padding-top:56.25%;border-radius:8px;overflow:hidden;background:#000"});
-        const iframe = document.createElement("iframe");
-        iframe.src = "https://www.youtube.com/embed/"+lesson.youtubeId;
-        iframe.title = "YouTube video player";
-        iframe.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
-        iframe.referrerPolicy = "strict-origin-when-cross-origin";
-        iframe.allowFullscreen = true;
-        iframe.style.cssText = "position:absolute;top:0;left:0;width:100%;height:100%;border:0";
-        ytFrame.appendChild(iframe);
-        ytWrap.appendChild(ytFrame);
-        ytWrap.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-top:6px;line-height:1.5"},
-          "Wideo bez timestampów — karaoke (synchronizacja słów) nie działa. Żeby ją włączyć: kliknij \"🌐 Pobierz z YouTube na nowo\" — Worker pobierze napisy z czasami."));
-      }
+      // Skromny link/info tylko jako pasek z edycją — sam odtwarzacz idzie niżej
+      // w widoku side-by-side (dla każdego stanu: z timestampami → karaoke, bez → tylko embed)
+      const ytWrap=h("div",{style:"max-width:680px;margin-bottom:16px"});
+      const ytLink=h("a",{href:"https://www.youtube.com/watch?v="+lesson.youtubeId,target:"_blank",
+        style:"display:flex;align-items:center;gap:14px;padding:10px 16px;border:1px solid var(--border);background:var(--surface);text-decoration:none;transition:all .2s;cursor:pointer;font-size:12px"});
+      ytLink.onmouseover=()=>{ytLink.style.borderColor="var(--gold)";};
+      ytLink.onmouseout=()=>{ytLink.style.borderColor="var(--border)";};
+      ytLink.appendChild(h("div",{style:"font-size:18px"},"▶️"));
+      const ytInfo=h("div",{style:"flex:1"});
+      ytInfo.appendChild(h("div",{style:"font-size:12px;color:var(--text3)"},"Otwórz na YouTube w nowej karcie · ID: "+lesson.youtubeId));
+      ytLink.appendChild(ytInfo);
+      ytWrap.appendChild(ytLink);
       if(isOwn){
         const editRow = h("div",{style:"margin-top:6px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap"});
         const regenSavedBtn = h("button",{class:"sbtn",style:"font-size:11px;padding:4px 10px",title:"Wygeneruj dialog na nowo z zapisanego tekstu lekcji (jeśli go nie ma — pobierze z YouTube)"},"🔄 Wygeneruj z zapisanego tekstu");
@@ -3104,12 +3085,25 @@ function renderLesson(){
     main.appendChild(videoWrap);
   }
 
-  const __isFilmKaraoke = lesson.youtubeId && lesson.dialog && lesson.dialog.length>0 && typeof lesson.dialog[0].start === "number";
-  if(S.lessonTab==="dialog" && __isFilmKaraoke){
+  const __hasVideo = lesson.youtubeId && lesson.dialog && lesson.dialog.length>0;
+  const __isFilmKaraoke = __hasVideo && typeof lesson.dialog[0].start === "number";
+  if(S.lessonTab==="dialog" && __hasVideo){
     const layout = h("div",{class:"film-karaoke"});
     const videoCol = h("div",{class:"film-video-col"});
     const frame = h("div",{class:"film-video-frame"});
-    frame.appendChild(h("div",{id:"yt-player-target"}));
+    if(__isFilmKaraoke){
+      // Karaoke: YouTube IFrame Player API (sync z cues)
+      frame.appendChild(h("div",{id:"yt-player-target"}));
+    } else {
+      // Brak timestampów: zwykły embed bez sync
+      const plainIframe = document.createElement("iframe");
+      plainIframe.src = "https://www.youtube.com/embed/"+lesson.youtubeId;
+      plainIframe.title = "YouTube video player";
+      plainIframe.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
+      plainIframe.allowFullscreen = true;
+      plainIframe.style.cssText = "width:100%;aspect-ratio:16/9;border:0;border-radius:8px;background:#000";
+      frame.appendChild(plainIframe);
+    }
     videoCol.appendChild(frame);
     // Edit video URL bar (when lesson.youtubeId doesn't match the dialog content)
     const __isOwnLesson = (S.myLessons[lang]||[]).some(l=>l.id===lesson.id);
@@ -3132,17 +3126,27 @@ function renderLesson(){
       };
       urlEditBar.appendChild(fixBtn);
       videoCol.appendChild(urlEditBar);
+      if(!__isFilmKaraoke){
+        videoCol.appendChild(h("div",{style:"margin-top:8px;padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:4px;font-size:11px;color:var(--text3);line-height:1.5"},
+          "ℹ Karaoke (sync) wyłączone — dialog nie ma timestampów. Żeby włączyć: użyj \"🌐 Pobierz z YouTube na nowo\" gdy wideo ma napisy CC."));
+      }
     }
     layout.appendChild(videoCol);
     const cuesCol = h("div",{class:"film-cues-col"});
     cuesCol.appendChild(h("div",{class:"sec-label",style:"margin-bottom:12px"},"Dialog ("+lesson.dialog.length+" kwestii)"));
     lesson.dialog.forEach((line,i)=>{
-      const cue = h("div",{class:"film-cue",onclick:()=>seekYtTo(line.start)});
-      cue.dataset.start = String(line.start);
-      cue.dataset.end = String((line.end!=null?line.end:(line.start+3)));
+      // Onclick seek tylko gdy mamy timestampy
+      const cueOpts = (typeof line.start === "number") ? {class:"film-cue",onclick:()=>seekYtTo(line.start)} : {class:"film-cue",style:"cursor:default"};
+      const cue = h("div",cueOpts);
+      if(typeof line.start === "number"){
+        cue.dataset.start = String(line.start);
+        cue.dataset.end = String((line.end!=null?line.end:(line.start+3)));
+      }
       const spkRow = h("div",{class:"film-cue-spk"});
       spkRow.appendChild(h("span",{},line.s || ("Speaker"+(i+1))));
-      spkRow.appendChild(h("span",{style:"color:var(--text3);font-weight:400"},formatTime(line.start)));
+      if(typeof line.start === "number"){
+        spkRow.appendChild(h("span",{style:"color:var(--text3);font-weight:400"},formatTime(line.start)));
+      }
       cue.appendChild(spkRow);
       // Linia dialogu — każde słowo klikalne (popup z tłumaczeniem + Uczę się)
       const lineDiv = document.createElement("div");
@@ -3169,9 +3173,9 @@ function renderLesson(){
     });
     layout.appendChild(cuesCol);
     main.appendChild(layout);
-    setTimeout(()=>initYtPlayer(lesson.youtubeId, "yt-player-target"), 60);
+    if(__isFilmKaraoke) setTimeout(()=>initYtPlayer(lesson.youtubeId, "yt-player-target"), 60);
   }
-  if(S.lessonTab==="dialog" && !__isFilmKaraoke){
+  if(S.lessonTab==="dialog" && !__hasVideo){
     const dw=h("div",{class:"dialog-wrap"});
     const lessonAudio = S.lessonAudio[lesson.id]||{};
     const hasAudio = lessonAudio.full || lessonAudio.female || lessonAudio.male;
@@ -5052,37 +5056,18 @@ function renderLesson(){
       render();
     };
     if(lesson.youtubeId){
-      const ytWrap=h("div",{style:"max-width:680px;margin-bottom:24px"});
-      // Sprawdź czy dialog ma timestampy — wtedy karaoke renderuje własny player niżej.
-      // Bez timestampów: pokaż wbudowany iframe tutaj (inaczej user widział tylko link).
-      const _hasTimestamps = Array.isArray(lesson.dialog) && lesson.dialog.length>0 && typeof lesson.dialog[0].start === "number";
-      if(_hasTimestamps){
-        // Karaoke obsługa niżej — tu tylko skromny link jako fallback
-        const ytLink=h("a",{href:"https://www.youtube.com/watch?v="+lesson.youtubeId,target:"_blank",
-          style:"display:flex;align-items:center;gap:14px;padding:16px 20px;border:1px solid var(--border);background:var(--surface);text-decoration:none;transition:all .2s;cursor:pointer"});
-        ytLink.onmouseover=()=>{ytLink.style.borderColor="var(--gold)";};
-        ytLink.onmouseout=()=>{ytLink.style.borderColor="var(--border)";};
-        ytLink.appendChild(h("div",{style:"font-size:32px"},"▶️"));
-        const ytInfo=h("div",{style:"flex:1"});
-        ytInfo.appendChild(h("div",{style:"font-size:14px;color:var(--text);font-weight:500"},"Słuchaj oryginalnych głosów aktorów"));
-        ytInfo.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-top:3px"},"Karaoke aktywne poniżej · ID: "+lesson.youtubeId));
-        ytLink.appendChild(ytInfo);
-        ytWrap.appendChild(ytLink);
-      } else {
-        // Brak timestampów → renderuj iframe wprost żeby user mógł obejrzeć wideo w apce
-        const ytFrame = h("div",{style:"position:relative;width:100%;padding-top:56.25%;border-radius:8px;overflow:hidden;background:#000"});
-        const iframe = document.createElement("iframe");
-        iframe.src = "https://www.youtube.com/embed/"+lesson.youtubeId;
-        iframe.title = "YouTube video player";
-        iframe.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
-        iframe.referrerPolicy = "strict-origin-when-cross-origin";
-        iframe.allowFullscreen = true;
-        iframe.style.cssText = "position:absolute;top:0;left:0;width:100%;height:100%;border:0";
-        ytFrame.appendChild(iframe);
-        ytWrap.appendChild(ytFrame);
-        ytWrap.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-top:6px;line-height:1.5"},
-          "Wideo bez timestampów — karaoke (synchronizacja słów) nie działa. Żeby ją włączyć: kliknij \"🌐 Pobierz z YouTube na nowo\" — Worker pobierze napisy z czasami."));
-      }
+      // Skromny link/info tylko jako pasek z edycją — sam odtwarzacz idzie niżej
+      // w widoku side-by-side (dla każdego stanu: z timestampami → karaoke, bez → tylko embed)
+      const ytWrap=h("div",{style:"max-width:680px;margin-bottom:16px"});
+      const ytLink=h("a",{href:"https://www.youtube.com/watch?v="+lesson.youtubeId,target:"_blank",
+        style:"display:flex;align-items:center;gap:14px;padding:10px 16px;border:1px solid var(--border);background:var(--surface);text-decoration:none;transition:all .2s;cursor:pointer;font-size:12px"});
+      ytLink.onmouseover=()=>{ytLink.style.borderColor="var(--gold)";};
+      ytLink.onmouseout=()=>{ytLink.style.borderColor="var(--border)";};
+      ytLink.appendChild(h("div",{style:"font-size:18px"},"▶️"));
+      const ytInfo=h("div",{style:"flex:1"});
+      ytInfo.appendChild(h("div",{style:"font-size:12px;color:var(--text3)"},"Otwórz na YouTube w nowej karcie · ID: "+lesson.youtubeId));
+      ytLink.appendChild(ytInfo);
+      ytWrap.appendChild(ytLink);
       if(isOwn){
         const editRow = h("div",{style:"margin-top:6px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap"});
         const regenSavedBtn = h("button",{class:"sbtn",style:"font-size:11px;padding:4px 10px",title:"Wygeneruj dialog na nowo z zapisanego tekstu lekcji (jeśli go nie ma — pobierze z YouTube)"},"🔄 Wygeneruj z zapisanego tekstu");
@@ -5128,12 +5113,25 @@ function renderLesson(){
     main.appendChild(videoWrap);
   }
 
-  const __isFilmKaraoke = lesson.youtubeId && lesson.dialog && lesson.dialog.length>0 && typeof lesson.dialog[0].start === "number";
-  if(S.lessonTab==="dialog" && __isFilmKaraoke){
+  const __hasVideo = lesson.youtubeId && lesson.dialog && lesson.dialog.length>0;
+  const __isFilmKaraoke = __hasVideo && typeof lesson.dialog[0].start === "number";
+  if(S.lessonTab==="dialog" && __hasVideo){
     const layout = h("div",{class:"film-karaoke"});
     const videoCol = h("div",{class:"film-video-col"});
     const frame = h("div",{class:"film-video-frame"});
-    frame.appendChild(h("div",{id:"yt-player-target"}));
+    if(__isFilmKaraoke){
+      // Karaoke: YouTube IFrame Player API (sync z cues)
+      frame.appendChild(h("div",{id:"yt-player-target"}));
+    } else {
+      // Brak timestampów: zwykły embed bez sync
+      const plainIframe = document.createElement("iframe");
+      plainIframe.src = "https://www.youtube.com/embed/"+lesson.youtubeId;
+      plainIframe.title = "YouTube video player";
+      plainIframe.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
+      plainIframe.allowFullscreen = true;
+      plainIframe.style.cssText = "width:100%;aspect-ratio:16/9;border:0;border-radius:8px;background:#000";
+      frame.appendChild(plainIframe);
+    }
     videoCol.appendChild(frame);
     // Edit video URL bar (when lesson.youtubeId doesn't match the dialog content)
     const __isOwnLesson = (S.myLessons[lang]||[]).some(l=>l.id===lesson.id);
@@ -5156,17 +5154,27 @@ function renderLesson(){
       };
       urlEditBar.appendChild(fixBtn);
       videoCol.appendChild(urlEditBar);
+      if(!__isFilmKaraoke){
+        videoCol.appendChild(h("div",{style:"margin-top:8px;padding:8px 12px;background:var(--surface);border:1px solid var(--border);border-radius:4px;font-size:11px;color:var(--text3);line-height:1.5"},
+          "ℹ Karaoke (sync) wyłączone — dialog nie ma timestampów. Żeby włączyć: użyj \"🌐 Pobierz z YouTube na nowo\" gdy wideo ma napisy CC."));
+      }
     }
     layout.appendChild(videoCol);
     const cuesCol = h("div",{class:"film-cues-col"});
     cuesCol.appendChild(h("div",{class:"sec-label",style:"margin-bottom:12px"},"Dialog ("+lesson.dialog.length+" kwestii)"));
     lesson.dialog.forEach((line,i)=>{
-      const cue = h("div",{class:"film-cue",onclick:()=>seekYtTo(line.start)});
-      cue.dataset.start = String(line.start);
-      cue.dataset.end = String((line.end!=null?line.end:(line.start+3)));
+      // Onclick seek tylko gdy mamy timestampy
+      const cueOpts = (typeof line.start === "number") ? {class:"film-cue",onclick:()=>seekYtTo(line.start)} : {class:"film-cue",style:"cursor:default"};
+      const cue = h("div",cueOpts);
+      if(typeof line.start === "number"){
+        cue.dataset.start = String(line.start);
+        cue.dataset.end = String((line.end!=null?line.end:(line.start+3)));
+      }
       const spkRow = h("div",{class:"film-cue-spk"});
       spkRow.appendChild(h("span",{},line.s || ("Speaker"+(i+1))));
-      spkRow.appendChild(h("span",{style:"color:var(--text3);font-weight:400"},formatTime(line.start)));
+      if(typeof line.start === "number"){
+        spkRow.appendChild(h("span",{style:"color:var(--text3);font-weight:400"},formatTime(line.start)));
+      }
       cue.appendChild(spkRow);
       // Linia dialogu — każde słowo klikalne (popup z tłumaczeniem + Uczę się)
       const lineDiv = document.createElement("div");
@@ -5193,9 +5201,9 @@ function renderLesson(){
     });
     layout.appendChild(cuesCol);
     main.appendChild(layout);
-    setTimeout(()=>initYtPlayer(lesson.youtubeId, "yt-player-target"), 60);
+    if(__isFilmKaraoke) setTimeout(()=>initYtPlayer(lesson.youtubeId, "yt-player-target"), 60);
   }
-  if(S.lessonTab==="dialog" && !__isFilmKaraoke){
+  if(S.lessonTab==="dialog" && !__hasVideo){
     const dw=h("div",{class:"dialog-wrap"});
     const lessonAudio = S.lessonAudio[lesson.id]||{};
     const hasAudio = lessonAudio.full || lessonAudio.female || lessonAudio.male;
@@ -6599,6 +6607,13 @@ async function buildLessonFromTranscript(transcript, videoId, cues, lang, opts){
   if(_bcfg.provider === "gemini" && !S.geminiKey) throw new Error("Brak klucza Gemini w Ustawieniach");
   if(_bcfg.provider === "anthropic" && !S.claudeKey) throw new Error("Brak klucza Claude w Ustawieniach");
   const langNames={EN:"angielski",FR:"francuski",IT:"włoski"};
+  // Język docelowy do pól meta (title/topic) — immersja w UI
+  const targetLangLabel = {EN:"English",FR:"français",IT:"italiano"}[lang||S.lang]||"target language";
+  const targetLangInstr = {
+    EN:"title i topic napisz po angielsku (target language)",
+    FR:"title i topic napisz po francusku (langue cible)",
+    IT:"title i topic napisz po włosku (lingua di studio)"
+  }[lang||S.lang] || "title i topic napisz w języku docelowym";
   const COMMON_SECTIONS = `
 DODATKOWE SEKCJE:
 - vocab: minimum 25 POJEDYNCZYCH słów z dialogu (rzeczowniki, czasowniki, przymiotniki). NIE wkładaj tu zwrotów wielowyrazowych.
@@ -6609,10 +6624,10 @@ DODATKOWE SEKCJE:
   if(cues && cues.length>0){
     const limit = Math.min(cues.length, 1500);
     const formatted = cues.slice(0,limit).map(c=>`[${c.start.toFixed(2)}-${c.end.toFixed(2)}] ${c.text}`).join("\n");
-    PROMPT = `Masz transkrypcję z timestampami w języku ${langNames[lang||S.lang]||"angielski"}. Każda linia: [start-end] tekst (sekundy).\n\nZADANIE:\n1. POŁĄCZ kolejne linie tej samej osoby w jedną kwestię. Zachowaj start pierwszej i end ostatniej.\n2. JEŚLI linia zawiera wypowiedzi DWÓCH+ postaci, ROZDZIEL.\n3. POPRAW INTERPUNKCJĘ I KAPITALIZACJĘ (transkrypcje YT są lowercase).\n4. Rozpoznaj kto mówi UWAŻNIE — Friends: Monica/Chandler/Ross/Joey/Rachel/Phoebe; inne seriale podobnie. Dla nieznanych Speaker1, Speaker2.\n5. Każda kwestia ma "start" i "end" (sekundy float) — KRYTYCZNE dla sync z wideo.\n6. Przetłumacz na polski naturalnie.${COMMON_SECTIONS}\n\nOdpowiedz TYLKO czystym JSON bez markdown:\n{"title":"tytuł","level":"A2","topic":"temat po polsku","dialog":[{"s":"imię","l":"tekst","t":"tłumaczenie","start":1.23,"end":4.56}],"vocab":[{"w":"słowo","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie","exT":"tłumaczenie"}],"phrases":[{"w":"zwrot","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie","exT":"tłumaczenie"}],"fill":[{"s":"zdanie z ___","a":"odp","h":"wskazówka","cat":"text"}],"grammar":[{"rule":"zasada","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie PL"}]}\n\nTRANSKRYPCJA Z TIMESTAMPAMI:\n${formatted}`;
+    PROMPT = `Masz transkrypcję z timestampami w języku ${langNames[lang||S.lang]||"angielski"}. Każda linia: [start-end] tekst (sekundy).\n\nZADANIE:\n1. POŁĄCZ kolejne linie tej samej osoby w jedną kwestię. Zachowaj start pierwszej i end ostatniej.\n2. JEŚLI linia zawiera wypowiedzi DWÓCH+ postaci, ROZDZIEL.\n3. POPRAW INTERPUNKCJĘ I KAPITALIZACJĘ (transkrypcje YT są lowercase).\n4. Rozpoznaj kto mówi UWAŻNIE — Friends: Monica/Chandler/Ross/Joey/Rachel/Phoebe; inne seriale podobnie. Dla nieznanych Speaker1, Speaker2.\n5. Każda kwestia ma "start" i "end" (sekundy float) — KRYTYCZNE dla sync z wideo.\n6. Przetłumacz dialog na polski naturalnie (pole "t").\n7. ${targetLangInstr}.${COMMON_SECTIONS}\n\nOdpowiedz TYLKO czystym JSON bez markdown:\n{"title":"tytuł sceny po ${targetLangLabel}","level":"A2","topic":"temat językowy po ${targetLangLabel}","dialog":[{"s":"imię","l":"tekst","t":"tłumaczenie PL","start":1.23,"end":4.56}],"vocab":[{"w":"słowo","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie","exT":"tłumaczenie"}],"phrases":[{"w":"zwrot","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie","exT":"tłumaczenie"}],"fill":[{"s":"zdanie z ___","a":"odp","h":"wskazówka","cat":"text"}],"grammar":[{"rule":"zasada","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie PL"}]}\n\nTRANSKRYPCJA Z TIMESTAMPAMI:\n${formatted}`;
   } else {
     const trim=transcript.slice(0,40000);
-    PROMPT=`Masz surową transkrypcję w języku ${langNames[lang||S.lang]||"angielski"}. Przerób na lekcję językową.\n\nZASADY: Weź każde zdanie DOSŁOWNIE, NIE skracaj. POPRAW interpunkcję/kapitalizację. Rozpoznaj kto mówi.${COMMON_SECTIONS}\n\nOdpowiedz TYLKO czystym JSON bez markdown:\n{"title":"tytuł","level":"A2","topic":"temat po polsku","dialog":[{"s":"imię","l":"tekst","t":"tłumaczenie"}],"vocab":[{"w":"słowo","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie","exT":"tłumaczenie"}],"phrases":[{"w":"zwrot","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie","exT":"tłumaczenie"}],"fill":[{"s":"zdanie z ___","a":"odp","h":"wskazówka","cat":"text"}],"grammar":[{"rule":"zasada","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie PL"}]}\n\nTRANSKRYPCJA:\n${trim}`;
+    PROMPT=`Masz surową transkrypcję w języku ${langNames[lang||S.lang]||"angielski"}. Przerób na lekcję językową.\n\nZASADY: Weź każde zdanie DOSŁOWNIE, NIE skracaj. POPRAW interpunkcję/kapitalizację. Rozpoznaj kto mówi. ${targetLangInstr}.${COMMON_SECTIONS}\n\nOdpowiedz TYLKO czystym JSON bez markdown:\n{"title":"tytuł sceny po ${targetLangLabel}","level":"A2","topic":"temat językowy po ${targetLangLabel}","dialog":[{"s":"imię","l":"tekst","t":"tłumaczenie PL"}],"vocab":[{"w":"słowo","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie","exT":"tłumaczenie"}],"phrases":[{"w":"zwrot","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie","exT":"tłumaczenie"}],"fill":[{"s":"zdanie z ___","a":"odp","h":"wskazówka","cat":"text"}],"grammar":[{"rule":"zasada","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie PL"}]}\n\nTRANSKRYPCJA:\n${trim}`;
   }
   const rawText = await callLessonModel(PROMPT);
   const newLesson = parseLessonJson(rawText);
