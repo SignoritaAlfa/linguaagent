@@ -2264,6 +2264,112 @@ function getFilmClips(lang, filmId){
 
 // Parses Claude's lesson response. Resilient to truncation, trailing commas,
 // inner unescaped quotes. Extracts whatever can be salvaged.
+// Helper: tworzy przycisk "Generuj słówka/zwroty AI" + kontener wyników.
+// Source text: rawText jeśli jest, inaczej fallback do dialogu lekcji.
+// Używane w zakładkach Słówka, Zwroty, Tekst — żeby user widziała przycisk
+// niezależnie od tego gdzie jest.
+function renderAIGenerateButton(lesson, lang, type){
+  if(!S.claudeKey && !S.geminiKey) return null;
+  const wrap = document.createElement("div");
+  wrap.style.cssText = "margin-bottom:20px";
+  const btn = document.createElement("button");
+  btn.className = "sbtn";
+  btn.style.cssText = "border-color:var(--gold);color:var(--gold);padding:12px 18px;text-align:left;line-height:1.5;width:100%;max-width:760px;display:block";
+  const baseLabel = type==="vocab"
+    ? "📝 <strong>Generuj więcej słówek z lekcji (AI)</strong><br><span style='font-size:11px;color:var(--text2);font-weight:normal'>Wyciągnij słówka z dialogu/tekstu — dodaj wybrane</span>"
+    : "💬 <strong>Generuj więcej zwrotów z lekcji (AI)</strong><br><span style='font-size:11px;color:var(--text2);font-weight:normal'>Wyciągnij idiomy i wyrażenia — dodaj wybrane</span>";
+  btn.innerHTML = baseLabel;
+  const resultDiv = document.createElement("div");
+  resultDiv.style.cssText = "display:none;margin-top:14px";
+  btn.onclick = async ()=>{
+    btn.innerHTML = type==="vocab" ? "⏳ Generuję słówka…" : "⏳ Generuję zwroty…";
+    btn.disabled = true;
+    try{
+      // Źródło tekstu: rawText jeśli jest, inaczej zlep dialogu
+      const fromRaw = lesson.rawText ? (typeof rawTextToPlain==="function" ? rawTextToPlain(lesson.rawText) : String(lesson.rawText)) : "";
+      const fromDialog = (lesson.dialog||[]).map(d=>(d.s?d.s+": ":"")+d.l).join("\n");
+      const currentText = (fromRaw && fromRaw.length > 50) ? fromRaw : fromDialog;
+      if(!currentText || currentText.length<30) throw new Error("Brak materiału tekstowego w lekcji");
+      const prompt = type==="vocab"
+        ? `Z poniższego tekstu wyciągnij MAKSYMALNIE DUŻO słów wartych nauki — celuj w 40-80 pozycji. Wybierz słowa kluczowe, idiomy, kolokwializmy, trudniejsze słowa.\n\nKRYTYCZNE ZASADY FORMATU "w":\n- Rzeczowniki w językach z rodzajem (FR: le/la/l'/un/une; IT: il/la/lo/l'/un/una/uno; DE: der/die/das) ZAWSZE z rodzajnikiem (np. "le chien", "la maison", "il cane").\n- Czasowniki: BEZOKOLICZNIK (FR: parler; IT: parlare; EN: to talk). NIE odmieniona forma.\n\nDla każdego: tłumaczenie PL, IPA, przykład z tekstu. Odpowiedz TYLKO czystym JSON: {"items":[{"w":"słowo","tr":"tłumaczenie PL","ipa":"IPA","pl":"fonetyka","ex":"przykład","exT":"tłumaczenie"}]}\n\nTEKST:\n${currentText.slice(0,30000)}`
+        : `Z poniższego tekstu wyciągnij MAKSYMALNIE DUŻO użytecznych zwrotów, idiomów, kolokacji, czasowników frazowych — celuj w 30-60 pozycji. Odpowiedz TYLKO czystym JSON: {"items":[{"w":"zwrot","tr":"tłumaczenie PL","ipa":"IPA","pl":"fonetyka","ex":"przykład","exT":"tłumaczenie"}]}\n\nTEKST:\n${currentText.slice(0,30000)}`;
+      const rawText = await callLessonModel(prompt);
+      const parsed = tolerantParseJson(rawText);
+      const items = parsed.items || [];
+      if(!items.length) throw new Error("Brak wyników — spróbuj ponownie");
+      // Render results
+      resultDiv.innerHTML = "";
+      resultDiv.style.display = "block";
+      const header = document.createElement("div");
+      header.style.cssText = "font-size:11px;color:var(--text3);letter-spacing:.1em;text-transform:uppercase;margin-bottom:10px";
+      header.textContent = (type==="vocab"?"Słówka":"Zwroty")+" znalezione ("+items.length+")";
+      resultDiv.appendChild(header);
+      const selected = new Set();
+      const added = new Set();
+      items.forEach((item,i)=>{
+        const row = document.createElement("div");
+        row.style.cssText = "display:grid;grid-template-columns:24px 1fr 1fr 40px;gap:8px 14px;padding:8px 0;border-bottom:1px solid var(--border);align-items:start";
+        const cb = document.createElement("input"); cb.type="checkbox"; cb.style.cssText="width:16px;height:16px;accent-color:var(--gold);cursor:pointer;margin-top:4px";
+        cb.onchange = ()=>{ if(cb.checked) selected.add(i); else selected.delete(i); };
+        const left = document.createElement("div");
+        left.innerHTML = `<div style="font-weight:500;font-size:14px">${item.w}</div><div style="font-family:monospace;font-size:11px;color:var(--text3)">${item.ipa||""}</div>`;
+        const right = document.createElement("div");
+        right.innerHTML = `<div style="color:var(--gold);font-size:13px">${item.tr}</div><div style="font-size:11px;color:var(--text3);font-style:italic">${item.ex||""}</div>`;
+        const addOne = document.createElement("button");
+        addOne.textContent = "+";
+        addOne.style.cssText = "background:none;border:1px solid var(--gold);color:var(--gold);border-radius:4px;width:30px;height:28px;cursor:pointer;font-size:14px";
+        addOne.onclick = ()=>{
+          const arr = type==="phrases" ? "phrases" : "vocab";
+          if(!lesson[arr]) lesson[arr] = [];
+          if(!lesson[arr].some(v=>v.w===item.w)){
+            lesson[arr].push({w:item.w,tr:item.tr,ipa:item.ipa||"",pl:item.pl||"",ex:item.ex||"",exT:item.exT||""});
+            const ml = Object.assign({},S.myLessons);
+            const li = (ml[S.lang]||[]).findIndex(l=>l.id===lesson.id);
+            if(li>=0){ml[S.lang][li][arr]=lesson[arr]; S.myLessons=ml; localStorage.setItem("lingua_my_lessons",JSON.stringify(ml)); scheduleDriveSync();}
+          }
+          addOne.textContent="✓"; addOne.style.color="var(--ok-text)"; addOne.disabled=true;
+          cb.checked=false; cb.disabled=true;
+          selected.delete(i); added.add(i);
+        };
+        row.appendChild(cb); row.appendChild(left); row.appendChild(right); row.appendChild(addOne);
+        resultDiv.appendChild(row);
+      });
+      // Bulk add button
+      const bulkRow = document.createElement("div");
+      bulkRow.style.cssText = "display:flex;gap:10px;margin-top:14px;flex-wrap:wrap";
+      const bulkBtn = document.createElement("button");
+      bulkBtn.textContent = "+ Dodaj zaznaczone do "+(type==="phrases"?"Zwrotów":"Słówek");
+      bulkBtn.style.cssText = "flex:1;min-width:200px;padding:10px 18px;background:var(--gold);color:#fff;border:1px solid var(--gold);border-radius:4px;cursor:pointer;font-family:inherit;font-size:12px";
+      bulkBtn.onclick = ()=>{
+        const arr = type==="phrases" ? "phrases" : "vocab";
+        if(!lesson[arr]) lesson[arr] = [];
+        let count = 0;
+        Array.from(selected).sort((a,b)=>a-b).forEach(idx=>{
+          const item = items[idx];
+          if(!lesson[arr].some(v=>v.w===item.w)){
+            lesson[arr].push({w:item.w,tr:item.tr,ipa:item.ipa||"",pl:item.pl||"",ex:item.ex||"",exT:item.exT||""});
+            count++;
+          }
+        });
+        const ml = Object.assign({},S.myLessons);
+        const li = (ml[S.lang]||[]).findIndex(l=>l.id===lesson.id);
+        if(li>=0){ml[S.lang][li][arr]=lesson[arr]; S.myLessons=ml; localStorage.setItem("lingua_my_lessons",JSON.stringify(ml)); scheduleDriveSync();}
+        bulkBtn.textContent = "✓ Dodano "+count;
+        setTimeout(()=>render(), 800);
+      };
+      bulkRow.appendChild(bulkBtn);
+      resultDiv.appendChild(bulkRow);
+    }catch(e){
+      alert("Błąd: "+e.message);
+    }
+    btn.innerHTML = baseLabel;
+    btn.disabled = false;
+  };
+  wrap.appendChild(btn);
+  wrap.appendChild(resultDiv);
+  return wrap;
+}
+
 function parseLessonJson(rawText){
   if(!rawText) throw new Error("Pusta odpowiedź Claude'a");
   // Try direct parse first
@@ -3254,6 +3360,9 @@ function renderLesson(){
     const isOwn = (S.myLessons[lang]||[]).some(l=>l.id===lesson.id);
     const vw = h("div",{});
     if(isOwn) vw.appendChild(renderAddEntryForm(lesson,"vocab",lang));
+    // Generator AI — działa dla każdej lekcji (rawText lub dialog jako źródło)
+    const genV = renderAIGenerateButton(lesson, lang, "vocab");
+    if(genV) vw.appendChild(genV);
     const v = lesson.vocab||[];
     if(v.length>0){
       const head=h("div",{style:"display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;max-width:760px;gap:10px;flex-wrap:wrap"});
@@ -3296,6 +3405,9 @@ function renderLesson(){
     const phrases = lesson.phrases || [];
     const pw = h("div",{});
     if(isOwn) pw.appendChild(renderAddEntryForm(lesson,"phrases",lang));
+    // Generator AI — działa dla każdej lekcji
+    const genP = renderAIGenerateButton(lesson, lang, "phrases");
+    if(genP) pw.appendChild(genP);
     if(phrases.length===0){
       const empty=h("div",{style:"max-width:600px;margin:20px auto;padding:40px 20px;text-align:center;border:1px dashed var(--border);border-radius:8px"});
       empty.appendChild(h("div",{style:"font-size:36px;opacity:.4;margin-bottom:12px"},"💬"));
@@ -5315,6 +5427,9 @@ function renderLesson(){
     const isOwn = (S.myLessons[lang]||[]).some(l=>l.id===lesson.id);
     const vw = h("div",{});
     if(isOwn) vw.appendChild(renderAddEntryForm(lesson,"vocab",lang));
+    // Generator AI — działa dla każdej lekcji (rawText lub dialog jako źródło)
+    const genV = renderAIGenerateButton(lesson, lang, "vocab");
+    if(genV) vw.appendChild(genV);
     const v = lesson.vocab||[];
     if(v.length>0){
       const head=h("div",{style:"display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;max-width:760px;gap:10px;flex-wrap:wrap"});
@@ -5357,6 +5472,9 @@ function renderLesson(){
     const phrases = lesson.phrases || [];
     const pw = h("div",{});
     if(isOwn) pw.appendChild(renderAddEntryForm(lesson,"phrases",lang));
+    // Generator AI — działa dla każdej lekcji
+    const genP = renderAIGenerateButton(lesson, lang, "phrases");
+    if(genP) pw.appendChild(genP);
     if(phrases.length===0){
       const empty=h("div",{style:"max-width:600px;margin:20px auto;padding:40px 20px;text-align:center;border:1px dashed var(--border);border-radius:8px"});
       empty.appendChild(h("div",{style:"font-size:36px;opacity:.4;margin-bottom:12px"},"💬"));
