@@ -6873,6 +6873,71 @@ async function fetchViaWorker(videoId){
   return data;
 }
 
+// Gemini ogląda wideo z YouTube bezpośrednio przez fileData.fileUri — nie potrzebuje
+// napisów ani Workera. Tworzy lekcję z audio (transkrybuje sam) + tłumaczenie.
+// Działa dla filmików bez napisów. Limit: 8h/dzień darmowo, do ~2h jednego klipu.
+async function processYouTubeViaGemini(youtubeUrl, lang){
+  if(!S.geminiKey) throw new Error("Brak klucza Gemini w Ustawieniach (Gemini direct YT wymaga klucza Google)");
+  const langNames={EN:"angielskim",FR:"francuskim",IT:"włoskim"};
+  const targetLangLabel = {EN:"English",FR:"français",IT:"italiano"}[lang]||lang;
+  const targetLangInstr = {
+    EN:"title i topic napisz po angielsku",
+    FR:"title i topic napisz po francusku",
+    IT:"title i topic napisz po włosku"
+  }[lang] || "title i topic napisz w języku docelowym";
+
+  const PROMPT = `Obejrzyj to wideo z YouTube. Transkrybuj dialog w języku ${langNames[lang]||"oryginalnym"} dokładnie z audio i stwórz pełną lekcję językową.
+
+ZADANIE:
+1. TRANSKRYPCJA: wypisz każdą wypowiedź z audio z timestampem początku (sekundy float). Identyfikuj mówiących (imiona postaci jeśli znane z kontekstu; inaczej Speaker1/Speaker2).
+2. POPRAW interpunkcję i kapitalizację (audio to mowa, dodaj kropki, przecinki, znaki zapytania).
+3. PRZETŁUMACZ każdą kwestię na polski naturalnie (pole "t").
+4. ${targetLangInstr}.
+
+DODATKOWE SEKCJE:
+- vocab: minimum 25 POJEDYNCZYCH słów z dialogu
+- phrases: minimum 15 ZWROTÓW i WYRAŻEŃ z dialogu (idiomy, czasowniki frazowe)
+- fill: minimum 10 ćwiczeń (cat:"text" min 5, cat:"grammar" min 5)
+- grammar: minimum 4 zasady gramatyczne
+
+Odpowiedz TYLKO czystym JSON bez markdown:
+{"title":"tytuł po ${targetLangLabel}","level":"A2","topic":"temat po ${targetLangLabel}","dialog":[{"s":"imię","l":"tekst","t":"tłumaczenie PL","start":1.23,"end":4.56}],"vocab":[{"w":"słowo","tr":"tłumaczenie PL","ipa":"IPA","pl":"wymowa PL","ex":"zdanie","exT":"tłumaczenie"}],"phrases":[{"w":"zwrot","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie","exT":"tłumaczenie"}],"fill":[{"s":"zdanie z ___","a":"odp","h":"wskazówka","cat":"text"}],"grammar":[{"rule":"zasada","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie PL"}]}`;
+
+  const cfg = getLessonModelConfig();
+  // Wymuszamy Gemini niezależnie od wybranego modelu (tylko Gemini obsługuje YT URL)
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(S.geminiKey)}`,
+    {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        contents:[{parts:[
+          { fileData: { fileUri: youtubeUrl, mimeType: "video/*" } },
+          { text: PROMPT }
+        ]}],
+        generationConfig:{
+          temperature:0.2,
+          maxOutputTokens: 32000,
+          thinkingConfig:{thinkingBudget:0} // krytyczne — bez tego YT video często wraca pusto
+        }
+      })
+    }
+  );
+  if(!res.ok){
+    const err = await res.json().catch(()=>({}));
+    const msg = err?.error?.message||"sprawdź klucz/limit";
+    if(res.status === 429) throw new Error("Gemini 429: limit dzienny YouTube (8h/dzień) — spróbuj jutro");
+    if(res.status === 400 && /not supported/i.test(msg)) throw new Error("Gemini nie potrafi przetworzyć tego filmu (może być prywatny, age-restricted lub zbyt długi)");
+    throw new Error("Gemini "+res.status+": "+msg);
+  }
+  const data = await res.json();
+  const txt = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+  if(!txt) throw new Error("Gemini zwrócił pustą odpowiedź — film może być za długi");
+  const newLesson = parseLessonJson(txt);
+  if(!newLesson.dialog || newLesson.dialog.length===0) throw new Error("Gemini nie zwrócił dialogu");
+  return newLesson;
+}
+
 async function fetchAndProcessViaWorker(){
   const videoId = S.filmYtId;
   if(!videoId){set({filmTranscriptError:"Wklej najpierw poprawny link YouTube"});return;}
@@ -6890,7 +6955,48 @@ async function fetchAndProcessViaWorker(){
     });
   }catch(e){
     console.error("[LinguaAgent] Worker fetch failed:", e);
-    set({filmTranscriptLoading:false,filmTranscriptProcessing:false,filmTranscriptError:"Worker: "+e.message});
+    // Auto-fallback: gdy Worker zwrócił 429 lub brak napisów, zaproponuj Gemini direct
+    const msg = e.message || "";
+    const looksRateLimited = /429|rate|too many/i.test(msg);
+    const looksNoCaptions = /no caption|brak napis|404|not found|nie znaleziono/i.test(msg);
+    if((looksRateLimited || looksNoCaptions) && S.geminiKey){
+      const tryGemini = confirm("Worker padł ("+msg+").\n\nSpróbować Gemini z wideo bezpośrednio? (Gemini sam obejrzy film i transkrybuje audio — działa nawet bez napisów)");
+      if(tryGemini){
+        set({filmTranscriptError:""});
+        await fetchAndProcessViaGemini();
+        return;
+      }
+    }
+    set({filmTranscriptLoading:false,filmTranscriptProcessing:false,filmTranscriptError:"Worker: "+msg});
+  }
+}
+
+// Gemini direct YouTube path — Gemini ogląda wideo z YT (audio+video) i tworzy lekcję
+async function fetchAndProcessViaGemini(){
+  const videoId = S.filmYtId;
+  const url = (S.filmYtInput||"").trim() || (videoId ? "https://www.youtube.com/watch?v="+videoId : "");
+  if(!videoId || !url){set({filmTranscriptError:"Wklej najpierw poprawny link YouTube"});return;}
+  if(!S.geminiKey){set({filmTranscriptError:"Brak klucza Gemini — Ustawienia → klucz Gemini API"});return;}
+  set({filmTranscriptLoading:true,filmTranscriptError:"",filmTranscriptText:"",filmTranscriptLesson:null,filmTranscriptProcessing:true});
+  try{
+    console.log("[LinguaAgent] Gemini direct YouTube:", url);
+    const lesson = await processYouTubeViaGemini(url, S.lang);
+    lesson.id = "film_"+Date.now();
+    lesson.type = "dialog";
+    lesson.fromFilm = true;
+    lesson.source = "video";
+    lesson.youtubeId = videoId;
+    // Reuse the existing draft flow so user can review before saving
+    set({
+      filmTranscriptLoading:false,
+      filmTranscriptProcessing:false,
+      filmTranscriptLesson: lesson,
+      filmTranscriptDraftVideoId: videoId
+    });
+    console.log("[LinguaAgent] Gemini direct generated lesson —", lesson.dialog.length, "lines,", (lesson.vocab||[]).length, "vocab");
+  }catch(e){
+    console.error("[LinguaAgent] Gemini direct YouTube failed:", e);
+    set({filmTranscriptLoading:false,filmTranscriptProcessing:false,filmTranscriptError:"Gemini direct: "+e.message});
   }
 }
 
@@ -6986,9 +7092,18 @@ function renderFilmoteka(){
       oninput:(e)=>{const v=e.target.value;const id=extractYtId(v);S.filmYtInput=v;S.filmYtId=id||"";saveFilmClipUrl(filmClipId, v);}});
     ytInpWrap.appendChild(ytInp);
     if(S.workerUrl){
-      ytInpWrap.appendChild(h("button",{class:"check-btn",style:"white-space:nowrap;padding:10px 18px;background:var(--gold);color:#fff;border-color:var(--gold)",onclick:fetchAndProcessViaWorker},"🤖 Auto pobierz →"));
+      ytInpWrap.appendChild(h("button",{class:"check-btn",style:"white-space:nowrap;padding:10px 18px;background:var(--gold);color:#fff;border-color:var(--gold)",onclick:fetchAndProcessViaWorker,title:"Worker pobiera napisy z YouTube (gdy film ma CC)"},"🤖 Auto pobierz →"));
     } else {
       ytInpWrap.appendChild(h("button",{class:"check-btn",style:"white-space:nowrap;padding:10px 18px",onclick:fetchAndProcessTranscript,title:"Tryb RapidAPI (jeśli klucz skonfigurowany)"},"Pobierz →"));
+    }
+    // Gemini direct YouTube — działa dla filmów BEZ napisów (audio→transkrypt)
+    if(S.geminiKey){
+      ytInpWrap.appendChild(h("button",{
+        class:"check-btn",
+        style:"white-space:nowrap;padding:10px 18px;border-color:var(--gold);color:var(--gold)",
+        title:"Gemini sam obejrzy wideo (z audio) — działa też dla filmów bez napisów. Limit 8h/dzień darmowo.",
+        onclick:fetchAndProcessViaGemini
+      },"🎬 Gemini z wideo →"));
     }
     main.appendChild(ytInpWrap);
     if(!S.workerUrl){
