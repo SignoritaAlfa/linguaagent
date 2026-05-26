@@ -1890,11 +1890,58 @@ function seekYtTo(seconds){
 }
 
 // ── HELPERS ──────────────────────────────────────────────────────────────────
+// ── localStorage quota helpers ────────────────────────────────────────────────
+// Browsers cap localStorage at ~5 MB per origin. Lekcje + audio cache + popup
+// translations potrafią to zjeść. Te 3 funkcje: monitoring + ostrzeżenie + safe wrap.
+function getLocalStorageUsageKB(){
+  let total = 0;
+  for(let i=0; i<localStorage.length; i++){
+    const k = localStorage.key(i);
+    if(!k) continue;
+    const v = localStorage.getItem(k) || "";
+    // JS strings są UTF-16, ale localStorage liczy bajty w UTF-16 (2 bajty/znak)
+    total += (k.length + v.length) * 2;
+  }
+  return Math.round(total/1024);
+}
+
+function safeSetItem(key, value){
+  try{
+    localStorage.setItem(key, value);
+    return true;
+  }catch(e){
+    const isQuota = e && (e.name === "QuotaExceededError" || e.code === 22 || /quota/i.test(e.message||""));
+    if(isQuota){
+      const usedKB = getLocalStorageUsageKB();
+      console.warn("[LinguaAgent] localStorage quota exceeded saving '"+key+"' (used ~"+usedKB+" KB)");
+      if(typeof showRegenStatus === "function"){
+        showRegenStatus("⚠️ Brakuje miejsca w przeglądarce ("+usedKB+" KB / ~5 MB). Włącz sync z Google Drive albo usuń stare lekcje.", "error");
+        setTimeout(()=>document.querySelectorAll('.regen-status-banner').forEach(el=>el.remove()), 6000);
+      } else {
+        alert("Brakuje miejsca w localStorage ("+usedKB+" KB). Włącz sync z Drive lub usuń stare lekcje.");
+      }
+    } else {
+      console.warn("[LinguaAgent] localStorage.setItem failed for '"+key+"':", e);
+    }
+    return false;
+  }
+}
+
+function checkStorageQuota(){
+  const usedKB = getLocalStorageUsageKB();
+  // Próg 4096 KB (80% typowego limitu 5 MB) — ostrzegamy zanim się zatka
+  if(usedKB > 4096 && typeof showRegenStatus === "function"){
+    showRegenStatus("⚠️ localStorage prawie pełne ("+usedKB+" KB / ~5 MB). Zsynchronizuj z Drive i rozważ usunięcie nieużywanych lekcji.", "info");
+    setTimeout(()=>document.querySelectorAll('.regen-status-banner').forEach(el=>el.remove()), 7000);
+  }
+  return usedKB;
+}
+
 function saveMyLesson(lang, lesson){
   const ml = Object.assign({}, S.myLessons);
   if(!ml[lang]) ml[lang]=[];
   ml[lang].push(lesson);
-  localStorage.setItem("lingua_my_lessons", JSON.stringify(ml));
+  safeSetItem("lingua_my_lessons", JSON.stringify(ml));
   set({myLessons:ml, showUpload:false, uploadStep:0, uploadFile:null, uploadPreview:null, uploadError:""});
   scheduleDriveSync();
 }
@@ -2662,9 +2709,9 @@ Odpowiedz WYŁĄCZNIE czystym JSON, zero tekstu przed ani po, zero markdown:
       modelInput = PROMPT+"\n\nTEKST:\n"+S.uploadPreview;
     }
     const rawText = await callLessonModel(modelInput);
-    const m=rawText.match(/\{[\s\S]*\}/);
-    if(!m) throw new Error("Model nie zwrócił poprawnego JSON — spróbuj ponownie");
-    const json=JSON.parse(m[0]);
+    // 3-tier recovery: direct parse → brace-balance retry → manual array extraction
+    // (model bywa obcięty na limicie tokenów — szczególnie przy dużych PDF/zdjęciach)
+    const json = parseLessonJson(rawText);
     if(!json.dialog||!json.vocab) throw new Error("Model zwrócił niekompletne dane — spróbuj ponownie");
     json.id="my_"+Date.now();
     json.type="dialog";
@@ -6749,6 +6796,8 @@ function render(){
 window.speechSynthesis.onvoiceschanged=()=>{};
 setTimeout(render,50);
 setTimeout(()=>driveSilentReconnect(0),800);
+// Ostrzeżenie o localStorage quota — odpalamy po renderze, żeby banner się pokazał na żywej stronie
+setTimeout(checkStorageQuota, 1500);
 
 </script>
 </body>
