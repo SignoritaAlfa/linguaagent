@@ -1375,6 +1375,7 @@ function buildSyncPayload(){
     workerUrl: S.workerUrl || "",
     srs: S.srs,
     wordStatus: JSON.parse(localStorage.getItem("lingua_word_status")||"{}"),
+    phraseStatus: JSON.parse(localStorage.getItem("lingua_phrase_status")||"{}"),
     claudeKey: S.claudeKey || "",
     geminiKey: S.geminiKey || "",
     rapidKey: S.rapidKey || "",
@@ -1397,6 +1398,7 @@ function applyDriveData(remote){
   if(typeof remote.workerUrl === "string"){ S.workerUrl=remote.workerUrl; if(remote.workerUrl) localStorage.setItem("lingua_worker_url", remote.workerUrl); else localStorage.removeItem("lingua_worker_url"); }
   if(remote.srs){ S.srs=remote.srs; localStorage.setItem("lingua_srs", JSON.stringify(S.srs)); }
   if(remote.wordStatus) localStorage.setItem("lingua_word_status", JSON.stringify(remote.wordStatus));
+  if(remote.phraseStatus) localStorage.setItem("lingua_phrase_status", JSON.stringify(remote.phraseStatus));
   if(remote.lessonAudio){ S.lessonAudio=remote.lessonAudio; localStorage.setItem("lingua_audio", JSON.stringify(S.lessonAudio)); }
   if(remote.lessonVideos){ S.lessonVideos=remote.lessonVideos; localStorage.setItem("lingua_lesson_videos", JSON.stringify(S.lessonVideos)); }
   if(remote.claudeKey){ S.claudeKey=remote.claudeKey; localStorage.setItem("lingua_claude_key", remote.claudeKey); }
@@ -2855,15 +2857,16 @@ Odpowiedz TYLKO czystym JSON (bez markdown, bez komentarzy):
   }
 }
 
-function startPractice(lesson,mode){
+function startPractice(lesson,mode,origin){
   // mode: "flashcard" | "fill" | "writing" | "dictation"
-  // writing/dictation = sesje z wpisywaniem (3 próby), karty = lesson.vocab
+  // origin: "lesson" | "mywords" | "myphrases" — dokąd wracać przy "← Wstecz"
   let cards;
   if(mode==="fill") cards = lesson.fill;
   else cards = lesson.vocab; // flashcard, writing, dictation
   set({screen:"practice",lesson,mode,cards,idx:0,revealed:false,
     dir:"to_pl",dirMode:"to_pl",score:{c:0,t:0},input:"",input2:"",submitted:false,
-    attempts:0, lastResult:null});
+    attempts:0, lastResult:null,
+    practiceOrigin: origin || S.practiceOrigin || "lesson"});
 }
 
 // ── PISANIE / DYKTANDO HELPERS ────────────────────────────────────────────────
@@ -3106,17 +3109,19 @@ function renderLang(){
   const toolsWrap=h("div",{style:"display:flex;gap:1px;background:var(--border);border:1px solid var(--border);margin-bottom:36px"});
   const dueCount=getDueWords(lang).length;
   const ws=JSON.parse(localStorage.getItem("lingua_word_status")||"{}");
+  const ps=JSON.parse(localStorage.getItem("lingua_phrase_status")||"{}");
   const learningCount=Object.entries(ws).filter(([k,v])=>k.endsWith("_"+lang)&&v==="learning").length;
   const knownCount=Object.entries(ws).filter(([k,v])=>k.endsWith("_"+lang)&&v==="known").length;
+  const phraseLearningCount=Object.entries(ps).filter(([k,v])=>k.endsWith("_"+lang)&&v==="learning").length;
   [[" Tłumacz","🌐","tłumacz na "+LANGS[lang].name,()=>set({screen:"translate",translateInput:"",translateResult:null,translateError:"",translateRecording:false})],
    [" Moje słówka","📝",""+learningCount+" w nauce",()=>set({screen:"mywords"})],
+   [" Moje zwroty","💬",""+phraseLearningCount+" w nauce",()=>set({screen:"myphrases"})],
    [" Powtórki","🔄",dueCount>0?dueCount+" do powtórki":"wszystko powtórzone",()=>{
      const due=getDueWords(lang);
      if(due.length===0){alert("Brak słówek do powtórki!");return;}
      const cards=due.map(e=>({w:e.word,tr:"",ipa:"",pl:"",ex:"",exT:""}));
      set({screen:"practice",lesson:{title:"Powtórki SRS",vocab:cards,dialog:[],fill:[],grammar:[]},mode:"flashcard",cards,idx:0,revealed:false,dir:"to_pl",score:{c:0,t:0}});
-   }],
-   [" Statystyki","📊",""+knownCount+" znanych słów",null]
+   }]
   ].forEach(([label,icon,desc,onclick])=>{
     const btn=h("div",{style:"flex:1;padding:18px 14px;background:var(--surface);cursor:"+(onclick?"pointer":"default")+";text-align:center;transition:background .15s",onclick:onclick||undefined});
     if(onclick)btn.onmouseover=()=>{btn.style.background="var(--surface2)";};
@@ -3527,32 +3532,36 @@ function renderVocabList(vocab, lang, onDelete, listType, onEdit, onMove){
     });
     row.appendChild(right);
 
-    // Przycisk "Uczę się" — dodaje słowo do globalnej listy Moje słówka
+    // Przycisk "Uczę się" — dodaje do "Moje słówka" lub "Moje zwroty" (zależnie od listy)
     {
+      const isPhraseBtn = listType === "phrases";
+      const storageKey = isPhraseBtn ? "lingua_phrase_status" : "lingua_word_status";
+      const targetLabel = isPhraseBtn ? "Moje zwroty" : "Moje słówka";
+      const liveStatus = JSON.parse(localStorage.getItem(storageKey)||"{}");
       const wsKey = (v.w||"").toLowerCase() + "_" + lang;
-      const isLearning = wordStatusForList[wsKey] === "learning";
-      const isKnown = wordStatusForList[wsKey] === "known";
+      const isLearning = liveStatus[wsKey] === "learning";
+      const isKnown = liveStatus[wsKey] === "known";
       const learnBtn = document.createElement("button");
       learnBtn.textContent = isLearning ? "📖✓" : (isKnown ? "✓" : "📖");
-      learnBtn.title = isLearning ? "Usuń z Moje słówka" : (isKnown ? "Oznaczone jako znane — kliknij by uczyć" : "Dodaj do Moje słówka");
+      learnBtn.title = isLearning ? ("Usuń z "+targetLabel) : (isKnown ? "Oznaczone jako znane — kliknij by uczyć" : ("Dodaj do "+targetLabel));
       const baseStyle = "border:1px solid var(--border);border-radius:4px;width:34px;height:28px;cursor:pointer;font-size:12px;line-height:1;padding:0;align-self:start;font-family:inherit";
       const activeStyle = baseStyle + ";background:var(--gold-dim);border-color:var(--gold);color:var(--gold)";
       learnBtn.style.cssText = isLearning ? activeStyle : (baseStyle + ";background:none;color:var(--text3)");
       learnBtn.onclick = (e)=>{
         e.stopPropagation();
-        const ws = JSON.parse(localStorage.getItem("lingua_word_status")||"{}");
+        const ws = JSON.parse(localStorage.getItem(storageKey)||"{}");
         if(ws[wsKey] === "learning"){
           delete ws[wsKey];
           learnBtn.textContent = "📖";
-          learnBtn.title = "Dodaj do Moje słówka";
+          learnBtn.title = "Dodaj do "+targetLabel;
           learnBtn.style.cssText = baseStyle + ";background:none;color:var(--text3)";
         } else {
           ws[wsKey] = "learning";
           learnBtn.textContent = "📖✓";
-          learnBtn.title = "Usuń z Moje słówka";
+          learnBtn.title = "Usuń z "+targetLabel;
           learnBtn.style.cssText = activeStyle;
         }
-        localStorage.setItem("lingua_word_status", JSON.stringify(ws));
+        localStorage.setItem(storageKey, JSON.stringify(ws));
         scheduleDriveSync();
       };
       row.appendChild(learnBtn);
@@ -4245,9 +4254,9 @@ function renderLesson(){
       actBtnsV.appendChild(playing
         ? h("button",{class:"sbtn",style:"border-color:var(--err-text);color:var(--err-text)",onclick:stopVocabPlayback},"⏹ Zatrzymaj ("+(S.vocabPlayingIdx+1)+"/"+v.length+")")
         : h("button",{class:"sbtn",style:"border-color:var(--gold);color:var(--gold)",onclick:()=>playVocabList(v, lang, "vocab")},"▶ Odtwórz wszystkie ("+v.length+")"));
-      actBtnsV.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:v}),"flashcard")},"🃏 Fiszki ze słówek"));
-      actBtnsV.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:v}),"writing")},"✍️ Pisanie z PL"));
-      actBtnsV.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:v}),"dictation")},"🎧 Dyktando"));
+      actBtnsV.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:v}),"flashcard","lesson-vocab")},"🃏 Fiszki ze słówek"));
+      actBtnsV.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:v}),"writing","lesson-vocab")},"✍️ Pisanie z PL"));
+      actBtnsV.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:v}),"dictation","lesson-vocab")},"🎧 Dyktando"));
       head.appendChild(actBtnsV);
       vw.appendChild(head);
     }
@@ -4302,9 +4311,9 @@ function renderLesson(){
       actBtns.appendChild(playingPh
         ? h("button",{class:"sbtn",style:"border-color:var(--err-text);color:var(--err-text)",onclick:stopVocabPlayback},"⏹ Zatrzymaj ("+(S.vocabPlayingIdx+1)+"/"+phrases.length+")")
         : h("button",{class:"sbtn",style:"border-color:var(--gold);color:var(--gold)",onclick:()=>playVocabList(phrases, lang, "phrases")},"▶ Odtwórz wszystkie ("+phrases.length+")"));
-      actBtns.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:phrases}),"flashcard")},"🃏 Fiszki ze zwrotów"));
-      actBtns.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:phrases}),"writing")},"✍️ Pisanie z PL"));
-      actBtns.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:phrases}),"dictation")},"🎧 Dyktando"));
+      actBtns.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:phrases}),"flashcard","lesson-phrases")},"🃏 Fiszki ze zwrotów"));
+      actBtns.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:phrases}),"writing","lesson-phrases")},"✍️ Pisanie z PL"));
+      actBtns.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:phrases}),"dictation","lesson-phrases")},"🎧 Dyktando"));
       head.appendChild(actBtns);
       pw.appendChild(head);
       const onDel = isOwn ? (idx)=>{
@@ -4658,9 +4667,19 @@ function renderPractice(){
   w.appendChild(renderTopNav());
   const main=h("div",{class:"main"});
 
-  main.appendChild(h("button",{class:"back-btn",onclick:()=>set({screen:"lang"})},"← "+LANGS[lang].name));
+  // Back wraca tam skąd przyszliśmy (lekcja / Moje słówka / Moje zwroty)
+  const _backScreen = S.practiceOrigin === "mywords" ? "mywords"
+                    : S.practiceOrigin === "myphrases" ? "myphrases"
+                    : S.practiceOrigin === "lesson-vocab" ? "lesson"
+                    : S.practiceOrigin === "lesson-phrases" ? "lesson"
+                    : "lang";
+  const _backLabel = S.practiceOrigin === "mywords" ? "← Moje słówka"
+                   : S.practiceOrigin === "myphrases" ? "← Moje zwroty"
+                   : S.practiceOrigin === "lesson-vocab" || S.practiceOrigin === "lesson-phrases" ? ("← "+(lesson.title||"Lekcja"))
+                   : "← "+LANGS[lang].name;
+  main.appendChild(h("button",{class:"back-btn",onclick:()=>set({screen:_backScreen, _vocabTab: S.practiceOrigin==="lesson-phrases"?"phrases":(S.practiceOrigin==="lesson-vocab"?"vocab":S._vocabTab)})}, _backLabel));
   main.appendChild(h("div",{class:"prog-info"},
-    h("span",{},(idx+1)+" / "+cards.length+" · "+(mode==="flashcard"?"Fiszki":"Uzupełnianie")),
+    h("span",{},(idx+1)+" / "+cards.length+" · "+(mode==="flashcard"?"Fiszki":mode==="fill"?"Uzupełnianie":mode==="writing"?"Pisanie":mode==="dictation"?"Dyktando":"")),
     h("span",{style:"color:var(--gold)"},"✓ "+score.c+" / "+score.t)
   ));
   const pb=h("div",{class:"prog-bar"});
@@ -4704,8 +4723,8 @@ function renderPractice(){
     fw.appendChild(fc);
     if(revealed){
       const ar=h("div",{class:"ans-row"});
-      ar.appendChild(h("button",{class:"btn-no",onclick:()=>{set({score:{c:S.score.c,t:S.score.t+1}});nextCard();}},"✗  Nie wiedziałam"));
-      ar.appendChild(h("button",{class:"btn-yes",onclick:()=>{set({score:{c:S.score.c+1,t:S.score.t+1}});nextCard();}},"✓  Wiedziałam"));
+      ar.appendChild(h("button",{class:"btn-no",onclick:()=>{updateSrs(card.w,lang,false);set({score:{c:S.score.c,t:S.score.t+1}});nextCard();}},"✗  Nie wiedziałam"));
+      ar.appendChild(h("button",{class:"btn-yes",onclick:()=>{updateSrs(card.w,lang,true);set({score:{c:S.score.c+1,t:S.score.t+1}});nextCard();}},"✓  Wiedziałam"));
       fw.appendChild(ar);
     }
     main.appendChild(fw);
@@ -4767,9 +4786,11 @@ function renderPractice(){
       const inputVal = inp.value;
       const correct = normalizeAnswer(inputVal) === normalizeAnswer(target);
       if(correct){
+        updateSrs(target, lang, true);
         set({submitted:true, lastResult:"ok", score:{c:S.score.c+1, t:S.score.t+1}});
         setTimeout(()=>{ if(S.screen==="practice") nextWritingCard(); }, 1800);
       } else if(attempts+1 >= MAX_ATTEMPTS){
+        updateSrs(target, lang, false);
         set({submitted:true, lastResult:"givenup", attempts:attempts+1, score:{c:S.score.c, t:S.score.t+1}});
       } else {
         set({attempts:attempts+1});
@@ -4859,9 +4880,11 @@ function renderPractice(){
       const okTr   = card.tr ? checkTranslationMatch(inp2.value, card.tr) : true;
       const both = okWord && okTr;
       if(both){
+        updateSrs(card.w, lang, true);
         set({submitted:true, lastResult:{both:true}, score:{c:S.score.c+1, t:S.score.t+1}});
         setTimeout(()=>{ if(S.screen==="practice") nextWritingCard(); }, 1800);
       } else if(attempts+1 >= MAX_ATTEMPTS){
+        updateSrs(card.w, lang, false);
         set({submitted:true, lastResult:{givenup:true, okWord, okTr}, attempts:attempts+1, score:{c:S.score.c, t:S.score.t+1}});
       } else {
         set({attempts:attempts+1, lastResult:{okWord, okTr}});
@@ -6888,9 +6911,11 @@ function renderTranslate(){
 }
 
 // ── B6: MOJE SŁÓWKA (rendering) ────────────────────────────────────────────
-function renderMyWords(){
+// Uniwersalny renderer dla "Moje słówka" i "Moje zwroty"
+// cfg = {type:"words"|"phrases", storageKey, title, sub, addPlaceholder, origin, emptyHint}
+function renderMyVocab(cfg){
   const{lang}=S;
-  const ws=JSON.parse(localStorage.getItem("lingua_word_status")||"{}");
+  const ws=JSON.parse(localStorage.getItem(cfg.storageKey)||"{}");
   const learning=[];const known=[];
   Object.entries(ws).forEach(([k,v])=>{
     if(!k.endsWith("_"+lang))return;
@@ -6906,8 +6931,8 @@ function renderMyWords(){
   ));
   const main=h("div",{class:"main"});
   main.appendChild(h("button",{class:"back-btn",onclick:()=>set({screen:"lang"})},"← Lekcje"));
-  main.appendChild(h("div",{class:"page-title"},"Moje słówka"));
-  main.appendChild(h("div",{class:"page-sub"},"Wszystkie zapisane słówka — "+LANGS[lang].name));
+  main.appendChild(h("div",{class:"page-title"},cfg.title));
+  main.appendChild(h("div",{class:"page-sub"},cfg.sub+" — "+LANGS[lang].name));
   // Stats
   main.appendChild(h("div",{style:"display:flex;gap:20px;margin-bottom:28px"},
     h("div",{style:"padding:16px 24px;background:var(--surface);border:1px solid var(--border);flex:1;text-align:center"},
@@ -6919,42 +6944,41 @@ function renderMyWords(){
   ));
 
   // ── Sesje nauki (Fiszki / Pisanie / Dyktando) ──
-  // Buduję wzbogaconą listę z cache popup + myLessons; uczę się tylko tych co mają tr
   const enriched = learning.map(w => getEnrichedVocabEntry(w, lang) || {w, tr:"", ipa:"", pl:"", ex:"", exT:""});
   const ready = enriched.filter(e => e.tr && e.tr.trim());
   if(learning.length > 0){
     const practiceBox = h("div",{style:"background:var(--surface);border:1px solid var(--border);padding:16px 20px;margin-bottom:28px;border-radius:6px"});
     practiceBox.appendChild(h("div",{class:"sec-label",style:"margin-bottom:10px"},"Ucz się"));
     if(ready.length > 0){
+      const itemLabel = cfg.type==="phrases" ? "zwrotów" : "słówek";
       practiceBox.appendChild(h("div",{style:"font-size:12px;color:var(--text3);margin-bottom:10px"},
-        ready.length+" z "+learning.length+" słówek ma tłumaczenie — tylko te wejdą do sesji. "+
-        (ready.length < learning.length ? "Reszta uzupełni się gdy klikniesz słowo w lekcji (popup tłumaczenia)." : "")));
-      const fakeLesson = {vocab: ready, id:"mywords_"+lang, title:"Moje słówka"};
+        ready.length+" z "+learning.length+" "+itemLabel+" ma tłumaczenie — tylko te wejdą do sesji. "+
+        (ready.length < learning.length ? "Reszta uzupełni się gdy klikniesz w lekcji (popup tłumaczenia)." : "")));
+      const fakeLesson = {vocab: ready, id:cfg.type+"_"+lang, title:cfg.title};
       const br = h("div",{style:"display:flex;gap:8px;flex-wrap:wrap"});
-      br.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(fakeLesson,"flashcard")},"🃏 Fiszki"));
-      br.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(fakeLesson,"writing")},"✍️ Pisanie z PL"));
-      br.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(fakeLesson,"dictation")},"🎧 Dyktando"));
+      br.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(fakeLesson,"flashcard",cfg.origin)},"🃏 Fiszki"));
+      br.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(fakeLesson,"writing",cfg.origin)},"✍️ Pisanie z PL"));
+      br.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(fakeLesson,"dictation",cfg.origin)},"🎧 Dyktando"));
       practiceBox.appendChild(br);
     } else {
-      practiceBox.appendChild(h("div",{style:"font-size:12px;color:var(--text3)"},
-        "Żadne słówko nie ma jeszcze tłumaczenia. Kliknij słowo w dialogu lekcji — popup zapisze tłumaczenie do cache, wtedy pojawią się przyciski do nauki."));
+      practiceBox.appendChild(h("div",{style:"font-size:12px;color:var(--text3)"},cfg.emptyHint));
     }
     main.appendChild(practiceBox);
   }
 
-  // Formularz "Dodaj słówko ręcznie"
+  // Formularz "Dodaj ręcznie"
   const addBox = h("div",{style:"background:var(--surface);border:1px solid var(--border);padding:16px 20px;margin-bottom:28px;border-radius:6px"});
-  addBox.appendChild(h("div",{class:"sec-label",style:"margin-bottom:10px"},"Dodaj słówko ręcznie"));
+  addBox.appendChild(h("div",{class:"sec-label",style:"margin-bottom:10px"},cfg.type==="phrases"?"Dodaj zwrot ręcznie":"Dodaj słówko ręcznie"));
   const addRow = h("div",{style:"display:flex;gap:8px;flex-wrap:wrap;align-items:center"});
-  const addInp = h("input",{type:"text",placeholder:"słowo lub zwrot w "+LANGS[lang].name,style:"flex:1;min-width:200px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);color:var(--text);font-family:inherit;font-size:14px;border-radius:4px"});
+  const addInp = h("input",{type:"text",placeholder:cfg.addPlaceholder+" w "+LANGS[lang].name,style:"flex:1;min-width:200px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);color:var(--text);font-family:inherit;font-size:14px;border-radius:4px"});
   const addBtn = h("button",{class:"primary"},"+ Dodaj do Uczę się");
   const submit = ()=>{
     const word = (addInp.value||"").trim().toLowerCase();
     if(!word) return;
-    const ws2 = JSON.parse(localStorage.getItem("lingua_word_status")||"{}");
+    const ws2 = JSON.parse(localStorage.getItem(cfg.storageKey)||"{}");
     if(ws2[word+"_"+lang] === "learning"){ alert("\""+word+"\" już jest na liście Uczę się"); return; }
     ws2[word+"_"+lang] = "learning";
-    localStorage.setItem("lingua_word_status", JSON.stringify(ws2));
+    localStorage.setItem(cfg.storageKey, JSON.stringify(ws2));
     scheduleDriveSync();
     addInp.value = "";
     render();
@@ -6973,8 +6997,8 @@ function renderMyWords(){
       const row=h("div",{style:"display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)"});
       row.appendChild(h("div",{style:"font-size:14px;color:var(--text)"},word));
       const btns=h("div",{style:"display:flex;gap:6px"});
-      btns.appendChild(h("button",{class:"sbtn",style:"font-size:10px;padding:4px 10px",onclick:()=>{ws[word+"_"+lang]="known";localStorage.setItem("lingua_word_status",JSON.stringify(ws));render();}},"Znam"));
-      btns.appendChild(h("button",{class:"sbtn",style:"font-size:10px;padding:4px 10px;color:var(--err-text);border-color:var(--err-text)",onclick:()=>{delete ws[word+"_"+lang];localStorage.setItem("lingua_word_status",JSON.stringify(ws));render();}},"Usuń"));
+      btns.appendChild(h("button",{class:"sbtn",style:"font-size:10px;padding:4px 10px",onclick:()=>{ws[word+"_"+lang]="known";localStorage.setItem(cfg.storageKey,JSON.stringify(ws));render();}},"Znam"));
+      btns.appendChild(h("button",{class:"sbtn",style:"font-size:10px;padding:4px 10px;color:var(--err-text);border-color:var(--err-text)",onclick:()=>{delete ws[word+"_"+lang];localStorage.setItem(cfg.storageKey,JSON.stringify(ws));render();}},"Usuń"));
       row.appendChild(btns);list.appendChild(row);
     });
     main.appendChild(list);
@@ -6986,15 +7010,40 @@ function renderMyWords(){
       const row=h("div",{style:"display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)"});
       row.appendChild(h("div",{style:"font-size:14px;color:var(--text)"},word));
       const btns=h("div",{style:"display:flex;gap:6px"});
-      btns.appendChild(h("button",{class:"sbtn",style:"font-size:10px;padding:4px 10px",onclick:()=>{ws[word+"_"+lang]="learning";localStorage.setItem("lingua_word_status",JSON.stringify(ws));render();}},"Ucz się"));
+      btns.appendChild(h("button",{class:"sbtn",style:"font-size:10px;padding:4px 10px",onclick:()=>{ws[word+"_"+lang]="learning";localStorage.setItem(cfg.storageKey,JSON.stringify(ws));render();}},"Ucz się"));
       row.appendChild(btns);list.appendChild(row);
     });
     main.appendChild(list);
   }
   if(learning.length===0&&known.length===0){
-    main.appendChild(h("div",{class:"empty"},h("div",{class:"empty-icon"},"📝"),h("div",{class:"empty-text"},"Brak zapisanych słówek"),h("div",{class:"empty-sub"},"Dodaj ręcznie powyżej, kliknij słowo w dialogu, albo klik 📖 przy słówku/zwrocie w lekcji")));
+    const emptyTxt = cfg.type==="phrases"?"Brak zapisanych zwrotów":"Brak zapisanych słówek";
+    main.appendChild(h("div",{class:"empty"},h("div",{class:"empty-icon"},"📝"),h("div",{class:"empty-text"},emptyTxt),h("div",{class:"empty-sub"},"Dodaj ręcznie powyżej, kliknij słowo w dialogu, albo klik 📖 przy słówku/zwrocie w lekcji")));
   }
   w.appendChild(main);return w;
+}
+
+// Cienkie wrappery — backward compat dla istniejącego dispatchera screen→funkcja
+function renderMyWords(){
+  return renderMyVocab({
+    type:"words",
+    storageKey:"lingua_word_status",
+    title:"Moje słówka",
+    sub:"Wszystkie zapisane słówka",
+    addPlaceholder:"słowo",
+    origin:"mywords",
+    emptyHint:"Żadne słówko nie ma jeszcze tłumaczenia. Kliknij słowo w dialogu lekcji — popup zapisze tłumaczenie do cache, wtedy pojawią się przyciski do nauki."
+  });
+}
+function renderMyPhrases(){
+  return renderMyVocab({
+    type:"phrases",
+    storageKey:"lingua_phrase_status",
+    title:"Moje zwroty",
+    sub:"Wszystkie zapisane zwroty",
+    addPlaceholder:"zwrot lub wyrażenie",
+    origin:"myphrases",
+    emptyHint:"Żaden zwrot nie ma jeszcze tłumaczenia. Otwórz lekcję → Zwroty → klik 📖 przy zwrocie, żeby tu trafił z pełnymi danymi."
+  });
 }
 
 // ── B7: EKSPORT/IMPORT ─────────────────────────────────────────────────────
@@ -7080,6 +7129,7 @@ function render(){
   else if(screen==="audiomgr")root.appendChild(renderAudioMgr());
   else if(screen==="filmoteka")root.appendChild(renderFilmoteka());
   else if(screen==="mywords")root.appendChild(renderMyWords());
+  else if(screen==="myphrases")root.appendChild(renderMyPhrases());
   else if(screen==="translate")root.appendChild(renderTranslate());
 }
 
