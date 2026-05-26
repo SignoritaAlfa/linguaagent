@@ -4431,11 +4431,26 @@ function showWordPopup(wordRaw, wordClean, lang, anchorEl){
   if(vocabEntry){
     fillPopup({word: vocabEntry.w, ipa: vocabEntry.ipa, pl: vocabEntry.tr, example: vocabEntry.ex});
   } else if(S.geminiKey){
-    // Cache w pamięci — kolejne kliknięcia tego samego słowa = 0 API
-    showWordPopup._cache = showWordPopup._cache || {};
+    // Persistent cache w localStorage — przeładowanie nie zżera limitu API
+    // (Gemini free tier: ~10-20 zapytań/min)
+    const POPUP_CACHE_KEY = "lingua_word_translations";
+    const POPUP_CACHE_MAX = 2000; // ~500KB at ~250 bytes per entry
+    const loadCache = ()=>{ try{ return JSON.parse(localStorage.getItem(POPUP_CACHE_KEY)||"{}"); }catch{ return {}; } };
+    const saveCache = (c)=>{ try{ localStorage.setItem(POPUP_CACHE_KEY, JSON.stringify(c)); }catch(e){
+      // LRU evict if quota exceeded — drop ~25% oldest by access timestamp
+      const entries = Object.entries(c).sort((a,b)=>(a[1].t||0)-(b[1].t||0));
+      const toDrop = Math.max(1, Math.floor(entries.length/4));
+      for(let i=0; i<toDrop; i++) delete c[entries[i][0]];
+      try{ localStorage.setItem(POPUP_CACHE_KEY, JSON.stringify(c)); }catch{}
+    }};
     const cacheKey = wordClean + "_" + lang;
-    if(showWordPopup._cache[cacheKey]){
-      fillPopup(showWordPopup._cache[cacheKey]);
+    const cache = loadCache();
+    // Touch (LRU) and serve from cache
+    if(cache[cacheKey] && cache[cacheKey].d){
+      cache[cacheKey].t = Date.now();
+      saveCache(cache);
+      fillPopup(cache[cacheKey].d);
+    } else if(false){ // legacy branch placeholder for diff readability
     } else {
       const prompt = `Przetłumacz słowo z języka ${lang} na polski. Słowo: "${wordRaw}". Odpowiedz TYLKO czystym JSON bez markdown:\n{"word":"słowo w oryginale","ipa":"/wymowa IPA/","pl":"tłumaczenie polskie (możesz dać kilka znaczeń po przecinku)","example":"krótkie przykładowe zdanie w ${lang}"}`;
       fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${S.geminiKey}`,{
@@ -4453,24 +4468,42 @@ function showWordPopup(wordRaw, wordClean, lang, anchorEl){
       }).then(async r=>{
         if(!r.ok){
           const errBody = await r.json().catch(()=>({}));
-          throw new Error("Gemini "+r.status+": "+(errBody?.error?.message||"sprawdź klucz/limit"));
+          const baseMsg = errBody?.error?.message || "sprawdź klucz/limit";
+          if(r.status === 429){
+            // Wyciągnij "retry in Xms" lub "retry in Xs" — daj usercie liczbę sekund
+            const retryM = baseMsg.match(/retry in (\d+(?:\.\d+)?)(ms|s)/i);
+            let waitSec = 60;
+            if(retryM){
+              const v = parseFloat(retryM[1]);
+              waitSec = retryM[2]==="ms" ? Math.ceil(v/1000) : Math.ceil(v);
+            }
+            throw new Error("limit Gemini (10-20/min na free) — czekaj ~"+waitSec+" sek");
+          }
+          throw new Error("Gemini "+r.status+": "+baseMsg);
         }
         return r.json();
       }).then(data=>{
         const txt = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
         if(!txt){
-          // Empty response → log full payload do konsoli żeby user mógł zgłosić
           console.warn("[Lingua] Gemini empty response for", wordRaw, "— full payload:", data);
           throw new Error("Gemini zwrócił pustą odpowiedź (sprawdź konsolę)");
         }
-        // Wyciągnij JSON regexem zamiast tylko stripować markdown — odporne na dodatkowy tekst
         const m = txt.match(/\{[\s\S]*\}/);
         if(!m){
           console.warn("[Lingua] Gemini no-JSON response for", wordRaw, "— raw text:", txt);
           throw new Error("Brak JSON w odpowiedzi (sprawdź konsolę)");
         }
         const parsed = JSON.parse(m[0]);
-        showWordPopup._cache[cacheKey] = parsed;
+        // Zapis do persistent cache (przeżyje reload)
+        const c = loadCache();
+        c[cacheKey] = { d: parsed, t: Date.now() };
+        // Drop najstarsze jeśli przekroczone capacity
+        const keys = Object.keys(c);
+        if(keys.length > POPUP_CACHE_MAX){
+          const sorted = keys.map(k=>[k,c[k].t||0]).sort((a,b)=>a[1]-b[1]);
+          for(let i=0; i<sorted.length - POPUP_CACHE_MAX; i++) delete c[sorted[i][0]];
+        }
+        saveCache(c);
         fillPopup(parsed);
       }).catch(err=>{
         console.error("[Lingua] popup translate failed for", wordRaw, ":", err.message);
