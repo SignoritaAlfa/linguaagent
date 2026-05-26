@@ -1868,7 +1868,10 @@ function addClipToMyFilm(lang, filmId, clip){
 async function fetchClipMetadataSuggestion(url, seriesTitle, langCode){
   const videoId = extractYtId(url);
   if(!videoId) throw new Error("Nieprawidłowy URL YouTube");
-  if(!S.claudeKey) throw new Error("Brak klucza Claude w Ustawieniach");
+  // Wymagaj klucza odpowiedniego do wybranego modelu (Gemini lub Claude)
+  const _cfg = getLessonModelConfig();
+  if(_cfg.provider === "gemini" && !S.geminiKey) throw new Error("Brak klucza Gemini w Ustawieniach");
+  if(_cfg.provider === "anthropic" && !S.claudeKey) throw new Error("Brak klucza Claude w Ustawieniach");
   let ytTitle = "", ytAuthor = "";
   try{
     const oeRes = await fetch("https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v="+videoId+"&format=json");
@@ -1897,15 +1900,10 @@ WYGENERUJ JSON:
 
 Odpowiedz TYLKO czystym JSON bez markdown:
 {"title":"...","episode":"...","desc":"...","topic":"...","level":"..."}`;
-  const res = await fetch("https://api.anthropic.com/v1/messages",{
-    method:"POST",
-    headers:{"x-api-key":S.claudeKey,"anthropic-version":"2023-06-01","content-type":"application/json","anthropic-dangerous-direct-browser-access":"true"},
-    body:JSON.stringify({model:"claude-haiku-4-5-20251001",max_tokens:600,messages:[{role:"user",content:[{type:"text",text:prompt}]}]})
-  });
-  if(!res.ok) throw new Error("Claude API "+res.status);
-  const data = await res.json();
-  const m = data.content[0].text.match(/\{[\s\S]*\}/);
-  if(!m) throw new Error("Brak JSON w odpowiedzi");
+  // Routujemy przez wybrany model (Gemini/Claude) zamiast hardkodować Claude
+  const rawText = await callLessonModel(prompt);
+  const m = rawText.match(/\{[\s\S]*\}/);
+  if(!m) throw new Error("Brak JSON w odpowiedzi modelu");
   return JSON.parse(m[0]);
 }
 
@@ -2286,45 +2284,36 @@ Pole "rawText": jeśli widzisz obraz, przepisz DOSŁOWNIE cały tekst z obrazu �
 
 Odpowiedz WYŁĄCZNIE czystym JSON, zero tekstu przed ani po, zero markdown:
 {"title":"tytuł lekcji","level":"B1","topic":"temat po polsku","rawText":"oryginalny tekst materiału dosłownie","dialog":[{"s":"Imię","l":"zdanie w języku obcym","t":"tłumaczenie po polsku"}],"vocab":[{"w":"słowo","tr":"tłumaczenie PL","ipa":"wymowa IPA","pl":"jak czytać po polsku","ex":"przykład użycia","exT":"tłumaczenie przykładu"}],"fill":[{"s":"zdanie z ___ luką","a":"odpowiedź","h":"wskazówka po polsku","cat":"text"},{"s":"gramatyczne z ___","a":"odpowiedź","h":"wskazówka","cat":"grammar"}],"grammar":[{"rule":"nazwa zasady","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie po polsku"}]}`;
-  if(!S.claudeKey){set({uploadError:"Wpisz klucz Anthropic API w Ustawieniach"});return;}
+  // Wymagaj klucza odpowiedniego do wybranego modelu (Gemini lub Claude)
+  const _cfgU = getLessonModelConfig();
+  if(_cfgU.provider === "gemini" && !S.geminiKey){set({uploadError:"Wpisz klucz Gemini API w Ustawieniach (albo zmień model na Claude)"});return;}
+  if(_cfgU.provider === "anthropic" && !S.claudeKey){set({uploadError:"Wpisz klucz Anthropic API w Ustawieniach (albo zmień model na Gemini)"});return;}
   set({uploadProcessing:true, uploadError:""});
   try{
-    let content;
+    let modelInput;
     let _savedRawText = null;
     if(S.uploadFile && (S.uploadFile.type.startsWith("text/") || /\.(md|markdown|txt)$/i.test(S.uploadFile.name))){
       const textContent = await S.uploadFile.text();
       if(!textContent||textContent.trim().length<20) throw new Error("Plik tekstowy jest pusty lub za krótki (minimum 20 znaków)");
       _savedRawText = textContent;
-      content=[{type:"text",text:PROMPT+"\n\nTEKST:\n"+textContent}];
+      modelInput = PROMPT+"\n\nTEKST:\n"+textContent;
     } else if(S.uploadFile && S.uploadFile.type==="application/pdf"){
       const extractedText = await extractPdfText(S.uploadFile);
       if(!extractedText||extractedText.length<100) throw new Error("PDF jest pusty lub nie można odczytać tekstu");
       _savedRawText = extractedText;
-      content=[{type:"text",text:PROMPT+"\n\nTEKST:\n"+extractedText}];
+      modelInput = PROMPT+"\n\nTEKST:\n"+extractedText;
     } else if(S.uploadFile && S.uploadFile.type.startsWith("image/")){
       const b64=await fileToB64(S.uploadFile);
-      content=[{type:"image",source:{type:"base64",media_type:S.uploadFile.type,data:b64}},{type:"text",text:PROMPT}];
+      modelInput = {prompt: PROMPT, image:{mimeType:S.uploadFile.type, data:b64}};
     } else {
       _savedRawText = S.uploadPreview;
-      content=[{type:"text",text:PROMPT+"\n\nTEKST:\n"+S.uploadPreview}];
+      modelInput = PROMPT+"\n\nTEKST:\n"+S.uploadPreview;
     }
-    const res=await fetch("https://api.anthropic.com/v1/messages",{
-      method:"POST",
-      headers:{
-        "x-api-key":S.claudeKey,
-        "anthropic-version":"2023-06-01",
-        "content-type":"application/json",
-        "anthropic-dangerous-direct-browser-access":"true"
-      },
-      body:JSON.stringify({model:"claude-opus-4-7",max_tokens:6000,messages:[{role:"user",content}]})
-    });
-    if(!res.ok){const err=await res.json().catch(()=>({}));throw new Error("Anthropic API błąd "+res.status+": "+(err?.error?.message||"sprawdź klucz API"));}
-    const data=await res.json();
-    const rawText=data.content[0].text;
+    const rawText = await callLessonModel(modelInput);
     const m=rawText.match(/\{[\s\S]*\}/);
-    if(!m) throw new Error("Claude nie zwrócił poprawnego JSON — spróbuj ponownie");
+    if(!m) throw new Error("Model nie zwrócił poprawnego JSON — spróbuj ponownie");
     const json=JSON.parse(m[0]);
-    if(!json.dialog||!json.vocab) throw new Error("Claude zwrócił niekompletne dane — spróbuj ponownie");
+    if(!json.dialog||!json.vocab) throw new Error("Model zwrócił niekompletne dane — spróbuj ponownie");
     json.id="my_"+Date.now();
     json.type="dialog";
     json.source="text";
@@ -3217,8 +3206,8 @@ function renderLesson(){
     disp.onblur=()=>{disp.style.borderColor="var(--border)"; if(saveTimer){clearTimeout(saveTimer); saveTimer=null;} saveNow();};
     tw.appendChild(disp);
 
-    // Generate vocab/phrases buttons
-    if(S.claudeKey){
+    // Generate vocab/phrases buttons (Claude lub Gemini — zależnie od wybranego modelu)
+    if(S.claudeKey || S.geminiKey){
       const genRow=h("div",{style:"display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px"});
       const mkGenBtn=(label,type,desc)=>h("button",{class:"sbtn",style:"border-color:var(--gold);color:var(--gold);padding:14px 20px;flex:1;min-width:200px;text-align:left;line-height:1.5",onclick:async()=>{
         const btn=genRow.querySelector(`[data-type="${type}"]`);
@@ -3229,14 +3218,8 @@ function renderLesson(){
           const prompt=type==="vocab"
             ? `Z poniższego tekstu wyciągnij MAKSYMALNIE DUŻO słów wartych nauki — celuj w 60-100 pozycji, absolutne minimum 50. NIE PRZESTAWAJ na 30 ani 40 — kontynuuj aż wyczerpiesz wszystkie wartościowe słowa z tekstu. Wybierz słowa kluczowe, idiomy, kolokwializmy, trudniejsze słowa, słowa specyficzne dla kontekstu, a także słówka B1-C1. Dla każdego podaj tłumaczenie PL, wymowę IPA i przykład z tekstu. Odpowiedz TYLKO czystym JSON: {"items":[{"w":"słowo","tr":"tłumaczenie PL","ipa":"IPA","pl":"fonetyka","ex":"przykład","exT":"tłumaczenie przykładu"}]}\n\nTEKST:\n${currentText.slice(0,30000)}`
             : `Z poniższego tekstu wyciągnij MAKSYMALNIE DUŻO użytecznych zwrotów, wyrażeń i kolokacji — celuj w 50-80 pozycji, absolutne minimum 40. NIE PRZESTAWAJ na 20 ani 30 — kontynuuj aż wyczerpiesz wszystkie wartościowe zwroty z tekstu. Szukaj: idiomów, wyrażeń potocznych, zwrotów konwersacyjnych, czasowników frazowych, przyimkowych konstrukcji, kolokacji rzeczownik+czasownik, utartych zwrotów. Odpowiedz TYLKO czystym JSON: {"items":[{"w":"zwrot","tr":"tłumaczenie PL","ipa":"IPA","pl":"fonetyka","ex":"przykład użycia","exT":"tłumaczenie"}]}\n\nTEKST:\n${currentText.slice(0,30000)}`;
-          const res=await fetch("https://api.anthropic.com/v1/messages",{
-            method:"POST",
-            headers:{"x-api-key":S.claudeKey,"anthropic-version":"2023-06-01","content-type":"application/json","anthropic-dangerous-direct-browser-access":"true"},
-            body:JSON.stringify({model:"claude-haiku-4-5-20251001",max_tokens:16000,messages:[{role:"user",content:[{type:"text",text:prompt}]}]})
-          });
-          if(!res.ok) throw new Error("API błąd "+res.status);
-          const data=await res.json();
-          const parsed=tolerantParseJson(data.content[0].text);
+          const rawText = await callLessonModel(prompt);
+          const parsed=tolerantParseJson(rawText);
           const items=parsed.items||[];
           if(!items.length) throw new Error("Brak wyników");
           // Show results with checkboxes + per-item + and bulk-add buttons
@@ -4513,18 +4496,12 @@ function renderAddEntryForm(lesson, arrayKey, lang){
   const closeForm = ()=>{ formBox.style.display="none"; toggleBtn.textContent="+ Dodaj "+label+" ręcznie"; };
 
   async function aiFillPronunciation(word){
-    if(!S.claudeKey) return null;
+    if(!S.claudeKey && !S.geminiKey) return null;
     const langName = {EN:"angielskim",FR:"francuskim",IT:"włoskim",DE:"niemieckim",ES:"hiszpańskim"}[lang]||lang;
     const promptText = `Podaj wymowę dla ${arrayKey==="phrases"?"zwrotu":"słowa"} "${word}" w języku ${langName}. Pole "ipa" to standard międzynarodowy fonetyczny, pole "pl" to fonetyka czytana intuicyjnie po polsku (np. dla angielskiego "hello" → "helou"). Odpowiedz TYLKO czystym JSON, bez markdown, bez komentarzy: {"ipa":"/.../","pl":"jak czytać po polsku"}`;
     try{
-      const res = await fetch("https://api.anthropic.com/v1/messages",{
-        method:"POST",
-        headers:{"x-api-key":S.claudeKey,"anthropic-version":"2023-06-01","content-type":"application/json","anthropic-dangerous-direct-browser-access":"true"},
-        body:JSON.stringify({model:"claude-haiku-4-5-20251001",max_tokens:200,messages:[{role:"user",content:[{type:"text",text:promptText}]}]})
-      });
-      if(!res.ok) return null;
-      const data = await res.json();
-      const m = data.content[0].text.match(/\{[\s\S]*\}/);
+      const rawText = await callLessonModel(promptText);
+      const m = rawText.match(/\{[\s\S]*\}/);
       if(!m) return null;
       const parsed = JSON.parse(m[0]);
       return {ipa: parsed.ipa||"", pl: parsed.pl||""};
@@ -4535,7 +4512,7 @@ function renderAddEntryForm(lesson, arrayKey, lang){
   aiBtn.onclick = async ()=>{
     const w=(wInp.value||"").trim();
     if(!w){ alert("Najpierw wpisz "+(arrayKey==="phrases"?"zwrot":"słowo")); wInp.focus(); return; }
-    if(!S.claudeKey){ alert("Wymagany klucz Claude API w Ustawieniach (sekcja Anthropic)"); return; }
+    if(!S.claudeKey && !S.geminiKey){ alert("Wymagany klucz Claude lub Gemini w Ustawieniach"); return; }
     aiBtn.disabled=true; aiBtn.textContent="⏳ Generuję...";
     const r = await aiFillPronunciation(w);
     if(r){
@@ -4556,7 +4533,7 @@ function renderAddEntryForm(lesson, arrayKey, lang){
     if(!lesson[arrayKey]) lesson[arrayKey]=[];
     if(lesson[arrayKey].some(v=>v.w===w)){ if(!confirm("\""+w+"\" już istnieje w tej lekcji. Dodać duplikat?")) return; }
     let ipa=(ipaInp.value||"").trim(), pl=(plInp.value||"").trim();
-    if((!ipa || !pl) && S.claudeKey){
+    if((!ipa || !pl) && (S.claudeKey || S.geminiKey)){
       saveBtn.disabled=true; saveBtn.textContent="⏳ Uzupełniam wymowę...";
       const r = await aiFillPronunciation(w);
       if(r){ if(!ipa && r.ipa) ipa=r.ipa; if(!pl && r.pl) pl=r.pl; }
@@ -5137,8 +5114,8 @@ function renderLesson(){
     disp.onblur=()=>{disp.style.borderColor="var(--border)"; if(saveTimer){clearTimeout(saveTimer); saveTimer=null;} saveNow();};
     tw.appendChild(disp);
 
-    // Generate vocab/phrases buttons
-    if(S.claudeKey){
+    // Generate vocab/phrases buttons (Claude lub Gemini — zależnie od wybranego modelu)
+    if(S.claudeKey || S.geminiKey){
       const genRow=h("div",{style:"display:flex;gap:12px;flex-wrap:wrap;margin-bottom:20px"});
       const mkGenBtn=(label,type,desc)=>h("button",{class:"sbtn",style:"border-color:var(--gold);color:var(--gold);padding:14px 20px;flex:1;min-width:200px;text-align:left;line-height:1.5",onclick:async()=>{
         const btn=genRow.querySelector(`[data-type="${type}"]`);
@@ -5149,14 +5126,8 @@ function renderLesson(){
           const prompt=type==="vocab"
             ? `Z poniższego tekstu wyciągnij MAKSYMALNIE DUŻO słów wartych nauki — celuj w 60-100 pozycji, absolutne minimum 50. NIE PRZESTAWAJ na 30 ani 40 — kontynuuj aż wyczerpiesz wszystkie wartościowe słowa z tekstu. Wybierz słowa kluczowe, idiomy, kolokwializmy, trudniejsze słowa, słowa specyficzne dla kontekstu, a także słówka B1-C1. Dla każdego podaj tłumaczenie PL, wymowę IPA i przykład z tekstu. Odpowiedz TYLKO czystym JSON: {"items":[{"w":"słowo","tr":"tłumaczenie PL","ipa":"IPA","pl":"fonetyka","ex":"przykład","exT":"tłumaczenie przykładu"}]}\n\nTEKST:\n${currentText.slice(0,30000)}`
             : `Z poniższego tekstu wyciągnij MAKSYMALNIE DUŻO użytecznych zwrotów, wyrażeń i kolokacji — celuj w 50-80 pozycji, absolutne minimum 40. NIE PRZESTAWAJ na 20 ani 30 — kontynuuj aż wyczerpiesz wszystkie wartościowe zwroty z tekstu. Szukaj: idiomów, wyrażeń potocznych, zwrotów konwersacyjnych, czasowników frazowych, przyimkowych konstrukcji, kolokacji rzeczownik+czasownik, utartych zwrotów. Odpowiedz TYLKO czystym JSON: {"items":[{"w":"zwrot","tr":"tłumaczenie PL","ipa":"IPA","pl":"fonetyka","ex":"przykład użycia","exT":"tłumaczenie"}]}\n\nTEKST:\n${currentText.slice(0,30000)}`;
-          const res=await fetch("https://api.anthropic.com/v1/messages",{
-            method:"POST",
-            headers:{"x-api-key":S.claudeKey,"anthropic-version":"2023-06-01","content-type":"application/json","anthropic-dangerous-direct-browser-access":"true"},
-            body:JSON.stringify({model:"claude-haiku-4-5-20251001",max_tokens:16000,messages:[{role:"user",content:[{type:"text",text:prompt}]}]})
-          });
-          if(!res.ok) throw new Error("API błąd "+res.status);
-          const data=await res.json();
-          const parsed=tolerantParseJson(data.content[0].text);
+          const rawText = await callLessonModel(prompt);
+          const parsed=tolerantParseJson(rawText);
           const items=parsed.items||[];
           if(!items.length) throw new Error("Brak wyników");
           // Show results with checkboxes + per-item + and bulk-add buttons
@@ -6142,17 +6113,25 @@ function getLessonModelConfig(){
 }
 
 // Provider-agnostic single call. Returns raw response text (caller does parsing).
-async function callLessonModel(prompt){
+// Accepts either a plain string prompt OR an object {prompt, image:{mimeType, data(b64)}}
+// for multimodal (image) inputs. Both Gemini and Claude support image inputs.
+async function callLessonModel(input){
   const cfg = getLessonModelConfig();
+  const promptText = typeof input === "string" ? input : (input.prompt || "");
+  const image = (typeof input === "object" && input.image) ? input.image : null;
+
   if(cfg.provider === "gemini"){
     if(!S.geminiKey) throw new Error("Brak klucza Gemini API w Ustawieniach");
+    const parts = [];
+    if(image) parts.push({inline_data:{mime_type:image.mimeType, data:image.data}});
+    parts.push({text:promptText});
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${cfg.name}:generateContent?key=${encodeURIComponent(S.geminiKey)}`,
       {
         method:"POST",
         headers:{"Content-Type":"application/json"},
         body:JSON.stringify({
-          contents:[{parts:[{text:prompt}]}],
+          contents:[{parts}],
           generationConfig:{temperature:0.3, maxOutputTokens: cfg.maxTokens}
         })
       }
@@ -6168,10 +6147,13 @@ async function callLessonModel(prompt){
   }
   // Anthropic Claude
   if(!S.claudeKey) throw new Error("Brak klucza Claude w Ustawieniach");
+  const content = [];
+  if(image) content.push({type:"image", source:{type:"base64", media_type:image.mimeType, data:image.data}});
+  content.push({type:"text", text:promptText});
   const res = await fetch("https://api.anthropic.com/v1/messages",{
     method:"POST",
     headers:{"x-api-key":S.claudeKey,"anthropic-version":"2023-06-01","content-type":"application/json","anthropic-dangerous-direct-browser-access":"true"},
-    body:JSON.stringify({model:cfg.name, max_tokens:cfg.maxTokens, messages:[{role:"user",content:[{type:"text",text:prompt}]}]})
+    body:JSON.stringify({model:cfg.name, max_tokens:cfg.maxTokens, messages:[{role:"user",content}]})
   });
   if(!res.ok){
     const e = await res.json().catch(()=>({}));
@@ -6245,7 +6227,9 @@ async function buildLessonFromTranscript(transcript, videoId, cues, lang, opts){
       return JSON.parse(JSON.stringify(cached));  // deep copy so caller mutations don't leak
     }
   }
-  if(!S.claudeKey) throw new Error("Brak klucza Claude w Ustawieniach");
+  const _bcfg = getLessonModelConfig();
+  if(_bcfg.provider === "gemini" && !S.geminiKey) throw new Error("Brak klucza Gemini w Ustawieniach");
+  if(_bcfg.provider === "anthropic" && !S.claudeKey) throw new Error("Brak klucza Claude w Ustawieniach");
   const langNames={EN:"angielski",FR:"francuski",IT:"włoski"};
   const COMMON_SECTIONS = `
 DODATKOWE SEKCJE:
@@ -6285,7 +6269,9 @@ function showRegenStatus(text, type){
 
 async function regenerateLessonDialog(lesson, lang, opts){
   opts = opts || {};
-  if(!S.claudeKey){ alert("Skonfiguruj klucz Claude w Ustawieniach"); return; }
+  const _rcfg = getLessonModelConfig();
+  if(_rcfg.provider === "gemini" && !S.geminiKey){ alert("Skonfiguruj klucz Gemini w Ustawieniach (albo zmień model na Claude)"); return; }
+  if(_rcfg.provider === "anthropic" && !S.claudeKey){ alert("Skonfiguruj klucz Claude w Ustawieniach (albo zmień model na Gemini)"); return; }
   const videoId = lesson.youtubeId || null;
   const savedRaw = (lesson.rawText||"").trim();
   const haveSaved = savedRaw.length > 100;
@@ -6382,7 +6368,9 @@ async function processTranscriptToLesson(transcript, videoId, cues){
     set({filmTranscriptProcessing:false,filmTranscriptLesson:lesson});
     return;
   }
-  if(!S.claudeKey) throw new Error("Wymagany klucz Claude (Anthropic) w Ustawieniach");
+  const _pcfg = getLessonModelConfig();
+  if(_pcfg.provider === "gemini" && !S.geminiKey) throw new Error("Wymagany klucz Gemini w Ustawieniach");
+  if(_pcfg.provider === "anthropic" && !S.claudeKey) throw new Error("Wymagany klucz Claude (Anthropic) w Ustawieniach");
   console.log("[LinguaAgent] Transkrypcja: "+transcript.length+" znaków"+(cues?", cues="+cues.length:", bez timestampów"));
   set({filmTranscriptText:transcript,filmTranscriptLoading:false,filmTranscriptProcessing:true,filmTranscriptError:""});
   const langNames={EN:"angielski",FR:"francuski",IT:"włoski"};
@@ -6500,7 +6488,9 @@ async function fetchAndProcessViaWorker(){
 async function confirmDraftAndCreate(){
   const draft = (S.filmTranscriptDraft||"").trim();
   if(draft.length<30){set({filmTranscriptError:"Transkrypcja jest za krótka"});return;}
-  if(!S.claudeKey){set({filmTranscriptError:"Wpisz klucz Claude (Anthropic) w Ustawieniach"});return;}
+  const _ccfg = getLessonModelConfig();
+  if(_ccfg.provider === "gemini" && !S.geminiKey){set({filmTranscriptError:"Wpisz klucz Gemini w Ustawieniach (albo zmień model na Claude)"});return;}
+  if(_ccfg.provider === "anthropic" && !S.claudeKey){set({filmTranscriptError:"Wpisz klucz Claude (Anthropic) w Ustawieniach (albo zmień model na Gemini)"});return;}
   const videoId = S.filmTranscriptDraftVideoId || S.filmYtId || null;
   set({filmTranscriptLoading:true,filmTranscriptError:""});
   try{
@@ -7061,21 +7051,17 @@ function startTranslateSpeech(){
 async function doTranslate(){
   const text = (S.translateInput||"").trim();
   if(!text){ set({translateError:"Wpisz tekst do tłumaczenia"}); return; }
-  if(!S.claudeKey){ set({translateError:"Wymagany klucz Claude (Anthropic) w Ustawieniach"}); return; }
+  const _tcfg = getLessonModelConfig();
+  if(_tcfg.provider === "gemini" && !S.geminiKey){ set({translateError:"Wymagany klucz Gemini w Ustawieniach"}); return; }
+  if(_tcfg.provider === "anthropic" && !S.claudeKey){ set({translateError:"Wymagany klucz Claude (Anthropic) w Ustawieniach"}); return; }
   set({translateProcessing:true, translateError:"", translateResult:null});
   try{
     const lang = S.lang;
     const langName = {EN:"angielski",FR:"francuski",IT:"włoski"}[lang]||"obcy";
     const langAdj = {EN:"angielskim",FR:"francuskim",IT:"włoskim"}[lang]||"obcym";
     const prompt = `Przetłumacz poniższy polski tekst na ${langName} naturalnie, jak rodzimy użytkownik. Podaj też wymowę pełnego tłumaczenia (IPA i intuicyjną fonetykę po polsku) oraz wyciągnij kluczowe słowa i zwroty z tłumaczenia godne zapamiętania.\n\nTEKST PO POLSKU: "${text}"\n\nOdpowiedz TYLKO czystym JSON, bez markdown:\n{"translation":"tłumaczenie w ${langAdj}","ipa":"IPA pełnego tłumaczenia","pl":"jak czytać po polsku","alternatives":["alternatywne tłumaczenia (opcjonalnie 1-2)"],"words":[{"w":"słowo lub zwrot","tr":"po polsku","ipa":"IPA","pl":"czytaj","ex":"przykład użycia po ${langName}u","exT":"tłumaczenie przykładu"}]}\n\nwords: kluczowe słowa/zwroty z tłumaczenia (5-12 pozycji).`;
-    const res = await fetch("https://api.anthropic.com/v1/messages",{
-      method:"POST",
-      headers:{"x-api-key":S.claudeKey,"anthropic-version":"2023-06-01","content-type":"application/json","anthropic-dangerous-direct-browser-access":"true"},
-      body:JSON.stringify({model:"claude-haiku-4-5-20251001",max_tokens:3000,messages:[{role:"user",content:[{type:"text",text:prompt}]}]})
-    });
-    if(!res.ok) throw new Error("API błąd "+res.status);
-    const data = await res.json();
-    const m = data.content[0].text.match(/\{[\s\S]*\}/);
+    const rawText = await callLessonModel(prompt);
+    const m = rawText.match(/\{[\s\S]*\}/);
     if(!m) throw new Error("Brak JSON w odpowiedzi");
     const parsed = JSON.parse(m[0]);
     set({translateProcessing:false, translateResult:parsed});
@@ -7126,10 +7112,10 @@ function renderTranslate(){
   const main = h("div",{class:"main"});
   main.appendChild(h("button",{class:"back-btn",onclick:()=>{stopTranslateSpeech();set({screen:"lang",translateInput:"",translateResult:null,translateError:"",translateRecording:false});}},"← Powrót"));
   main.appendChild(h("div",{class:"page-title"},"🌐 Tłumacz — "+LANGS[lang].name));
-  main.appendChild(h("div",{class:"page-sub"},"Napisz lub powiedz po polsku — Claude przetłumaczy na "+LANGS[lang].name+" i pozwoli dodać do własnej lekcji."));
+  main.appendChild(h("div",{class:"page-sub"},"Napisz lub powiedz po polsku — AI przetłumaczy na "+LANGS[lang].name+" i pozwoli dodać do własnej lekcji."));
 
-  if(!S.claudeKey){
-    main.appendChild(h("div",{class:"msg-err",style:"max-width:700px;margin-bottom:18px"},"⚠️ Brak klucza Claude API. Wejdź w Ustawienia → sekcja Anthropic."));
+  if(!S.claudeKey && !S.geminiKey){
+    main.appendChild(h("div",{class:"msg-err",style:"max-width:700px;margin-bottom:18px"},"⚠️ Brak klucza Claude lub Gemini API. Wejdź w Ustawienia."));
   }
 
   // Input area
