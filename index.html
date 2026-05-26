@@ -4188,23 +4188,49 @@ function showWordPopup(wordRaw, wordClean, lang, anchorEl){
     popup.appendChild(btns);
   }
 
-  // Check lesson vocab first
+  // Check lesson vocab first — najpierw szukaj dokładnego dopasowania, potem prefiksu
+  // (np. token "running" matchuje vocab.w "run" jeśli vocab ma formę bazową)
   const lesson = S.lesson;
-  const vocabEntry = lesson?.vocab?.find(v => v.w.toLowerCase() === wordClean);
+  const vocabEntry = lesson?.vocab?.find(v => v.w && v.w.toLowerCase() === wordClean)
+                   || lesson?.vocab?.find(v => v.w && wordClean.startsWith(v.w.toLowerCase()) && wordClean.length - v.w.length <= 3)
+                   || lesson?.phrases?.find(v => v.w && v.w.toLowerCase() === wordClean);
   if(vocabEntry){
     fillPopup({word: vocabEntry.w, ipa: vocabEntry.ipa, pl: vocabEntry.tr, example: vocabEntry.ex});
   } else if(S.geminiKey){
-    const prompt = `Słowo: "${wordRaw}", język: ${lang}. TYLKO JSON: {"word":"...","ipa":"...","pl":"...","example":"..."}`;
-    fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${S.geminiKey}`,{
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({contents:[{parts:[{text:prompt}]}]})
-    }).then(r=>r.json()).then(data=>{
-      const txt = data.candidates?.[0]?.content?.parts?.[0]?.text||"{}";
-      const clean = txt.replace(/```json|```/g,"").trim();
-      try{ fillPopup(JSON.parse(clean)); } catch{ fillPopup({word:wordRaw,pl:"",ipa:"",example:""}); }
-    }).catch(()=>fillPopup({word:wordRaw,pl:"",ipa:"",example:""}));
+    // Cache w pamięci — kolejne kliknięcia tego samego słowa = 0 API
+    showWordPopup._cache = showWordPopup._cache || {};
+    const cacheKey = wordClean + "_" + lang;
+    if(showWordPopup._cache[cacheKey]){
+      fillPopup(showWordPopup._cache[cacheKey]);
+    } else {
+      const prompt = `Przetłumacz słowo z języka ${lang} na polski. Słowo: "${wordRaw}". Odpowiedz TYLKO czystym JSON bez markdown:\n{"word":"słowo w oryginale","ipa":"/wymowa IPA/","pl":"tłumaczenie polskie (możesz dać kilka znaczeń po przecinku)","example":"krótkie przykładowe zdanie w ${lang}"}`;
+      fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${S.geminiKey}`,{
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({
+          contents:[{parts:[{text:prompt}]}],
+          generationConfig:{temperature:0.1, maxOutputTokens:300}
+        })
+      }).then(async r=>{
+        if(!r.ok){
+          const errBody = await r.json().catch(()=>({}));
+          throw new Error("Gemini "+r.status+": "+(errBody?.error?.message||"sprawdź klucz/limit"));
+        }
+        return r.json();
+      }).then(data=>{
+        const txt = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
+        // Wyciągnij JSON regexem zamiast tylko stripować markdown — odporne na dodatkowy tekst
+        const m = txt.match(/\{[\s\S]*\}/);
+        if(!m) throw new Error("Brak JSON w odpowiedzi");
+        const parsed = JSON.parse(m[0]);
+        showWordPopup._cache[cacheKey] = parsed;
+        fillPopup(parsed);
+      }).catch(err=>{
+        console.error("[Lingua] popup translate failed for", wordRaw, ":", err.message);
+        fillPopup({word:wordRaw, pl:"(błąd: "+err.message+")", ipa:"", example:""});
+      });
+    }
   } else {
-    fillPopup({word:wordRaw,pl:"(brak klucza Gemini)",ipa:"",example:""});
+    fillPopup({word:wordRaw, pl:"(brak klucza Gemini w Ustawieniach)", ipa:"", example:""});
   }
 
   showWordPopup._outside = (e)=>{ if(!popup.contains(e.target) && e.target!==anchorEl){ popup.remove(); document.removeEventListener("mousedown", showWordPopup._outside); } };
