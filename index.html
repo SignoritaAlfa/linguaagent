@@ -2248,7 +2248,7 @@ async function extractPdfText(file){
 }
 async function callGemini(prompt, geminiKey){
   const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${geminiKey}`,
     {
       method:"POST",
       headers:{"Content-Type":"application/json"},
@@ -2429,7 +2429,7 @@ Odpowiedz TYLKO czystym JSON (bez markdown, bez komentarzy):
       {text:PROMPT}
     ];
 
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${S.geminiKey}`,{
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${S.geminiKey}`,{
       method:"POST",
       headers:{"Content-Type":"application/json"},
       body:JSON.stringify({contents:[{parts}]})
@@ -4190,7 +4190,7 @@ function showWordPopup(wordRaw, wordClean, lang, anchorEl){
     fillPopup({word: vocabEntry.w, ipa: vocabEntry.ipa, pl: vocabEntry.tr, example: vocabEntry.ex});
   } else if(S.geminiKey){
     const prompt = `Słowo: "${wordRaw}", język: ${lang}. TYLKO JSON: {"word":"...","ipa":"...","pl":"...","example":"..."}`;
-    fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${S.geminiKey}`,{
+    fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${S.geminiKey}`,{
       method:"POST", headers:{"Content-Type":"application/json"},
       body:JSON.stringify({contents:[{parts:[{text:prompt}]}]})
     }).then(r=>r.json()).then(data=>{
@@ -6129,10 +6129,13 @@ function formatTime(sec){
 }
 
 // ── Model AI do generowania lekcji (Claude / Gemini) ───────────────────────────
+// Single source of truth for Gemini model name (used by lesson generation,
+// upload pipeline, media pipeline, IPA auto-fill)
+const GEMINI_MODEL = "gemini-2.5-flash";
 const LESSON_MODEL_CONFIG = {
   haiku:  { provider:"anthropic", name:"claude-haiku-4-5-20251001", maxTokens:32000, label:"🍃 Haiku 4.5",       desc:"~$0.10 / długa scena. Szybki, dobry kompromis. Karta Anthropic." },
   sonnet: { provider:"anthropic", name:"claude-sonnet-4-6",         maxTokens:64000, label:"💎 Sonnet 4.6",      desc:"~$0.40 / długa scena. Najlepsza jakość tłumaczeń. Karta Anthropic." },
-  gemini: { provider:"gemini",    name:"gemini-2.0-flash",          maxTokens:8000,  label:"🌟 Gemini 2.0 Flash", desc:"~$0.03 / scena. Najtańszy + 1500 free/dzień. Google Cloud (polskie karty OK)." }
+  gemini: { provider:"gemini",    name:GEMINI_MODEL,                maxTokens:32000, label:"🌟 Gemini 2.5 Flash", desc:"~$0.05 / scena. Tani + 1500 free/dzień. Google Cloud (polskie karty OK)." }
 };
 function getLessonModelConfig(){
   return LESSON_MODEL_CONFIG[S.lessonModel || "gemini"] || LESSON_MODEL_CONFIG.gemini;
