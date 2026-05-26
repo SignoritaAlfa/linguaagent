@@ -4222,14 +4222,16 @@ function renderVocabList(vocab, lang, onDelete, listType, onEdit, onMove){
   });
   wrap.appendChild(dirRow);
 
+  // Snapshot once for the whole list — per-row reads would be wasteful
+  const wordStatusForList = JSON.parse(localStorage.getItem("lingua_word_status")||"{}");
+
   vocab.forEach((v, i)=>{
     const row = document.createElement("div");
     row.className = "vocab-list-row";
     if(listType) row.id = "vocab-row-"+listType+"-"+i;
-    const numActions = (onMove?1:0) + (onEdit?1:0) + (onDelete?1:0);
-    if(numActions > 0){
-      row.style.gridTemplateColumns = "40px 1fr 1fr " + new Array(numActions).fill("auto").join(" ");
-    }
+    // +1 dla zawsze widocznego przycisku "Uczę się"
+    const numActions = 1 + (onMove?1:0) + (onEdit?1:0) + (onDelete?1:0);
+    row.style.gridTemplateColumns = "40px 1fr 1fr " + new Array(numActions).fill("auto").join(" ");
     if(listType && S.vocabPlaying && S.vocabPlayingList===listType && S.vocabPlayingIdx===i){
       row.style.background = "var(--gold-dim)";
       row.style.borderLeft = "3px solid var(--gold)";
@@ -4293,6 +4295,37 @@ function renderVocabList(vocab, lang, onDelete, listType, onEdit, onMove){
       }
     });
     row.appendChild(right);
+
+    // Przycisk "Uczę się" — dodaje słowo do globalnej listy Moje słówka
+    {
+      const wsKey = (v.w||"").toLowerCase() + "_" + lang;
+      const isLearning = wordStatusForList[wsKey] === "learning";
+      const isKnown = wordStatusForList[wsKey] === "known";
+      const learnBtn = document.createElement("button");
+      learnBtn.textContent = isLearning ? "📖✓" : (isKnown ? "✓" : "📖");
+      learnBtn.title = isLearning ? "Usuń z Moje słówka" : (isKnown ? "Oznaczone jako znane — kliknij by uczyć" : "Dodaj do Moje słówka");
+      const baseStyle = "border:1px solid var(--border);border-radius:4px;width:34px;height:28px;cursor:pointer;font-size:12px;line-height:1;padding:0;align-self:start;font-family:inherit";
+      const activeStyle = baseStyle + ";background:var(--gold-dim);border-color:var(--gold);color:var(--gold)";
+      learnBtn.style.cssText = isLearning ? activeStyle : (baseStyle + ";background:none;color:var(--text3)");
+      learnBtn.onclick = (e)=>{
+        e.stopPropagation();
+        const ws = JSON.parse(localStorage.getItem("lingua_word_status")||"{}");
+        if(ws[wsKey] === "learning"){
+          delete ws[wsKey];
+          learnBtn.textContent = "📖";
+          learnBtn.title = "Dodaj do Moje słówka";
+          learnBtn.style.cssText = baseStyle + ";background:none;color:var(--text3)";
+        } else {
+          ws[wsKey] = "learning";
+          learnBtn.textContent = "📖✓";
+          learnBtn.title = "Usuń z Moje słówka";
+          learnBtn.style.cssText = activeStyle;
+        }
+        localStorage.setItem("lingua_word_status", JSON.stringify(ws));
+        scheduleDriveSync();
+      };
+      row.appendChild(learnBtn);
+    }
 
     if(onMove){
       const moveBtn = document.createElement("button");
@@ -7264,6 +7297,31 @@ function renderMyWords(){
       h("div",{style:"font-size:28px;font-family:'Cormorant Garamond',serif;color:var(--ok-text)"},""+known.length),
       h("div",{style:"font-size:11px;color:var(--text3);letter-spacing:.1em;text-transform:uppercase;margin-top:4px"},"Znam"))
   ));
+
+  // Formularz "Dodaj słówko ręcznie"
+  const addBox = h("div",{style:"background:var(--surface);border:1px solid var(--border);padding:16px 20px;margin-bottom:28px;border-radius:6px"});
+  addBox.appendChild(h("div",{class:"sec-label",style:"margin-bottom:10px"},"Dodaj słówko ręcznie"));
+  const addRow = h("div",{style:"display:flex;gap:8px;flex-wrap:wrap;align-items:center"});
+  const addInp = h("input",{type:"text",placeholder:"słowo lub zwrot w "+LANGS[lang].name,style:"flex:1;min-width:200px;padding:10px 12px;background:var(--bg);border:1px solid var(--border);color:var(--text);font-family:inherit;font-size:14px;border-radius:4px"});
+  const addBtn = h("button",{class:"primary"},"+ Dodaj do Uczę się");
+  const submit = ()=>{
+    const word = (addInp.value||"").trim().toLowerCase();
+    if(!word) return;
+    const ws2 = JSON.parse(localStorage.getItem("lingua_word_status")||"{}");
+    if(ws2[word+"_"+lang] === "learning"){ alert("\""+word+"\" już jest na liście Uczę się"); return; }
+    ws2[word+"_"+lang] = "learning";
+    localStorage.setItem("lingua_word_status", JSON.stringify(ws2));
+    scheduleDriveSync();
+    addInp.value = "";
+    render();
+  };
+  addBtn.onclick = submit;
+  addInp.onkeydown = (e)=>{ if(e.key==="Enter") submit(); };
+  addRow.appendChild(addInp);
+  addRow.appendChild(addBtn);
+  addBox.appendChild(addRow);
+  main.appendChild(addBox);
+
   if(learning.length>0){
     main.appendChild(h("div",{class:"sec-label"},"Uczę się ("+learning.length+")"));
     const list=h("div",{style:"margin-bottom:28px"});
@@ -7290,7 +7348,7 @@ function renderMyWords(){
     main.appendChild(list);
   }
   if(learning.length===0&&known.length===0){
-    main.appendChild(h("div",{class:"empty"},h("div",{class:"empty-icon"},"📝"),h("div",{class:"empty-text"},"Brak zapisanych słówek"),h("div",{class:"empty-sub"},"Kliknij słowo w dialogu lekcji aby je zapisać")));
+    main.appendChild(h("div",{class:"empty"},h("div",{class:"empty-icon"},"📝"),h("div",{class:"empty-text"},"Brak zapisanych słówek"),h("div",{class:"empty-sub"},"Dodaj ręcznie powyżej, kliknij słowo w dialogu, albo klik 📖 przy słówku/zwrocie w lekcji")));
   }
   w.appendChild(main);return w;
 }
