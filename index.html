@@ -3029,16 +3029,36 @@ function renderLesson(){
     };
     if(lesson.youtubeId){
       const ytWrap=h("div",{style:"max-width:680px;margin-bottom:24px"});
-      const ytLink=h("a",{href:"https://www.youtube.com/watch?v="+lesson.youtubeId,target:"_blank",
-        style:"display:flex;align-items:center;gap:14px;padding:16px 20px;border:1px solid var(--border);background:var(--surface);text-decoration:none;transition:all .2s;cursor:pointer"});
-      ytLink.onmouseover=()=>{ytLink.style.borderColor="var(--gold)";};
-      ytLink.onmouseout=()=>{ytLink.style.borderColor="var(--border)";};
-      ytLink.appendChild(h("div",{style:"font-size:32px"},"▶️"));
-      const ytInfo=h("div",{style:"flex:1"});
-      ytInfo.appendChild(h("div",{style:"font-size:14px;color:var(--text);font-weight:500"},"Słuchaj oryginalnych głosów aktorów"));
-      ytInfo.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-top:3px"},"Otwórz wideo na YouTube w nowej karcie · ID: "+lesson.youtubeId));
-      ytLink.appendChild(ytInfo);
-      ytWrap.appendChild(ytLink);
+      // Sprawdź czy dialog ma timestampy — wtedy karaoke renderuje własny player niżej.
+      // Bez timestampów: pokaż wbudowany iframe tutaj (inaczej user widział tylko link).
+      const _hasTimestamps = Array.isArray(lesson.dialog) && lesson.dialog.length>0 && typeof lesson.dialog[0].start === "number";
+      if(_hasTimestamps){
+        // Karaoke obsługa niżej — tu tylko skromny link jako fallback
+        const ytLink=h("a",{href:"https://www.youtube.com/watch?v="+lesson.youtubeId,target:"_blank",
+          style:"display:flex;align-items:center;gap:14px;padding:16px 20px;border:1px solid var(--border);background:var(--surface);text-decoration:none;transition:all .2s;cursor:pointer"});
+        ytLink.onmouseover=()=>{ytLink.style.borderColor="var(--gold)";};
+        ytLink.onmouseout=()=>{ytLink.style.borderColor="var(--border)";};
+        ytLink.appendChild(h("div",{style:"font-size:32px"},"▶️"));
+        const ytInfo=h("div",{style:"flex:1"});
+        ytInfo.appendChild(h("div",{style:"font-size:14px;color:var(--text);font-weight:500"},"Słuchaj oryginalnych głosów aktorów"));
+        ytInfo.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-top:3px"},"Karaoke aktywne poniżej · ID: "+lesson.youtubeId));
+        ytLink.appendChild(ytInfo);
+        ytWrap.appendChild(ytLink);
+      } else {
+        // Brak timestampów → renderuj iframe wprost żeby user mógł obejrzeć wideo w apce
+        const ytFrame = h("div",{style:"position:relative;width:100%;padding-top:56.25%;border-radius:8px;overflow:hidden;background:#000"});
+        const iframe = document.createElement("iframe");
+        iframe.src = "https://www.youtube.com/embed/"+lesson.youtubeId;
+        iframe.title = "YouTube video player";
+        iframe.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
+        iframe.referrerPolicy = "strict-origin-when-cross-origin";
+        iframe.allowFullscreen = true;
+        iframe.style.cssText = "position:absolute;top:0;left:0;width:100%;height:100%;border:0";
+        ytFrame.appendChild(iframe);
+        ytWrap.appendChild(ytFrame);
+        ytWrap.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-top:6px;line-height:1.5"},
+          "Wideo bez timestampów — karaoke (synchronizacja słów) nie działa. Żeby ją włączyć: kliknij \"🌐 Pobierz z YouTube na nowo\" — Worker pobierze napisy z czasami."));
+      }
       if(isOwn){
         const editRow = h("div",{style:"margin-top:6px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap"});
         const regenSavedBtn = h("button",{class:"sbtn",style:"font-size:11px;padding:4px 10px",title:"Wygeneruj dialog na nowo z zapisanego tekstu lekcji (jeśli go nie ma — pobierze z YouTube)"},"🔄 Wygeneruj z zapisanego tekstu");
@@ -5033,16 +5053,36 @@ function renderLesson(){
     };
     if(lesson.youtubeId){
       const ytWrap=h("div",{style:"max-width:680px;margin-bottom:24px"});
-      const ytLink=h("a",{href:"https://www.youtube.com/watch?v="+lesson.youtubeId,target:"_blank",
-        style:"display:flex;align-items:center;gap:14px;padding:16px 20px;border:1px solid var(--border);background:var(--surface);text-decoration:none;transition:all .2s;cursor:pointer"});
-      ytLink.onmouseover=()=>{ytLink.style.borderColor="var(--gold)";};
-      ytLink.onmouseout=()=>{ytLink.style.borderColor="var(--border)";};
-      ytLink.appendChild(h("div",{style:"font-size:32px"},"▶️"));
-      const ytInfo=h("div",{style:"flex:1"});
-      ytInfo.appendChild(h("div",{style:"font-size:14px;color:var(--text);font-weight:500"},"Słuchaj oryginalnych głosów aktorów"));
-      ytInfo.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-top:3px"},"Otwórz wideo na YouTube w nowej karcie · ID: "+lesson.youtubeId));
-      ytLink.appendChild(ytInfo);
-      ytWrap.appendChild(ytLink);
+      // Sprawdź czy dialog ma timestampy — wtedy karaoke renderuje własny player niżej.
+      // Bez timestampów: pokaż wbudowany iframe tutaj (inaczej user widział tylko link).
+      const _hasTimestamps = Array.isArray(lesson.dialog) && lesson.dialog.length>0 && typeof lesson.dialog[0].start === "number";
+      if(_hasTimestamps){
+        // Karaoke obsługa niżej — tu tylko skromny link jako fallback
+        const ytLink=h("a",{href:"https://www.youtube.com/watch?v="+lesson.youtubeId,target:"_blank",
+          style:"display:flex;align-items:center;gap:14px;padding:16px 20px;border:1px solid var(--border);background:var(--surface);text-decoration:none;transition:all .2s;cursor:pointer"});
+        ytLink.onmouseover=()=>{ytLink.style.borderColor="var(--gold)";};
+        ytLink.onmouseout=()=>{ytLink.style.borderColor="var(--border)";};
+        ytLink.appendChild(h("div",{style:"font-size:32px"},"▶️"));
+        const ytInfo=h("div",{style:"flex:1"});
+        ytInfo.appendChild(h("div",{style:"font-size:14px;color:var(--text);font-weight:500"},"Słuchaj oryginalnych głosów aktorów"));
+        ytInfo.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-top:3px"},"Karaoke aktywne poniżej · ID: "+lesson.youtubeId));
+        ytLink.appendChild(ytInfo);
+        ytWrap.appendChild(ytLink);
+      } else {
+        // Brak timestampów → renderuj iframe wprost żeby user mógł obejrzeć wideo w apce
+        const ytFrame = h("div",{style:"position:relative;width:100%;padding-top:56.25%;border-radius:8px;overflow:hidden;background:#000"});
+        const iframe = document.createElement("iframe");
+        iframe.src = "https://www.youtube.com/embed/"+lesson.youtubeId;
+        iframe.title = "YouTube video player";
+        iframe.allow = "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share";
+        iframe.referrerPolicy = "strict-origin-when-cross-origin";
+        iframe.allowFullscreen = true;
+        iframe.style.cssText = "position:absolute;top:0;left:0;width:100%;height:100%;border:0";
+        ytFrame.appendChild(iframe);
+        ytWrap.appendChild(ytFrame);
+        ytWrap.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-top:6px;line-height:1.5"},
+          "Wideo bez timestampów — karaoke (synchronizacja słów) nie działa. Żeby ją włączyć: kliknij \"🌐 Pobierz z YouTube na nowo\" — Worker pobierze napisy z czasami."));
+      }
       if(isOwn){
         const editRow = h("div",{style:"margin-top:6px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap"});
         const regenSavedBtn = h("button",{class:"sbtn",style:"font-size:11px;padding:4px 10px",title:"Wygeneruj dialog na nowo z zapisanego tekstu lekcji (jeśli go nie ma — pobierze z YouTube)"},"🔄 Wygeneruj z zapisanego tekstu");
