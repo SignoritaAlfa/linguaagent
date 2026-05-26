@@ -2526,9 +2526,19 @@ function h(tag,props,...ch){
 function renderTopNav(){
   const{elKey,oaiKey,ttsEngine}=S;
   const active = (ttsEngine==="oai"&&oaiKey)||(ttsEngine==="el"&&elKey);
+  // Logo klikalne — wraca do strony głównej (wybór języka)
+  const logo = h("div",{
+    class:"logo",
+    style:"cursor:pointer;user-select:none",
+    title:"Strona główna",
+    onclick:()=>set({screen:"home"})
+  },"Lingua",h("em",{},"Agent"));
   return h("div",{class:"topnav"},
-    h("div",{class:"logo"},"Lingua",h("em",{},"Agent")),
+    logo,
     h("div",{class:"nav-right",style:"display:flex;gap:6px;align-items:center"},
+      h("button",{class:"hbtn",onclick:()=>set({screen:"home"}),
+        style:"letter-spacing:.06em;text-transform:uppercase;font-size:10px;padding:7px 10px"},
+        "🏠 Strona główna"),
       h("button",{class:"hbtn",onclick:()=>{applyTheme(S.theme==="dark"?"light":"dark");render();},
         style:"letter-spacing:.06em;font-size:13px;padding:7px 10px"},
         S.theme==="dark"?"☀️":"🌙"),
