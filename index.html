@@ -2915,7 +2915,26 @@ function renderLesson(){
       spkRow.appendChild(h("span",{},line.s || ("Speaker"+(i+1))));
       spkRow.appendChild(h("span",{style:"color:var(--text3);font-weight:400"},formatTime(line.start)));
       cue.appendChild(spkRow);
-      cue.appendChild(h("div",{class:"film-cue-l"},line.l));
+      // Linia dialogu — każde słowo klikalne (popup z tłumaczeniem + Uczę się)
+      const lineDiv = document.createElement("div");
+      lineDiv.className = "film-cue-l";
+      const wsKaraoke = JSON.parse(localStorage.getItem("lingua_word_status")||"{}");
+      line.l.split(/(\s+)/).forEach(token=>{
+        if(/^\s+$/.test(token)){
+          lineDiv.appendChild(document.createTextNode(token));
+        } else {
+          const wClean = token.replace(/[.,!?;:"""''()\[\]«»]/g,"").toLowerCase();
+          const status = wsKaraoke[wClean+"_"+lang];
+          const span = document.createElement("span");
+          span.className = "word-span"+(status==="known"?" word-known":status==="learning"?" word-learning":"");
+          span.dataset.wordclean = wClean;
+          span.textContent = token;
+          const captW = token, captWC = wClean, captEl = span;
+          span.onclick = (ev)=>{ ev.stopPropagation(); showWordPopup(captW, captWC, lang, captEl); };
+          lineDiv.appendChild(span);
+        }
+      });
+      cue.appendChild(lineDiv);
       if(line.t) cue.appendChild(h("div",{class:"film-cue-t"},line.t));
       cuesCol.appendChild(cue);
     });
@@ -4859,7 +4878,26 @@ function renderLesson(){
       spkRow.appendChild(h("span",{},line.s || ("Speaker"+(i+1))));
       spkRow.appendChild(h("span",{style:"color:var(--text3);font-weight:400"},formatTime(line.start)));
       cue.appendChild(spkRow);
-      cue.appendChild(h("div",{class:"film-cue-l"},line.l));
+      // Linia dialogu — każde słowo klikalne (popup z tłumaczeniem + Uczę się)
+      const lineDiv = document.createElement("div");
+      lineDiv.className = "film-cue-l";
+      const wsKaraoke = JSON.parse(localStorage.getItem("lingua_word_status")||"{}");
+      line.l.split(/(\s+)/).forEach(token=>{
+        if(/^\s+$/.test(token)){
+          lineDiv.appendChild(document.createTextNode(token));
+        } else {
+          const wClean = token.replace(/[.,!?;:"""''()\[\]«»]/g,"").toLowerCase();
+          const status = wsKaraoke[wClean+"_"+lang];
+          const span = document.createElement("span");
+          span.className = "word-span"+(status==="known"?" word-known":status==="learning"?" word-learning":"");
+          span.dataset.wordclean = wClean;
+          span.textContent = token;
+          const captW = token, captWC = wClean, captEl = span;
+          span.onclick = (ev)=>{ ev.stopPropagation(); showWordPopup(captW, captWC, lang, captEl); };
+          lineDiv.appendChild(span);
+        }
+      });
+      cue.appendChild(lineDiv);
       if(line.t) cue.appendChild(h("div",{class:"film-cue-t"},line.t));
       cuesCol.appendChild(cue);
     });
