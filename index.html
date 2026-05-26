@@ -2766,7 +2766,7 @@ function renderLang(){
   // 2. Sekcja "Z filmów i YouTube" — z lokalnym + Folder, potem video-foldery, potem unfoldered video
   const videoFolders = allFolders.filter(f=>f.scope==="video");
   if(unfolderedVideo.length>0 || videoFolders.length>0){
-    const addVideoFolderBtn = h("button",{class:"sbtn",style:"padding:4px 10px;font-size:11px",onclick:(e)=>{e.stopPropagation();createFolder(lang,"video");}},"+ Folder");
+    const addVideoFolderBtn = h("button",{class:"sbtn",style:"padding:6px 14px;font-size:12px;border-color:var(--gold);color:var(--gold);font-weight:500",title:"Utwórz nowy folder dla lekcji z filmów",onclick:(e)=>{e.stopPropagation();createFolder(lang,"video");}},"+ Folder dla filmów");
     main.appendChild(renderSectionHead("__video", "🎬", "Z filmów i YouTube", unfolderedVideo.length, [addVideoFolderBtn]));
     if(!isFolderCollapsed(lang, "__video")){
       // Najpierw video-scope foldery (wcięcie wizualne przez wiodący odstęp)
@@ -2778,7 +2778,7 @@ function renderLang(){
   // 3. Sekcja "Z plików i tekstów" — z lokalnym + Folder, potem text-foldery, potem unfoldered text
   const textFolders = allFolders.filter(f=>f.scope==="text");
   if(unfolderedText.length>0 || textFolders.length>0){
-    const addTextFolderBtn = h("button",{class:"sbtn",style:"padding:4px 10px;font-size:11px",onclick:(e)=>{e.stopPropagation();createFolder(lang,"text");}},"+ Folder");
+    const addTextFolderBtn = h("button",{class:"sbtn",style:"padding:6px 14px;font-size:12px;border-color:var(--gold);color:var(--gold);font-weight:500",title:"Utwórz nowy folder dla lekcji z tekstów",onclick:(e)=>{e.stopPropagation();createFolder(lang,"text");}},"+ Folder dla tekstów");
     main.appendChild(renderSectionHead("__text", "📄", "Z plików i tekstów", unfolderedText.length, [addTextFolderBtn]));
     if(!isFolderCollapsed(lang, "__text")){
       textFolders.forEach(renderFolderBlock);
