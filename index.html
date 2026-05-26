@@ -6617,6 +6617,32 @@ DODATKOWE SEKCJE:
   const rawText = await callLessonModel(PROMPT);
   const newLesson = parseLessonJson(rawText);
   if(!newLesson.dialog || newLesson.dialog.length===0) throw new Error("Claude nie zwrócił dialogu");
+  // Doczep timestampy do dialogu jeśli mamy cues (Gemini czasem wyrzuca start/end z output)
+  if(cues && cues.length>0){
+    const hasTimestamps = newLesson.dialog.some(d => typeof d.start === "number");
+    if(!hasTimestamps){
+      // Greedy mapowanie: każda linijka dialogu konsumuje kolejne cues po długości tekstu
+      // start = pierwszy cue, end = ostatni cue w danej linijce
+      let cueIdx = 0;
+      const totalCues = cues.length;
+      for(const line of newLesson.dialog){
+        if(cueIdx >= totalCues) break;
+        const lineLen = (line.l||"").length;
+        const startCue = cueIdx;
+        let consumed = 0;
+        // Konsumuj cues aż uzbieramy ~lineLen znaków (lub min 1 cue)
+        while(cueIdx < totalCues && consumed < lineLen * 0.9){
+          consumed += (cues[cueIdx].text||"").length + 1; // +1 za spację
+          cueIdx++;
+        }
+        if(cueIdx === startCue) cueIdx++; // zawsze choć 1 cue
+        const lastCueIdx = Math.min(cueIdx-1, totalCues-1);
+        line.start = cues[startCue].start;
+        line.end = cues[lastCueIdx].end;
+      }
+      console.log("[Lingua] Reattached timestamps from", totalCues, "cues to", newLesson.dialog.length, "dialog lines");
+    }
+  }
   // Cache the result so the same transcript doesn't cost again
   setCachedLesson(transcript, lang, newLesson);
   return newLesson;
