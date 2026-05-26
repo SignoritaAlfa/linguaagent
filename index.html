@@ -2050,23 +2050,29 @@ async function fetchClipMetadataSuggestion(url, seriesTitle, langCode){
     try{ const data = await fetchViaWorker(videoId); if(data && data.cues){ transcriptPreview = data.cues.slice(0,30).map(c=>c.text).join(" ").slice(0,1500); } }
     catch(e){}
   }
-  const langName = {EN:"angielskim",FR:"francuskim",IT:"włoskim"}[langCode]||"obcym";
-  const prompt = `Generujesz metadata sceny do nauki języka ${langName}, w polskim. Na podstawie informacji o klipie YouTube zaproponuj zwięzłe pola opisujące scenę.
+  // Opisy generujemy w języku docelowym (FR/EN/IT) — immersja w przeglądaniu
+  const langName = {EN:"English",FR:"français",IT:"italiano"}[langCode]||"target language";
+  const promptLangInstr = {
+    EN: "Write desc and topic in English (target language for immersion).",
+    FR: "Écris desc et topic en français (langue cible pour l'immersion).",
+    IT: "Scrivi desc e topic in italiano (lingua di studio per immersione)."
+  }[langCode] || "Write desc and topic in the target language.";
+  const prompt = `You are generating scene metadata for a ${langName}-learning app. Based on YouTube clip info, propose concise fields describing the scene.
 
-DANE:
-- Seria/film: "${seriesTitle||"nieznana"}"
-- Tytuł YouTube: "${ytTitle||"(nieznany)"}"
-- Kanał: "${ytAuthor||"(nieznany)"}"
-${transcriptPreview ? '- Fragment transkrypcji (początek):\n"""\n' + transcriptPreview + '\n"""' : "- Brak transkrypcji (klip bez napisów)"}
+DATA:
+- Series/film: "${seriesTitle||"unknown"}"
+- YouTube title: "${ytTitle||"(unknown)"}"
+- Channel: "${ytAuthor||"(unknown)"}"
+${transcriptPreview ? '- Transcript snippet (beginning):\n"""\n' + transcriptPreview + '\n"""' : "- No transcript (clip without subtitles)"}
 
-WYGENERUJ JSON:
-- title: zwięzły tytuł sceny w języku oryginału (max 60 znaków, bez URL)
-- episode: oznaczenie odcinka (np. "S06E12") lub krótki tag (np. "Friends scene")
-- desc: opis sceny po polsku, 1-2 zdania
-- topic: temat językowy po polsku, 3-5 słów kluczy
-- level: poziom CEFR (A1/A2/B1/B2/C1)
+GENERATE JSON:
+- title: concise scene title in original language (max 60 chars, no URL)
+- episode: episode tag (e.g. "S06E12") or short label (e.g. "Friends scene")
+- desc: 1-2 sentence scene description. ${promptLangInstr}
+- topic: language-learning topic, 3-5 keywords. ${promptLangInstr}
+- level: CEFR level (A1/A2/B1/B2/C1)
 
-Odpowiedz TYLKO czystym JSON bez markdown:
+Reply ONLY with clean JSON, no markdown:
 {"title":"...","episode":"...","desc":"...","topic":"...","level":"..."}`;
   // Routujemy przez wybrany model (Gemini/Claude) zamiast hardkodować Claude
   const rawText = await callLessonModel(prompt);
