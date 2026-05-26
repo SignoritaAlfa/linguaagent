@@ -2451,6 +2451,7 @@ async function processUpload(){
 WYMAGANIA MINIMALNE (nie można ich zmniejszyć):
 - dialog: minimum 8 kwestii używając treści z materiału
 - vocab: minimum 20 słów i zwrotów z tłumaczeniem na polski
+  KRYTYCZNE: rzeczowniki w językach z rodzajem (FR: le/la/un/une; IT: il/la/lo/un/una/uno; DE: der/die/das) ZAWSZE z rodzajnikiem w polu "w". Czasowniki w bezokoliczniku (parler, parlare, to talk).
 - fill: minimum 12 ćwiczeń uzupełniania luk — DWIE KATEGORIE: (1) cat:"text" — zdania bezpośrednio z materiału z brakującym słowem (min 6), (2) cat:"grammar" — ćwiczenia gramatyczne na zasady widoczne w tekście (min 6)
 - grammar: minimum 4 zasady gramatyczne widoczne w materiale
 
@@ -3471,7 +3472,7 @@ function renderLesson(){
         try{
           const currentText=rawTextToPlain(lesson.rawText);
           const prompt=type==="vocab"
-            ? `Z poniższego tekstu wyciągnij MAKSYMALNIE DUŻO słów wartych nauki — celuj w 60-100 pozycji, absolutne minimum 50. NIE PRZESTAWAJ na 30 ani 40 — kontynuuj aż wyczerpiesz wszystkie wartościowe słowa z tekstu. Wybierz słowa kluczowe, idiomy, kolokwializmy, trudniejsze słowa, słowa specyficzne dla kontekstu, a także słówka B1-C1. Dla każdego podaj tłumaczenie PL, wymowę IPA i przykład z tekstu. Odpowiedz TYLKO czystym JSON: {"items":[{"w":"słowo","tr":"tłumaczenie PL","ipa":"IPA","pl":"fonetyka","ex":"przykład","exT":"tłumaczenie przykładu"}]}\n\nTEKST:\n${currentText.slice(0,30000)}`
+            ? `Z poniższego tekstu wyciągnij MAKSYMALNIE DUŻO słów wartych nauki — celuj w 60-100 pozycji, absolutne minimum 50. NIE PRZESTAWAJ na 30 ani 40 — kontynuuj aż wyczerpiesz wszystkie wartościowe słowa z tekstu. Wybierz słowa kluczowe, idiomy, kolokwializmy, trudniejsze słowa, słowa specyficzne dla kontekstu, a także słówka B1-C1.\n\nKRYTYCZNE ZASADY FORMATU "w":\n- Dla rzeczowników w językach z rodzajem (FR: le/la/l'/un/une; IT: il/la/lo/l'/un/una/uno; DE: der/die/das) ZAWSZE z rodzajnikiem (np. "le chien", "la maison", "il cane").\n- Dla czasowników: BEZOKOLICZNIK (FR: parler; IT: parlare; EN: to talk). NIE odmieniona forma z tekstu.\n\nDla każdego podaj tłumaczenie PL, wymowę IPA i przykład z tekstu. Odpowiedz TYLKO czystym JSON: {"items":[{"w":"słowo","tr":"tłumaczenie PL","ipa":"IPA","pl":"fonetyka","ex":"przykład","exT":"tłumaczenie przykładu"}]}\n\nTEKST:\n${currentText.slice(0,30000)}`
             : `Z poniższego tekstu wyciągnij MAKSYMALNIE DUŻO użytecznych zwrotów, wyrażeń i kolokacji — celuj w 50-80 pozycji, absolutne minimum 40. NIE PRZESTAWAJ na 20 ani 30 — kontynuuj aż wyczerpiesz wszystkie wartościowe zwroty z tekstu. Szukaj: idiomów, wyrażeń potocznych, zwrotów konwersacyjnych, czasowników frazowych, przyimkowych konstrukcji, kolokacji rzeczownik+czasownik, utartych zwrotów. Odpowiedz TYLKO czystym JSON: {"items":[{"w":"zwrot","tr":"tłumaczenie PL","ipa":"IPA","pl":"fonetyka","ex":"przykład użycia","exT":"tłumaczenie"}]}\n\nTEKST:\n${currentText.slice(0,30000)}`;
           const rawText = await callLessonModel(prompt);
           const parsed=tolerantParseJson(rawText);
@@ -5532,7 +5533,7 @@ function renderLesson(){
         try{
           const currentText=rawTextToPlain(lesson.rawText);
           const prompt=type==="vocab"
-            ? `Z poniższego tekstu wyciągnij MAKSYMALNIE DUŻO słów wartych nauki — celuj w 60-100 pozycji, absolutne minimum 50. NIE PRZESTAWAJ na 30 ani 40 — kontynuuj aż wyczerpiesz wszystkie wartościowe słowa z tekstu. Wybierz słowa kluczowe, idiomy, kolokwializmy, trudniejsze słowa, słowa specyficzne dla kontekstu, a także słówka B1-C1. Dla każdego podaj tłumaczenie PL, wymowę IPA i przykład z tekstu. Odpowiedz TYLKO czystym JSON: {"items":[{"w":"słowo","tr":"tłumaczenie PL","ipa":"IPA","pl":"fonetyka","ex":"przykład","exT":"tłumaczenie przykładu"}]}\n\nTEKST:\n${currentText.slice(0,30000)}`
+            ? `Z poniższego tekstu wyciągnij MAKSYMALNIE DUŻO słów wartych nauki — celuj w 60-100 pozycji, absolutne minimum 50. NIE PRZESTAWAJ na 30 ani 40 — kontynuuj aż wyczerpiesz wszystkie wartościowe słowa z tekstu. Wybierz słowa kluczowe, idiomy, kolokwializmy, trudniejsze słowa, słowa specyficzne dla kontekstu, a także słówka B1-C1.\n\nKRYTYCZNE ZASADY FORMATU "w":\n- Dla rzeczowników w językach z rodzajem (FR: le/la/l'/un/une; IT: il/la/lo/l'/un/una/uno; DE: der/die/das) ZAWSZE z rodzajnikiem (np. "le chien", "la maison", "il cane").\n- Dla czasowników: BEZOKOLICZNIK (FR: parler; IT: parlare; EN: to talk). NIE odmieniona forma z tekstu.\n\nDla każdego podaj tłumaczenie PL, wymowę IPA i przykład z tekstu. Odpowiedz TYLKO czystym JSON: {"items":[{"w":"słowo","tr":"tłumaczenie PL","ipa":"IPA","pl":"fonetyka","ex":"przykład","exT":"tłumaczenie przykładu"}]}\n\nTEKST:\n${currentText.slice(0,30000)}`
             : `Z poniższego tekstu wyciągnij MAKSYMALNIE DUŻO użytecznych zwrotów, wyrażeń i kolokacji — celuj w 50-80 pozycji, absolutne minimum 40. NIE PRZESTAWAJ na 20 ani 30 — kontynuuj aż wyczerpiesz wszystkie wartościowe zwroty z tekstu. Szukaj: idiomów, wyrażeń potocznych, zwrotów konwersacyjnych, czasowników frazowych, przyimkowych konstrukcji, kolokacji rzeczownik+czasownik, utartych zwrotów. Odpowiedz TYLKO czystym JSON: {"items":[{"w":"zwrot","tr":"tłumaczenie PL","ipa":"IPA","pl":"fonetyka","ex":"przykład użycia","exT":"tłumaczenie"}]}\n\nTEKST:\n${currentText.slice(0,30000)}`;
           const rawText = await callLessonModel(prompt);
           const parsed=tolerantParseJson(rawText);
@@ -6650,6 +6651,8 @@ async function buildLessonFromTranscript(transcript, videoId, cues, lang, opts){
   const COMMON_SECTIONS = `
 DODATKOWE SEKCJE:
 - vocab: minimum 25 POJEDYNCZYCH słów z dialogu (rzeczowniki, czasowniki, przymiotniki). NIE wkładaj tu zwrotów wielowyrazowych.
+  KRYTYCZNE: dla rzeczowników w językach z rodzajem (francuski: le/la/l'/un/une; włoski: il/la/lo/l'/un/una/uno; niemiecki: der/die/das) ZAWSZE podawaj rodzajnik razem ze słowem w polu "w" (np. "le chien", "la maison", "un homme", "il cane", "la donna"). Pole "tr" ma rodzajnik polski jeśli pasuje.
+  Dla czasowników podawaj formę bezokolicznikową (FR: parler; IT: parlare; EN: to talk). NIE odmienione formy z dialogu.
 - phrases: minimum 15 ZWROTÓW i WYRAŻEŃ z dialogu (idiomy, czasowniki frazowe, kolokacje, utarte zwroty).
 - fill: minimum 10 ćwiczeń uzupełniania luk — (1) cat:"text" z dialogu (min 5), (2) cat:"grammar" (min 5)
 - grammar: minimum 4 zasady gramatyczne widoczne w dialogu`;
@@ -6819,6 +6822,7 @@ async function processTranscriptToLesson(transcript, videoId, cues){
   const COMMON_SECTIONS = `
 DODATKOWE SEKCJE:
 - vocab: minimum 25 POJEDYNCZYCH słów z dialogu (rzeczowniki, czasowniki, przymiotniki, ciekawe pojedyncze wyrazy) z IPA i tłumaczeniem PL. NIE wkładaj tu zwrotów wielowyrazowych — te idą do "phrases".
+  KRYTYCZNE: rzeczowniki w językach z rodzajem (FR: le/la/un/une; IT: il/la/lo/un/una/uno) ZAWSZE z rodzajnikiem w polu "w" (np. "le chien", "la maison"). Czasowniki w bezokoliczniku (parler, parlare).
 - phrases: minimum 15 ZWROTÓW i WYRAŻEŃ z dialogu (idiomy, kolokwializmy, czasowniki frazowe typu "look up to", kolokacje typu "make sense", utarte zwroty typu "How come?", "You bet"). Wielowyrazowe konstrukcje godne osobnej nauki. Z IPA, tłumaczeniem PL i przykładem z dialogu.
 - fill: minimum 10 ćwiczeń uzupełniania luk — DWIE KATEGORIE: (1) cat:"text" — zdania z dialogu z brakującym słowem (min 5), (2) cat:"grammar" — ćwiczenia gramatyczne na zasady z dialogu (min 5)
 - grammar: minimum 4 zasady gramatyczne widoczne w dialogu`;
@@ -6928,7 +6932,8 @@ ZADANIE:
 4. ${targetLangInstr}.
 
 DODATKOWE SEKCJE:
-- vocab: minimum 25 POJEDYNCZYCH słów z dialogu
+- vocab: minimum 25 POJEDYNCZYCH słów z dialogu.
+  KRYTYCZNE: rzeczowniki w językach z rodzajem (FR: le/la/un/une; IT: il/la/lo/un/una/uno) ZAWSZE z rodzajnikiem w polu "w" (np. "le chien", "la maison"). Czasowniki w bezokoliczniku.
 - phrases: minimum 15 ZWROTÓW i WYRAŻEŃ z dialogu (idiomy, czasowniki frazowe)
 - fill: minimum 10 ćwiczeń (cat:"text" min 5, cat:"grammar" min 5)
 - grammar: minimum 4 zasady gramatyczne
