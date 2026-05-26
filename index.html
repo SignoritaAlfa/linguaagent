@@ -2856,9 +2856,97 @@ Odpowiedz TYLKO czystym JSON (bez markdown, bez komentarzy):
 }
 
 function startPractice(lesson,mode){
-  const cards=mode==="flashcard"?lesson.vocab:lesson.fill;
+  // mode: "flashcard" | "fill" | "writing" | "dictation"
+  // writing/dictation = sesje z wpisywaniem (3 próby), karty = lesson.vocab
+  let cards;
+  if(mode==="fill") cards = lesson.fill;
+  else cards = lesson.vocab; // flashcard, writing, dictation
   set({screen:"practice",lesson,mode,cards,idx:0,revealed:false,
-    dir:"to_pl",dirMode:"to_pl",score:{c:0,t:0},input:"",submitted:false});
+    dir:"to_pl",dirMode:"to_pl",score:{c:0,t:0},input:"",input2:"",submitted:false,
+    attempts:0, lastResult:null});
+}
+
+// ── PISANIE / DYKTANDO HELPERS ────────────────────────────────────────────────
+// Surowe porównanie — case-insensitive, normalizacja apostrofów, ALE akcenty
+// i rodzajnik wymagane (zgodnie z decyzją: "surowo, ale z paskiem znaków").
+function normalizeAnswer(s){
+  if(!s) return "";
+  return String(s)
+    .replace(/[‘’‛′`]/g, "'") // wszystkie typy apostrofów → prosty '
+    .replace(/[“”„″]/g, '"')       // cudzysłowy → prosty "
+    .replace(/\s+/g, " ")                              // wielokrotne spacje → jedna
+    .trim()
+    .toLowerCase();
+}
+// Tłumaczenie PL — toleruj "(opis)" w nawiasie i wielokrotne znaczenia po przecinku
+function normalizeTranslation(s){
+  if(!s) return "";
+  return normalizeAnswer(String(s).replace(/\([^)]*\)/g, "").replace(/\s+/g, " "));
+}
+function checkTranslationMatch(input, target){
+  const ni = normalizeTranslation(input);
+  if(!ni) return false;
+  // target może mieć kilka znaczeń po przecinku — wystarczy trafić jedno
+  const variants = normalizeTranslation(target).split(/[,;/]/).map(s=>s.trim()).filter(Boolean);
+  return variants.some(v => v === ni);
+}
+// Pasek znaków specjalnych — żeby user nie musiał szukać é à ç na klawiaturze
+const ACCENT_CHARS = {
+  EN: [],
+  FR: ["é","è","ê","ë","à","â","ä","î","ï","ô","ö","û","ü","ù","ÿ","ç","œ","æ","'"],
+  IT: ["à","è","é","ì","í","î","ò","ó","ù","ú","'"],
+};
+function renderAccentBar(lang, inputEl){
+  const chars = ACCENT_CHARS[lang] || [];
+  if(chars.length === 0) return null;
+  const bar = h("div",{style:"display:flex;flex-wrap:wrap;gap:4px;margin:8px 0 14px 0"});
+  chars.forEach(ch=>{
+    const btn = h("button",{
+      class:"sbtn",
+      style:"padding:6px 12px;font-size:16px;min-width:36px;font-family:'Cormorant Garamond',serif"
+    }, ch);
+    btn.onclick = (e)=>{
+      e.preventDefault();
+      const start = inputEl.selectionStart || inputEl.value.length;
+      const end = inputEl.selectionEnd || inputEl.value.length;
+      inputEl.value = inputEl.value.slice(0,start) + ch + inputEl.value.slice(end);
+      inputEl.focus();
+      inputEl.setSelectionRange(start+1, start+1);
+      // Sync z S.input — onchange normalnie odpala się przy blur, tu wymuszamy update stanu
+      S.input = inputEl.value;
+    };
+    bar.appendChild(btn);
+  });
+  return bar;
+}
+// Pobiera dane vocab dla słowa z bazy "Moje słówka" — szuka w cache popup translations
+// i w myLessons po słowie. Zwraca {w, tr, ipa, pl, ex, exT} lub null gdy brak danych.
+function getEnrichedVocabEntry(word, lang){
+  const wordLower = String(word||"").toLowerCase().trim();
+  if(!wordLower) return null;
+  // 1. Cache z popup tłumaczeń (jeśli user kliknęła w dialogu wcześniej)
+  try{
+    const cache = JSON.parse(localStorage.getItem("lingua_word_translations")||"{}");
+    const entry = cache[wordLower+"_"+lang];
+    if(entry && entry.d && entry.d.pl){
+      return {
+        w: entry.d.word || word,
+        tr: entry.d.pl,
+        ipa: entry.d.ipa || "",
+        pl: "",
+        ex: entry.d.example || "",
+        exT: ""
+      };
+    }
+  }catch(e){}
+  // 2. Fallback — przeszukaj wszystkie myLessons[lang].vocab + .phrases
+  const lessons = (S.myLessons||{})[lang] || [];
+  for(const lesson of lessons){
+    const all = (lesson.vocab||[]).concat(lesson.phrases||[]);
+    const hit = all.find(v => v.w && v.w.toLowerCase() === wordLower);
+    if(hit) return hit;
+  }
+  return null;
 }
 function nextCard(){
   const{idx,cards,dirMode,dir}=S;
@@ -2866,6 +2954,11 @@ function nextCard(){
   // Losowanie kierunku TYLKO w trybie mix; w stałych trybach trzymaj wybór użytkownika
   const nextDir = dirMode==="mix" ? (Math.random()>.5?"to_pl":"to_lang") : (dirMode || dir);
   set({idx:idx+1,revealed:false,dir:nextDir,input:"",submitted:false});
+}
+function nextWritingCard(){
+  const{idx,cards}=S;
+  if(idx+1>=cards.length){set({screen:"results"});return;}
+  set({idx:idx+1, input:"", input2:"", attempts:0, submitted:false, lastResult:null});
 }
 function rateLabel(v){
   if(v<=0.78)return "Bardzo wolno";
@@ -4153,6 +4246,8 @@ function renderLesson(){
         ? h("button",{class:"sbtn",style:"border-color:var(--err-text);color:var(--err-text)",onclick:stopVocabPlayback},"⏹ Zatrzymaj ("+(S.vocabPlayingIdx+1)+"/"+v.length+")")
         : h("button",{class:"sbtn",style:"border-color:var(--gold);color:var(--gold)",onclick:()=>playVocabList(v, lang, "vocab")},"▶ Odtwórz wszystkie ("+v.length+")"));
       actBtnsV.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:v}),"flashcard")},"🃏 Fiszki ze słówek"));
+      actBtnsV.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:v}),"writing")},"✍️ Pisanie z PL"));
+      actBtnsV.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:v}),"dictation")},"🎧 Dyktando"));
       head.appendChild(actBtnsV);
       vw.appendChild(head);
     }
@@ -4208,6 +4303,8 @@ function renderLesson(){
         ? h("button",{class:"sbtn",style:"border-color:var(--err-text);color:var(--err-text)",onclick:stopVocabPlayback},"⏹ Zatrzymaj ("+(S.vocabPlayingIdx+1)+"/"+phrases.length+")")
         : h("button",{class:"sbtn",style:"border-color:var(--gold);color:var(--gold)",onclick:()=>playVocabList(phrases, lang, "phrases")},"▶ Odtwórz wszystkie ("+phrases.length+")"));
       actBtns.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:phrases}),"flashcard")},"🃏 Fiszki ze zwrotów"));
+      actBtns.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:phrases}),"writing")},"✍️ Pisanie z PL"));
+      actBtns.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:phrases}),"dictation")},"🎧 Dyktando"));
       head.appendChild(actBtns);
       pw.appendChild(head);
       const onDel = isOwn ? (idx)=>{
@@ -4611,6 +4708,175 @@ function renderPractice(){
       ar.appendChild(h("button",{class:"btn-yes",onclick:()=>{set({score:{c:S.score.c+1,t:S.score.t+1}});nextCard();}},"✓  Wiedziałam"));
       fw.appendChild(ar);
     }
+    main.appendChild(fw);
+  }
+
+  // ── PISANIE z PL → docelowy ────────────────────────────────────────────────
+  if(mode==="writing"){
+    const attempts = S.attempts || 0;
+    const MAX_ATTEMPTS = 3;
+    const fw=h("div",{class:"fc-wrap"});
+
+    // Polskie tłumaczenie do pokazania (lub jeśli brak — bazowa forma)
+    const target = card.w;
+    const promptPL = card.tr || "(brak tłumaczenia)";
+    fw.appendChild(h("div",{style:"font-size:11px;color:var(--text3);letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px"},"Napisz po "+LANGS[lang].name));
+    fw.appendChild(h("div",{class:"fc-tr",style:"font-size:28px;margin-bottom:18px;color:var(--text)"},promptPL));
+
+    // Input
+    const inp=h("input",{
+      type:"text", class:"fill-inp",
+      placeholder:"wpisz po "+LANGS[lang].name,
+      autocomplete:"off", autocapitalize:"off", spellcheck:"false",
+      style:"font-size:20px;width:100%;max-width:520px"
+    });
+    inp.value = S.input || "";
+    inp.oninput = (e)=>{ S.input = e.target.value; };
+    fw.appendChild(inp);
+    setTimeout(()=>inp.focus(), 50);
+
+    // Pasek znaków specjalnych
+    const accentBar = renderAccentBar(lang, inp);
+    if(accentBar) fw.appendChild(accentBar);
+
+    // Licznik prób
+    if(attempts > 0 && !S.submitted){
+      fw.appendChild(h("div",{style:"font-size:12px;color:var(--err-text);margin-bottom:10px"},
+        "Próba "+(attempts+1)+" z "+MAX_ATTEMPTS+(card.ipa?" · IPA: "+card.ipa:"")));
+    }
+
+    // Status (po submitcie)
+    if(S.submitted){
+      const ok = S.lastResult==="ok";
+      const givenUp = S.lastResult==="givenup";
+      if(ok){
+        fw.appendChild(h("div",{style:"margin:14px 0;padding:14px;background:var(--ok);color:var(--ok-text);border-radius:6px;font-size:14px"},"✓ Dobrze!"));
+        if(card.ex) fw.appendChild(h("div",{class:"fc-ex",style:"margin:10px 0"},
+          h("div",{},card.ex), h("div",{class:"fc-ex-tr"},card.exT||"")));
+      } else if(givenUp){
+        fw.appendChild(h("div",{style:"margin:14px 0;padding:14px;background:var(--err);color:var(--err-text);border-radius:6px"},
+          h("div",{style:"font-size:12px;margin-bottom:4px"},"Poprawnie:"),
+          h("div",{style:"font-size:20px;font-weight:500"},target),
+          card.ipa ? h("div",{style:"font-size:12px;margin-top:4px;opacity:.8"},"IPA: "+card.ipa) : null));
+        if(card.ex) fw.appendChild(h("div",{class:"fc-ex",style:"margin:10px 0"},
+          h("div",{},card.ex), h("div",{class:"fc-ex-tr"},card.exT||"")));
+      }
+    }
+
+    const submit = ()=>{
+      const inputVal = inp.value;
+      const correct = normalizeAnswer(inputVal) === normalizeAnswer(target);
+      if(correct){
+        set({submitted:true, lastResult:"ok", score:{c:S.score.c+1, t:S.score.t+1}});
+        setTimeout(()=>{ if(S.screen==="practice") nextWritingCard(); }, 1800);
+      } else if(attempts+1 >= MAX_ATTEMPTS){
+        set({submitted:true, lastResult:"givenup", attempts:attempts+1, score:{c:S.score.c, t:S.score.t+1}});
+      } else {
+        set({attempts:attempts+1});
+      }
+    };
+    inp.onkeydown = (e)=>{ if(e.key==="Enter"){ e.preventDefault(); submit(); }};
+
+    const br=h("div",{style:"display:flex;gap:10px;margin-top:14px;flex-wrap:wrap"});
+    if(!S.submitted){
+      br.appendChild(h("button",{class:"check-btn",onclick:submit},"Sprawdź"));
+      br.appendChild(h("button",{class:"sbtn",onclick:()=>set({submitted:true,lastResult:"givenup",attempts:MAX_ATTEMPTS,score:{c:S.score.c,t:S.score.t+1}})},"Poddaję się"));
+      br.appendChild(h("button",{class:"sbtn",style:"opacity:.6",onclick:()=>speak(target,lang,"aleksandra")},"♪ Posłuchaj"));
+    } else {
+      br.appendChild(h("button",{class:"check-btn",onclick:nextWritingCard},"Dalej →"));
+    }
+    fw.appendChild(br);
+    main.appendChild(fw);
+  }
+
+  // ── DYKTANDO: TTS → 2 pola (orto + tłumaczenie PL) ─────────────────────────
+  if(mode==="dictation"){
+    const attempts = S.attempts || 0;
+    const MAX_ATTEMPTS = 3;
+    const fw=h("div",{class:"fc-wrap"});
+    fw.appendChild(h("div",{style:"font-size:11px;color:var(--text3);letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px"},"Posłuchaj i zapisz"));
+
+    // Play button — duży, klikalny, auto-play przy wejściu na kartę
+    const playBtn = h("button",{
+      class:"check-btn",
+      style:"font-size:32px;padding:18px 32px;margin:6px 0 20px 0;background:var(--gold);color:#fff;border:none;cursor:pointer"
+    },"♪ Powtórz");
+    playBtn.onclick = ()=>speak(card.w, lang, "aleksandra");
+    fw.appendChild(playBtn);
+    // Auto-play raz na wejście karty
+    if(!S._dictPlayedIdx || S._dictPlayedIdx !== idx){
+      S._dictPlayedIdx = idx;
+      setTimeout(()=>speak(card.w, lang, "aleksandra"), 300);
+    }
+
+    // Input 1 — słowo w obcym
+    fw.appendChild(h("div",{style:"font-size:12px;color:var(--text2);margin-bottom:4px"},"Słowo po "+LANGS[lang].name+":"));
+    const inp1=h("input",{
+      type:"text", class:"fill-inp",
+      placeholder:"co usłyszałaś",
+      autocomplete:"off", autocapitalize:"off", spellcheck:"false",
+      style:"font-size:18px;width:100%;max-width:520px;margin-bottom:6px"
+    });
+    inp1.value = S.input || "";
+    inp1.oninput = (e)=>{ S.input = e.target.value; };
+    fw.appendChild(inp1);
+    setTimeout(()=>inp1.focus(), 50);
+    const accentBar = renderAccentBar(lang, inp1);
+    if(accentBar) fw.appendChild(accentBar);
+
+    // Input 2 — tłumaczenie PL
+    fw.appendChild(h("div",{style:"font-size:12px;color:var(--text2);margin:8px 0 4px 0"},"Tłumaczenie na polski:"));
+    const inp2=h("input",{
+      type:"text", class:"fill-inp",
+      placeholder:"po polsku",
+      autocomplete:"off", autocapitalize:"off",
+      style:"font-size:18px;width:100%;max-width:520px"
+    });
+    inp2.value = S.input2 || "";
+    inp2.oninput = (e)=>{ S.input2 = e.target.value; };
+    fw.appendChild(inp2);
+
+    if(attempts > 0 && !S.submitted){
+      fw.appendChild(h("div",{style:"font-size:12px;color:var(--err-text);margin-top:10px"},
+        "Próba "+(attempts+1)+" z "+MAX_ATTEMPTS));
+    }
+
+    if(S.submitted){
+      const r = S.lastResult || {};
+      if(r.both){
+        fw.appendChild(h("div",{style:"margin:14px 0;padding:14px;background:var(--ok);color:var(--ok-text);border-radius:6px;font-size:14px"},"✓ Dobrze (oba)!"));
+        if(card.ex) fw.appendChild(h("div",{class:"fc-ex"},h("div",{},card.ex),h("div",{class:"fc-ex-tr"},card.exT||"")));
+      } else if(r.givenup){
+        fw.appendChild(h("div",{style:"margin:14px 0;padding:14px;background:var(--err);color:var(--err-text);border-radius:6px"},
+          h("div",{style:"font-size:12px;margin-bottom:4px"},"Poprawnie:"),
+          h("div",{style:"font-size:18px;font-weight:500"},card.w),
+          h("div",{style:"font-size:14px;margin-top:4px;opacity:.85"},"→ "+(card.tr||"(brak)"))));
+      }
+    }
+
+    const submit = ()=>{
+      const okWord = normalizeAnswer(inp1.value) === normalizeAnswer(card.w);
+      const okTr   = card.tr ? checkTranslationMatch(inp2.value, card.tr) : true;
+      const both = okWord && okTr;
+      if(both){
+        set({submitted:true, lastResult:{both:true}, score:{c:S.score.c+1, t:S.score.t+1}});
+        setTimeout(()=>{ if(S.screen==="practice") nextWritingCard(); }, 1800);
+      } else if(attempts+1 >= MAX_ATTEMPTS){
+        set({submitted:true, lastResult:{givenup:true, okWord, okTr}, attempts:attempts+1, score:{c:S.score.c, t:S.score.t+1}});
+      } else {
+        set({attempts:attempts+1, lastResult:{okWord, okTr}});
+      }
+    };
+    [inp1, inp2].forEach(i=>{ i.onkeydown = (e)=>{ if(e.key==="Enter"){ e.preventDefault(); submit(); }}; });
+
+    const br=h("div",{style:"display:flex;gap:10px;margin-top:14px;flex-wrap:wrap"});
+    if(!S.submitted){
+      br.appendChild(h("button",{class:"check-btn",onclick:submit},"Sprawdź"));
+      br.appendChild(h("button",{class:"sbtn",onclick:()=>set({submitted:true,lastResult:{givenup:true},attempts:MAX_ATTEMPTS,score:{c:S.score.c,t:S.score.t+1}})},"Poddaję się"));
+    } else {
+      br.appendChild(h("button",{class:"check-btn",onclick:nextWritingCard},"Dalej →"));
+    }
+    fw.appendChild(br);
     main.appendChild(fw);
   }
 
@@ -6651,6 +6917,30 @@ function renderMyWords(){
       h("div",{style:"font-size:28px;font-family:'Cormorant Garamond',serif;color:var(--ok-text)"},""+known.length),
       h("div",{style:"font-size:11px;color:var(--text3);letter-spacing:.1em;text-transform:uppercase;margin-top:4px"},"Znam"))
   ));
+
+  // ── Sesje nauki (Fiszki / Pisanie / Dyktando) ──
+  // Buduję wzbogaconą listę z cache popup + myLessons; uczę się tylko tych co mają tr
+  const enriched = learning.map(w => getEnrichedVocabEntry(w, lang) || {w, tr:"", ipa:"", pl:"", ex:"", exT:""});
+  const ready = enriched.filter(e => e.tr && e.tr.trim());
+  if(learning.length > 0){
+    const practiceBox = h("div",{style:"background:var(--surface);border:1px solid var(--border);padding:16px 20px;margin-bottom:28px;border-radius:6px"});
+    practiceBox.appendChild(h("div",{class:"sec-label",style:"margin-bottom:10px"},"Ucz się"));
+    if(ready.length > 0){
+      practiceBox.appendChild(h("div",{style:"font-size:12px;color:var(--text3);margin-bottom:10px"},
+        ready.length+" z "+learning.length+" słówek ma tłumaczenie — tylko te wejdą do sesji. "+
+        (ready.length < learning.length ? "Reszta uzupełni się gdy klikniesz słowo w lekcji (popup tłumaczenia)." : "")));
+      const fakeLesson = {vocab: ready, id:"mywords_"+lang, title:"Moje słówka"};
+      const br = h("div",{style:"display:flex;gap:8px;flex-wrap:wrap"});
+      br.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(fakeLesson,"flashcard")},"🃏 Fiszki"));
+      br.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(fakeLesson,"writing")},"✍️ Pisanie z PL"));
+      br.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(fakeLesson,"dictation")},"🎧 Dyktando"));
+      practiceBox.appendChild(br);
+    } else {
+      practiceBox.appendChild(h("div",{style:"font-size:12px;color:var(--text3)"},
+        "Żadne słówko nie ma jeszcze tłumaczenia. Kliknij słowo w dialogu lekcji — popup zapisze tłumaczenie do cache, wtedy pojawią się przyciski do nauki."));
+    }
+    main.appendChild(practiceBox);
+  }
 
   // Formularz "Dodaj słówko ręcznie"
   const addBox = h("div",{style:"background:var(--surface);border:1px solid var(--border);padding:16px 20px;margin-bottom:28px;border-radius:6px"});
