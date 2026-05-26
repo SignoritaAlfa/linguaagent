@@ -60,53 +60,102 @@ export default {
         tracks.find((t) => t.languageCode === "en") ||
         tracks[0];
 
-      const baseUrl = String(track.baseUrl || "").replace(/\\u0026/g, "&");
+      let baseUrl = String(track.baseUrl || "").replace(/\\u0026/g, "&");
       if (!baseUrl) {
         return jsonResp({ error: "No baseUrl in caption track" }, 500);
       }
+      // Force json3 format for predictable parsing (YouTube returns srv3 XML by default, varies)
+      baseUrl = baseUrl.replace(/&fmt=[^&]*/g, "") + "&fmt=json3";
 
       const capResp = await fetch(baseUrl, { headers: { "User-Agent": "Mozilla/5.0" } });
       if (!capResp.ok) {
         return jsonResp({ error: "Caption fetch failed: HTTP " + capResp.status }, 502);
       }
 
-      const xml = await capResp.text();
-
-      const cues = [];
-      const cueRe = /<text\s+start="([\d.]+)"\s+dur="([\d.]+)"[^>]*>([\s\S]*?)<\/text>/g;
-      let m;
-      while ((m = cueRe.exec(xml))) {
-        const start = parseFloat(m[1]);
-        const duration = parseFloat(m[2]);
-        const text = decodeHtml(m[3]).replace(/\s+/g, " ").trim();
-        if (text) cues.push({ start, end: +(start + duration).toFixed(3), text });
-      }
+      const raw = await capResp.text();
+      const cues = parseCaptions(raw);
 
       if (cues.length === 0) {
-        return jsonResp({ error: "Captions returned but no cues parsed" }, 500);
+        // Try fallback: explicitly request srv1 XML format
+        const srv1Url = baseUrl.replace(/&fmt=json3/, "&fmt=srv1");
+        const altResp = await fetch(srv1Url, { headers: { "User-Agent": "Mozilla/5.0" } });
+        if (altResp.ok) {
+          const altRaw = await altResp.text();
+          const altCues = parseCaptions(altRaw);
+          if (altCues.length > 0) {
+            return buildResponse(videoId, track, altCues);
+          }
+        }
+        return jsonResp({ error: "Captions returned but no cues parsed (response head: " + raw.slice(0, 200) + ")" }, 500);
       }
 
-      const srt = cues
-        .map(
-          (c, i) =>
-            `${i + 1}\n${secToSrt(c.start)} --> ${secToSrt(c.end)}\n${c.text}`
-        )
-        .join("\n\n");
-
-      return jsonResp({
-        videoId,
-        language: track.languageCode,
-        languageName: (track.name && track.name.simpleText) || "",
-        kind: track.kind || "manual",
-        cueCount: cues.length,
-        cues,
-        srt,
-      });
+      return buildResponse(videoId, track, cues);
     } catch (e) {
       return jsonResp({ error: "Worker exception: " + e.message }, 500);
     }
   },
 };
+
+function parseCaptions(raw) {
+  if (!raw || !raw.trim()) return [];
+  // Try JSON3 format first
+  try {
+    const data = JSON.parse(raw);
+    if (data && Array.isArray(data.events)) {
+      const cues = [];
+      for (const ev of data.events) {
+        if (!ev.segs) continue;
+        const text = ev.segs.map((s) => s.utf8 || "").join("").replace(/\s+/g, " ").trim();
+        if (!text) continue;
+        const start = (ev.tStartMs || 0) / 1000;
+        const duration = (ev.dDurationMs || 0) / 1000;
+        cues.push({ start, end: +(start + duration).toFixed(3), text });
+      }
+      if (cues.length > 0) return cues;
+    }
+  } catch (e) {
+    // Not JSON, try XML
+  }
+  // Try srv1 XML: <text start="0.0" dur="3.5">text</text>
+  const cues = [];
+  const srv1Re = /<text\s+start="([\d.]+)"\s+dur="([\d.]+)"[^>]*>([\s\S]*?)<\/text>/g;
+  let m;
+  while ((m = srv1Re.exec(raw))) {
+    const start = parseFloat(m[1]);
+    const duration = parseFloat(m[2]);
+    const text = decodeHtml(m[3]).replace(/\s+/g, " ").trim();
+    if (text) cues.push({ start, end: +(start + duration).toFixed(3), text });
+  }
+  if (cues.length > 0) return cues;
+  // Try srv3 XML: <p t="0" d="3500">text</p>
+  const srv3Re = /<p\s+t="(\d+)"\s+d="(\d+)"[^>]*>([\s\S]*?)<\/p>/g;
+  while ((m = srv3Re.exec(raw))) {
+    const start = parseInt(m[1], 10) / 1000;
+    const duration = parseInt(m[2], 10) / 1000;
+    // srv3 inner may have <s> segments — strip tags
+    const text = decodeHtml(m[3].replace(/<[^>]+>/g, "")).replace(/\s+/g, " ").trim();
+    if (text) cues.push({ start, end: +(start + duration).toFixed(3), text });
+  }
+  return cues;
+}
+
+function buildResponse(videoId, track, cues) {
+  const srt = cues
+    .map(
+      (c, i) =>
+        `${i + 1}\n${secToSrt(c.start)} --> ${secToSrt(c.end)}\n${c.text}`
+    )
+    .join("\n\n");
+  return jsonResp({
+    videoId,
+    language: track.languageCode,
+    languageName: (track.name && track.name.simpleText) || "",
+    kind: track.kind || "manual",
+    cueCount: cues.length,
+    cues,
+    srt,
+  });
+}
 
 function corsHeaders() {
   return {
