@@ -1754,13 +1754,26 @@ function deleteMyLesson(lang, idx){
   scheduleDriveSync();
 }
 
-function createFolder(lang){
-  const name = (prompt("Nazwa nowego folderu:")||"").trim();
+// Folder helpers — wspierają stary format (string) i nowy ({name, scope:"any|video|text"})
+function folderName(f){ return typeof f==="string" ? f : (f && f.name) || ""; }
+function folderScope(f){ return (typeof f==="object" && f && f.scope) || "any"; }
+function getFolders(lang){
+  // Zwraca znormalizowaną listę {name, scope} dla danego języka
+  return (S.lessonFolders[lang]||[]).map(f => ({name: folderName(f), scope: folderScope(f)}));
+}
+function isVideoLesson(lesson){
+  return !!(lesson && (lesson.source==="video" || lesson.youtubeId || lesson.fromFilm || (lesson.id||"").startsWith("film_")));
+}
+
+function createFolder(lang, scope){
+  scope = scope || "any";
+  const scopeLabel = scope==="video" ? " (z filmów)" : scope==="text" ? " (z tekstów)" : "";
+  const name = (prompt("Nazwa nowego folderu"+scopeLabel+":")||"").trim();
   if(!name) return;
   const lf = Object.assign({}, S.lessonFolders);
   if(!lf[lang]) lf[lang]=[];
-  if(lf[lang].includes(name)){alert("Folder \""+name+"\" już istnieje");return;}
-  lf[lang]=lf[lang].concat([name]);
+  if(lf[lang].some(f => folderName(f)===name)){alert("Folder \""+name+"\" już istnieje");return;}
+  lf[lang]=lf[lang].concat([{name, scope}]);
   localStorage.setItem("lingua_lesson_folders", JSON.stringify(lf));
   set({lessonFolders:lf});
   scheduleDriveSync();
@@ -1771,9 +1784,11 @@ function renameFolder(lang, oldName){
   if(!newName || newName===oldName) return;
   const lf = Object.assign({}, S.lessonFolders);
   const arr = (lf[lang]||[]).slice();
-  const i = arr.indexOf(oldName); if(i<0) return;
-  if(arr.includes(newName)){alert("Folder \""+newName+"\" już istnieje");return;}
-  arr[i]=newName;
+  const i = arr.findIndex(f => folderName(f)===oldName); if(i<0) return;
+  if(arr.some(f => folderName(f)===newName)){alert("Folder \""+newName+"\" już istnieje");return;}
+  // Zachowaj scope przy zmianie nazwy
+  const existingScope = folderScope(arr[i]);
+  arr[i] = {name:newName, scope:existingScope};
   lf[lang]=arr;
   const ml = Object.assign({}, S.myLessons);
   if(ml[lang]) ml[lang] = ml[lang].map(l => l.folder===oldName ? Object.assign({},l,{folder:newName}) : l);
@@ -1786,7 +1801,7 @@ function renameFolder(lang, oldName){
 function deleteFolder(lang, name){
   if(!confirm("Usunąć folder \""+name+"\"? Lekcje w nim wrócą do sekcji bez folderu (lekcje zostaną zachowane)."))return;
   const lf = Object.assign({}, S.lessonFolders);
-  lf[lang] = (lf[lang]||[]).filter(f=>f!==name);
+  lf[lang] = (lf[lang]||[]).filter(f => folderName(f)!==name);
   const ml = Object.assign({}, S.myLessons);
   if(ml[lang]) ml[lang] = ml[lang].map(l => l.folder===name ? Object.assign({},l,{folder:null}) : l);
   localStorage.setItem("lingua_my_lessons", JSON.stringify(ml));
@@ -2642,16 +2657,17 @@ function renderLang(){
     ));
   }
   // Split lessons by folder
-  const folders = S.lessonFolders[lang] || [];
+  const allFolders = getFolders(lang);
+  const folderByName = {}; allFolders.forEach(f=>{folderByName[f.name]=f;});
   const byFolder = {};
   const unfolderedVideo=[];
   const unfolderedText=[];
   myL.forEach((lesson,i)=>{
     const entry={lesson,idx:i};
-    if(lesson.folder && folders.includes(lesson.folder)){
+    if(lesson.folder && folderByName[lesson.folder]){
       if(!byFolder[lesson.folder]) byFolder[lesson.folder]=[];
       byFolder[lesson.folder].push(entry);
-    } else if(lesson.source==="video"||lesson.youtubeId||lesson.fromFilm||lesson.id?.startsWith("film_")){
+    } else if(isVideoLesson(lesson)){
       unfolderedVideo.push(entry);
     } else {
       unfolderedText.push(entry);
@@ -2701,9 +2717,12 @@ function renderLang(){
     const optNone=h("option",{value:""},"📁 Bez folderu");
     if(!lesson.folder) optNone.selected=true;
     folderSel.appendChild(optNone);
-    (S.lessonFolders[lang]||[]).forEach(f=>{
-      const opt=h("option",{value:f},f);
-      if(lesson.folder===f) opt.selected=true;
+    // Pokaż tylko foldery pasujące do typu lekcji (any zawsze, video/text wg lesson)
+    const lessonIsVideo = isVideoLesson(lesson);
+    allFolders.forEach(f=>{
+      if(f.scope!=="any" && f.scope!==(lessonIsVideo?"video":"text")) return;
+      const opt=h("option",{value:f.name},f.name);
+      if(lesson.folder===f.name) opt.selected=true;
       folderSel.appendChild(opt);
     });
     acts.appendChild(folderSel);
@@ -2730,26 +2749,39 @@ function renderLang(){
     const deleteBtn = h("button",{class:"sbtn",style:"padding:4px 10px;font-size:11px;border-color:var(--red);color:var(--red)",onclick:(e)=>{e.stopPropagation();deleteFolder(lang,folderName);}},"✕ Usuń folder");
     return renderSectionHead("folder:"+folderName, "📁", folderName, count, [renameBtn, deleteBtn]);
   }
-  // User-defined folders
-  folders.forEach(folderName=>{
-    const items=byFolder[folderName]||[];
-    main.appendChild(renderFolderHead(folderName, items.length));
-    if(isFolderCollapsed(lang, "folder:"+folderName)) return;
+  // Render foldery wg scope: any → top, video → sekcja video, text → sekcja text
+  function renderFolderBlock(f){
+    const items = byFolder[f.name] || [];
+    main.appendChild(renderFolderHead(f.name, items.length));
+    if(isFolderCollapsed(lang, "folder:"+f.name)) return;
     if(items.length===0){
       main.appendChild(h("div",{style:"padding:14px;color:var(--text3);font-size:12px;font-style:italic;text-align:center;border:1px dashed var(--border);border-radius:4px"},"Folder pusty — przenieś tu lekcje wybierając folder w wierszu lekcji"));
     } else {
       items.forEach(({lesson,idx})=>main.appendChild(renderLessonRow(lesson,idx)));
     }
-  });
-  if(unfolderedVideo.length>0){
-    main.appendChild(renderSectionHead("__video", "🎬", "Z filmów i YouTube", unfolderedVideo.length, []));
+  }
+  // 1. Foldery uniwersalne (scope = "any") — na górze, jak dotąd
+  allFolders.filter(f=>f.scope==="any").forEach(renderFolderBlock);
+
+  // 2. Sekcja "Z filmów i YouTube" — z lokalnym + Folder, potem video-foldery, potem unfoldered video
+  const videoFolders = allFolders.filter(f=>f.scope==="video");
+  if(unfolderedVideo.length>0 || videoFolders.length>0){
+    const addVideoFolderBtn = h("button",{class:"sbtn",style:"padding:4px 10px;font-size:11px",onclick:(e)=>{e.stopPropagation();createFolder(lang,"video");}},"+ Folder");
+    main.appendChild(renderSectionHead("__video", "🎬", "Z filmów i YouTube", unfolderedVideo.length, [addVideoFolderBtn]));
     if(!isFolderCollapsed(lang, "__video")){
+      // Najpierw video-scope foldery (wcięcie wizualne przez wiodący odstęp)
+      videoFolders.forEach(renderFolderBlock);
       unfolderedVideo.forEach(({lesson,idx})=>main.appendChild(renderLessonRow(lesson,idx)));
     }
   }
-  if(unfolderedText.length>0){
-    main.appendChild(renderSectionHead("__text", "📄", "Z plików i tekstów", unfolderedText.length, []));
+
+  // 3. Sekcja "Z plików i tekstów" — z lokalnym + Folder, potem text-foldery, potem unfoldered text
+  const textFolders = allFolders.filter(f=>f.scope==="text");
+  if(unfolderedText.length>0 || textFolders.length>0){
+    const addTextFolderBtn = h("button",{class:"sbtn",style:"padding:4px 10px;font-size:11px",onclick:(e)=>{e.stopPropagation();createFolder(lang,"text");}},"+ Folder");
+    main.appendChild(renderSectionHead("__text", "📄", "Z plików i tekstów", unfolderedText.length, [addTextFolderBtn]));
     if(!isFolderCollapsed(lang, "__text")){
+      textFolders.forEach(renderFolderBlock);
       unfolderedText.forEach(({lesson,idx})=>main.appendChild(renderLessonRow(lesson,idx)));
     }
   }
