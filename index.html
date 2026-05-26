@@ -3005,10 +3005,13 @@ function renderLesson(){
     if(v.length>0){
       const head=h("div",{style:"display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;max-width:760px;gap:10px;flex-wrap:wrap"});
       head.appendChild(h("div",{class:"sec-label",style:"margin:0"},"Słownictwo ("+v.length+")"));
+      const actBtnsV=h("div",{style:"display:flex;gap:8px;flex-wrap:wrap"});
       const playing = S.vocabPlaying && S.vocabPlayingList==="vocab";
-      head.appendChild(playing
+      actBtnsV.appendChild(playing
         ? h("button",{class:"sbtn",style:"border-color:var(--err-text);color:var(--err-text)",onclick:stopVocabPlayback},"⏹ Zatrzymaj ("+(S.vocabPlayingIdx+1)+"/"+v.length+")")
         : h("button",{class:"sbtn",style:"border-color:var(--gold);color:var(--gold)",onclick:()=>playVocabList(v, lang, "vocab")},"▶ Odtwórz wszystkie ("+v.length+")"));
+      actBtnsV.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:v}),"flashcard")},"🃏 Fiszki ze słówek"));
+      head.appendChild(actBtnsV);
       vw.appendChild(head);
     }
     const onDel = isOwn ? (idx)=>{
@@ -4913,10 +4916,13 @@ function renderLesson(){
     if(v.length>0){
       const head=h("div",{style:"display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;max-width:760px;gap:10px;flex-wrap:wrap"});
       head.appendChild(h("div",{class:"sec-label",style:"margin:0"},"Słownictwo ("+v.length+")"));
+      const actBtnsV=h("div",{style:"display:flex;gap:8px;flex-wrap:wrap"});
       const playing = S.vocabPlaying && S.vocabPlayingList==="vocab";
-      head.appendChild(playing
+      actBtnsV.appendChild(playing
         ? h("button",{class:"sbtn",style:"border-color:var(--err-text);color:var(--err-text)",onclick:stopVocabPlayback},"⏹ Zatrzymaj ("+(S.vocabPlayingIdx+1)+"/"+v.length+")")
         : h("button",{class:"sbtn",style:"border-color:var(--gold);color:var(--gold)",onclick:()=>playVocabList(v, lang, "vocab")},"▶ Odtwórz wszystkie ("+v.length+")"));
+      actBtnsV.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:v}),"flashcard")},"🃏 Fiszki ze słówek"));
+      head.appendChild(actBtnsV);
       vw.appendChild(head);
     }
     const onDel = isOwn ? (idx)=>{
