@@ -12,6 +12,17 @@ after each iteration and it's included in prompts for context.
 
 ---
 
+## 2026-05-27 - US-004b
+- Appended 7 more NO films (B2-C1) to the existing `NO: [...]` array in `FILMS` (~line 1196, after `lilyhammer` closes, before `  ],`): Norsemen/Vikingane (Netflix serial, B2 viking-komedie), Beforeigners (HBO serial, B2-C1 sci-fi+krim), Occupied/Okkupert (Netflix serial, B2-C1 polit. thriller), State of Happiness/Lykkeland (HBO serial, B2 70-talls oljedrama), Headhunters/Hodejegerne (Prime film, B2 Nesbø-thriller), The Wave/Bølgen (Netflix film, B1-B2 katastrofe), Pyromaniac/Pyromanen (Prime film, B2 drama).
+- Each film 3 clips, `desc`/`topic` in Norwegian (bokmål), `ytSearch` in English. Unique clip id prefixes: nor/bef/okk/lyk/hod/bol/pyr.
+- Files changed: `index.html` (+119 lines), `.ralph-tui/progress.md`. Backup at `/tmp/lingua-NO-US4b-0913.html`.
+- **Learnings:**
+  - Anchor used was `lilyhammer`'s closing `ytSearch:"...business deal scene" }` + `]` + `},` + `],` + `};` — the only place where a film-close is immediately followed by the array-close + object-close. (US-004a inserted lilyhammer last, so it is now the anchor instead of `IT`'s ender.)
+  - `grep -c ytSearch` went 98 → 119 (exactly +21 = 7×3); `node --check` on the awk-extracted inline script passes.
+  - `platform` is free-text (no enum/validation) — used "Prime" for films available there and "HBO"/"Netflix" per AC; no badge logic keys off it, only `type` ("film"→🎞, anything else→📺).
+
+---
+
 ## 2026-05-27 - US-004a
 - Added `NO: [...]` block to `FILMS` map (~line 1077, after `IT` array closes, before `};`) with 7 films A1-B1: Skam (NRK serial), Ragnarok (Netflix serial), Frost norsk dub (Disney+ film), Pippi Langstrømpe (NRK serial), Bergensbanen Slow TV (NRK), Trolljegeren (Prime film), Lilyhammer (Netflix serial).
 - Each film has 3 clips with `desc`/`topic` in Norwegian (bokmål, FR-style immersion) and `ytSearch` in English. Unique clip id prefixes: sk/ra/fro/pi/be/tj/li.

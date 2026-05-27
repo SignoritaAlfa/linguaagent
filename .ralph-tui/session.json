@@ -3,10 +3,10 @@
   "sessionId": "a4205311-45ac-4064-a641-1883df3f1f59",
   "status": "running",
   "startedAt": "2026-05-27T07:03:43.794Z",
-  "updatedAt": "2026-05-27T07:12:30.862Z",
-  "currentIteration": 2,
+  "updatedAt": "2026-05-27T07:15:03.734Z",
+  "currentIteration": 3,
   "maxIterations": 0,
-  "tasksCompleted": 2,
+  "tasksCompleted": 3,
   "isPaused": false,
   "agentPlugin": "claude",
   "trackerState": {
@@ -35,8 +35,8 @@
       {
         "id": "US-004a",
         "title": "Filmoteka NO część 1/2 — 7 filmów A1-B1",
-        "status": "open",
-        "completedInSession": false
+        "status": "completed",
+        "completedInSession": true
       },
       {
         "id": "US-004b",
@@ -90,6 +90,16 @@
       "durationMs": 191766,
       "startedAt": "2026-05-27T07:05:08.569Z",
       "endedAt": "2026-05-27T07:08:20.335Z"
+    },
+    {
+      "iteration": 3,
+      "status": "completed",
+      "taskId": "US-004a",
+      "taskTitle": "Filmoteka NO część 1/2 — 7 filmów A1-B1",
+      "taskCompleted": true,
+      "durationMs": 249352,
+      "startedAt": "2026-05-27T07:08:21.503Z",
+      "endedAt": "2026-05-27T07:12:30.855Z"
     }
   ],
   "skippedTaskIds": [],

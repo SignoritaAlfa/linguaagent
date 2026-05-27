@@ -93,11 +93,12 @@
         "git commit [NO] Filmoteka część 2/2 — 7 films B2-C1"
       ],
       "priority": 5,
-      "passes": false,
+      "passes": true,
       "notes": "DEPENDS od US-004a — struktura NO musi już istnieć.",
       "dependsOn": [
         "US-004a"
-      ]
+      ],
+      "completionNotes": "Completed by agent"
     },
     {
       "id": "US-005a",
@@ -191,6 +192,6 @@
     }
   ],
   "metadata": {
-    "updatedAt": "2026-05-27T07:12:30.860Z"
+    "updatedAt": "2026-05-27T07:15:03.731Z"
   }
 }
