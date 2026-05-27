@@ -1786,6 +1786,8 @@ let S={
   lessonModel:localStorage.getItem("lingua_lesson_model")||"gemini",
   localLastModified:parseInt(localStorage.getItem("lingua_local_last_modified")||"0",10),
   myFilms:(()=>{try{return JSON.parse(localStorage.getItem("lingua_my_films")||"{}")}catch{return {}}})(),
+  mySongs:(()=>{try{return JSON.parse(localStorage.getItem("lingua_my_songs")||"{}")}catch{return {}}})(),
+  songLang:localStorage.getItem("lingua_song_lang")||"EN",
   filmClipUrls:(()=>{try{return JSON.parse(localStorage.getItem("lingua_film_clip_urls")||"{}")}catch{return {}}})(),
   workerUrl:localStorage.getItem("lingua_worker_url")||"",
   showAddFilm:false,addFilmTitle:"",addFilmType:"serial",addFilmLevel:"A2",
@@ -1843,6 +1845,7 @@ function buildSyncPayload(){
     lessonFolders: S.lessonFolders,
     foldersCollapsed: S.foldersCollapsed,
     myFilms: S.myFilms,
+    mySongs: S.mySongs,
     filmClipUrls: S.filmClipUrls,
     workerUrl: S.workerUrl || "",
     srs: S.srs,
@@ -1866,6 +1869,7 @@ function applyDriveData(remote){
   if(remote.lessonFolders){ S.lessonFolders=remote.lessonFolders; localStorage.setItem("lingua_lesson_folders", JSON.stringify(S.lessonFolders)); }
   if(remote.foldersCollapsed){ S.foldersCollapsed=remote.foldersCollapsed; localStorage.setItem("lingua_folders_collapsed", JSON.stringify(S.foldersCollapsed)); }
   if(remote.myFilms){ S.myFilms=remote.myFilms; localStorage.setItem("lingua_my_films", JSON.stringify(S.myFilms)); }
+  if(remote.mySongs){ S.mySongs=remote.mySongs; localStorage.setItem("lingua_my_songs", JSON.stringify(S.mySongs)); }
   if(remote.filmClipUrls){ S.filmClipUrls=remote.filmClipUrls; localStorage.setItem("lingua_film_clip_urls", JSON.stringify(S.filmClipUrls)); }
   if(typeof remote.workerUrl === "string"){ S.workerUrl=remote.workerUrl; if(remote.workerUrl) localStorage.setItem("lingua_worker_url", remote.workerUrl); else localStorage.removeItem("lingua_worker_url"); }
   if(remote.srs){ S.srs=remote.srs; localStorage.setItem("lingua_srs", JSON.stringify(S.srs)); }
@@ -7375,6 +7379,16 @@ function renderFilmoteka(){
   w.appendChild(main);return w;
 }
 
+function renderSongs(){
+  const w=h("div",{});
+  w.appendChild(renderTopNav());
+  const main=h("div",{class:"main"});
+  main.appendChild(h("button",{class:"back-btn",onclick:()=>set({screen:"lang"})},"← Lekcje"));
+  main.appendChild(h("div",{class:"page-title"},"🎵 Piosenki (TBD)"));
+  w.appendChild(main);
+  return w;
+}
+
 // ── RENDER ────────────────────────────────────────────────────────────────────
 // ── B1: SPACED REPETITION ──────────────────────────────────────────────────
 const SRS_INTERVALS=[1,3,7,14,30];
@@ -7869,6 +7883,7 @@ function render(){
   else if(screen==="settings")root.appendChild(renderSettings());
   else if(screen==="audiomgr")root.appendChild(renderAudioMgr());
   else if(screen==="filmoteka")root.appendChild(renderFilmoteka());
+  else if(screen==="songs")root.appendChild(renderSongs());
   else if(screen==="mywords")root.appendChild(renderMyWords());
   else if(screen==="myphrases")root.appendChild(renderMyPhrases());
   else if(screen==="translate")root.appendChild(renderTranslate());
