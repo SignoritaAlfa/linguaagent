@@ -1,0 +1,13 @@
+# Ralph TUI Configuration — LinguaAgent
+# Tracker: JSON (prd.json under ralph-runs/)
+# Single-file SPA (index.html), JS validation via node --check on extracted <script>
+
+configVersion = "2.1"
+tracker = "json"
+agent = "claude"
+maxIterations = 80
+autoCommit = true
+
+[trackerOptions]
+
+[agentOptions]

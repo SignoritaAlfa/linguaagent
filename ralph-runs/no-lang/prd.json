@@ -1,0 +1,194 @@
+{
+  "name": "LinguaAgent NO — Norwegian (Bokmål) as 4th language",
+  "description": "Rozszerzyć LinguaAgent o pełne wsparcie norweskiego (Bokmål, nb-NO) z parytetem funkcjonalnym do FR/IT/EN. Repo: /Users/aleksandrabarwasna/lingua-agent/. Plik docelowy: index.html (single-file SPA, JS w <script>). Każdy US: edit + node --check + git commit (autoCommit=true w config.toml). SINGLE push tylko w US-007. Walidacja JS: awk '/<script>/{p=1;next} /<\\/script>/{p=0} p' index.html > /tmp/lingua.js && node --check /tmp/lingua.js. NIE używaj 'cd && ...' (blokowane przez Claude Code) — ścieżki absolutne. NIE edytuj istniejących języków EN/FR/IT poza dodaniem klucza NO. CRITICAL: czytaj fragmenty pliku (Read offset+limit), NIE cały plik na raz — index.html ma >7000 linii i wczytanie całości pożera context window.",
+  "branchName": "ralph/no-language",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "LANG plumbing — dodać NO do LANGS / LANG_BCP / ACCENT_CHARS",
+      "description": "Jako użytkowniczka chcę widzieć Norweski jako 4. kafelek na stronie głównej.",
+      "acceptanceCriteria": [
+        "DONE — commit 9058836 [NO] Add NO to LANGS / LANG_BCP / ACCENT_CHARS"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "Zrobione w poprzednim runie Ralpha. passes=true żeby Ralph nie wracał.",
+      "dependsOn": []
+    },
+    {
+      "id": "US-002",
+      "title": "TTS — ElevenLabs voices NO + OpenAI TTS comment",
+      "description": "Jako użytkowniczka chcę żeby TTS czytał norweski poprawnie.",
+      "acceptanceCriteria": [
+        "Znaleźć const EL_VOICES w index.html (grep -n 'const EL_VOICES')",
+        "Po bloku IT dodać blok NO: female i male, oba kopiują voiceID z FR (Rachel: 21m00Tcm4TlvDq8ikWAM jako female, Antoni: ErXwobaYiN019PkySvjV jako male — ElevenLabs Multilingual v2 wspiera norweski)",
+        "Struktura DOKŁADNIE jak EN/FR/IT (klucze female + male, każdy {id, name})",
+        "Dodać komentarz nad blokiem NO: // ElevenLabs multilingual v2 supports Norwegian (reuse FR voice IDs)",
+        "Po edycji: awk '/<script>/{p=1;next} /<\\/script>/{p=0} p' /Users/aleksandrabarwasna/lingua-agent/index.html > /tmp/lingua.js && node --check /tmp/lingua.js — passes",
+        "git commit z prefiksem [NO] Add EL_VOICES.NO (multilingual reuse FR voices)"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "Mały, szybki US. ~5 min.",
+      "dependsOn": [
+        "US-001"
+      ],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "US-003",
+      "title": "Prompt rules — en/ei/et + å+infinitive dla norweskiego",
+      "description": "Jako użytkowniczka chcę żeby AI poprawnie generowało norweski vocab.",
+      "acceptanceCriteria": [
+        "grep -n 'FR: le/la/un/une' /Users/aleksandrabarwasna/lingua-agent/index.html — zlokalizować WSZYSTKIE wystąpienia (typowo 2-3 miejsca: główny PROMPT processUpload, regenerateLessonDialog, AI generate vocab)",
+        "W KAŻDYM miejscu zaktualizować regułę dodając norweski: zamień 'FR: le/la/un/une; IT: il/la/lo/un/una/uno; DE: der/die/das' na 'FR: le/la/un/une; IT: il/la/lo/un/una/uno; DE: der/die/das; NO: en/ei/et — bokmål'",
+        "W tej samej regule, czasowniki: dodać 'å snakke' po 'to talk' (przykład bezokolicznika norweskiego)",
+        "Znaleźć funkcję bulk-fix articles (grep -n 'bulk-fix\\|missing.*article\\|articleRegex\\|fixArticles' index.html — szukaj w okolicy commitu 2e29334) — dodać NO do listy języków gdzie reguła obowiązuje. Regex: /^(en|ei|et)\\s/i",
+        "grep -c 'en/ei/et' index.html zwraca co najmniej 2",
+        "node --check po extract — passes",
+        "git commit [NO] Extend article/infinitive rules to Norwegian (en/ei/et, å+verb)"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "Średni US. Czytaj fragmenty, NIE cały plik. Jeśli context się zapełnia, podziel commit na 2 części.",
+      "dependsOn": [
+        "US-001"
+      ]
+    },
+    {
+      "id": "US-004a",
+      "title": "Filmoteka NO część 1/2 — 7 filmów A1-B1",
+      "description": "Pierwsza połowa wbudowanej norweskiej Filmoteki (łatwiejsze poziomy).",
+      "acceptanceCriteria": [
+        "Backup: cp /Users/aleksandrabarwasna/lingua-agent/index.html /tmp/lingua-NO-US4a-$(date +%H%M).html",
+        "Znaleźć obecną strukturę Filmoteki: grep -n 'lupin\\|amelie\\|intouchables' /Users/aleksandrabarwasna/lingua-agent/index.html | head -5",
+        "Read fragmentu wokół lupin (offset=linia, limit=50) — zobacz strukturę: id, title, type, level, platform, description, topic, clips:[{id,title,description,ytSearch}]",
+        "Dodać 7 pozycji NO: Skam (NRK, B1, serial młodzieżowy), Ragnarok (Netflix, B1, mitologia młodzieżowa), Frost dub NO (animation, A2-B1), Pippi Långstrump (A2, klasyka), Slow TV Bergensbanen (docu, A2), Trollhunter (B1-B2, mockumentary), Lilyhammer (Netflix, B1-B2, mafia w Norwegii)",
+        "Każda pozycja ma 3 klipy: id, title, description PO NORWESKU (krótko, scena), ytSearch po angielsku (np. 'Skam Noora party episode 3')",
+        "description filmu i topic — PO NORWESKU (immersja)",
+        "node --check: passes",
+        "grep -c 'ytSearch' index.html zwiększa się o około 21 (7 × 3 klipy)",
+        "git commit [NO] Filmoteka część 1/2 — 7 films A1-B1 (Skam, Ragnarok, Frost, Pippi, Slow TV, Trollhunter, Lilyhammer)"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "7 pozycji × ~25 linii = ~175 linii dodatku. Nie czytaj całego pliku, tylko fragment wokół lupin + okolice IT-end gdzie wstawisz.",
+      "dependsOn": [
+        "US-001"
+      ]
+    },
+    {
+      "id": "US-004b",
+      "title": "Filmoteka NO część 2/2 — 7 filmów B2-C1",
+      "description": "Druga połowa Filmoteki — trudniejsze poziomy dla zaawansowanych.",
+      "acceptanceCriteria": [
+        "Backup: cp /Users/aleksandrabarwasna/lingua-agent/index.html /tmp/lingua-NO-US4b-$(date +%H%M).html",
+        "Dopisać 7 kolejnych pozycji NO do istniejącej tablicy (struktura już zrobiona w US-004a)",
+        "Pozycje: Norsemen/Vikingane (Netflix, B2, komedia o wikingach), Beforeigners (HBO, B2-C1, sci-fi+krym), Occupied/Okkupert (Netflix, B2-C1, polit. thriller), State of Happiness/Lykkeland (HBO, B2, lata 70+ropa), Headhunters/Hodejegerne (B2, Nesbø thriller), The Wave/Bølgen (B1-B2, katastroficzny), Pyromaniac/Pyromanen (B2, dramat)",
+        "Każda 3 klipy z PO NORWESKU description+topic, ytSearch po angielsku",
+        "grep -c 'ytSearch' index.html zwiększa się o około 21",
+        "node --check: passes",
+        "git commit [NO] Filmoteka część 2/2 — 7 films B2-C1"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": "DEPENDS od US-004a — struktura NO musi już istnieć.",
+      "dependsOn": [
+        "US-004a"
+      ]
+    },
+    {
+      "id": "US-005a",
+      "title": "Lekcje NO część 1/2 — 3 lekcje A1",
+      "description": "Pierwsze 3 wbudowane lekcje norweskie A1 (najprostsze).",
+      "acceptanceCriteria": [
+        "Backup: cp /Users/aleksandrabarwasna/lingua-agent/index.html /tmp/lingua-NO-US5a-$(date +%H%M).html",
+        "Znaleźć fr1/fr2 jako szablon: grep -n 'id:\"fr1\"' /Users/aleksandrabarwasna/lingua-agent/index.html",
+        "3 lekcje: no1 'På kafé' (zamawianie kawy), no2 'Å presentere seg' (przedstawianie się), no3 'På butikken' (zakupy)",
+        "Każda lekcja: {id, title (norweski), level:'A1', topic (polski), type:'dialog', dialog:[6-8 kwestii], vocab:[6-8 wpisów], fill:[3-4 ćwiczeń], grammar:[2-3 reguły]}",
+        "Dialog: Aleksandra + Norweg (imiona: Ola, Kari, Bjørn, Astrid)",
+        "Rzeczowniki ZAWSZE z rodzajnikiem (en kaffe, et bord, ei jente)",
+        "Czasowniki w bezokoliczniku z å (å være, å bestille, å snakke)",
+        "Vocab pola: w (norweski z rodzajnikiem), tr (polski), ipa (IPA bokmål — np. 'Hei' /hæɪ/), pl (fonetyka polska — 'hej'), ex (przykład norweski), exT (tłumaczenie polskie)",
+        "grep -c 'id:\"no' index.html zwraca co najmniej 3",
+        "node --check: passes",
+        "git commit [NO] Add 3 built-in lessons A1 (no1 kafé, no2 presentere seg, no3 butikken)"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": "Treść MUSI być autentycznie norweska (nie tłumaczenie 1:1 z FR). 3 lekcje × ~30 linii.",
+      "dependsOn": [
+        "US-001",
+        "US-003"
+      ]
+    },
+    {
+      "id": "US-005b",
+      "title": "Lekcje NO część 2/2 — 4 lekcje A2-B1",
+      "description": "Pozostałe 4 wbudowane lekcje norweskie A2-B1.",
+      "acceptanceCriteria": [
+        "Backup: cp /Users/aleksandrabarwasna/lingua-agent/index.html /tmp/lingua-NO-US5b-$(date +%H%M).html",
+        "Dopisać 4 lekcje: no4 'Hvor er…?' (A2, pytanie o drogę), no5 'På restaurant' (A2, zamawianie jedzenia), no6 'Reise' (A2-B1, podróż), no7 'Vær og tid' (A2, pogoda i czas)",
+        "Struktura identyczna jak US-005a",
+        "Treść autentycznie norweska bokmål",
+        "grep -c 'id:\"no' index.html zwraca co najmniej 7",
+        "node --check: passes",
+        "git commit [NO] Add 4 more built-in lessons A2-B1 (no4 hvor er, no5 restaurant, no6 reise, no7 vær og tid)"
+      ],
+      "priority": 7,
+      "passes": false,
+      "notes": "",
+      "dependsOn": [
+        "US-005a"
+      ]
+    },
+    {
+      "id": "US-006",
+      "title": "LANG-agnostic check — usunąć hardkodowane EN/FR/IT warunki",
+      "description": "Sprawdzić że żadna funkcja nie ma warunku 'tylko EN/FR/IT' blokującego NO.",
+      "acceptanceCriteria": [
+        "grep -n 'lang===\"FR\"\\|lang===\"EN\"\\|lang===\"IT\"' /Users/aleksandrabarwasna/lingua-agent/index.html — lista wszystkich miejsc",
+        "Dla każdego: jeśli warunek wyklucza pozostałe języki — dodać || lang===\"NO\". Jeśli warunek jest specjalną logiką tylko dla konkretnego języka (rzadkie) — zostaw, opisz w commit",
+        "Sprawdzić funkcje: renderMyVocab, renderLang, renderHome, renderTopNav, renderFilmoteka, renderTranslate, getEnrichedVocabEntry — czytaj kluczowe fragmenty (Read offset+limit), potwierdź że LANG-agnostic",
+        "node --check: passes",
+        "git commit [NO] LANG-agnostic check passed (or fix hardcoded EN/FR/IT conditions). Jeśli nic do zmiany: git commit --allow-empty"
+      ],
+      "priority": 8,
+      "passes": false,
+      "notes": "Może okazać się że nic do zmiany — wtedy empty commit z opisem 'no hardcoded lang conditions found'.",
+      "dependsOn": [
+        "US-001"
+      ]
+    },
+    {
+      "id": "US-007",
+      "title": "Final — archive PRD + smoke test + single push",
+      "description": "Finalizacja: archive PRD, smoke test, single push wszystkich [NO] commitów.",
+      "acceptanceCriteria": [
+        "mkdir -p /Users/aleksandrabarwasna/lingua-agent/docs",
+        "Jeśli prd-norwegian.md istnieje w root: git mv /Users/aleksandrabarwasna/lingua-agent/prd-norwegian.md /Users/aleksandrabarwasna/lingua-agent/docs/prd-norwegian.md",
+        "Smoke test final: awk '/<script>/{p=1;next} /<\\/script>/{p=0} p' /Users/aleksandrabarwasna/lingua-agent/index.html > /tmp/lingua.js && node --check /tmp/lingua.js — clean",
+        "git log --oneline origin/main..HEAD | grep '\\[NO\\]' — pokazuje commity [NO] tego runu",
+        "git add -A && git commit -m '[NO] Final: archive PRD to docs/'",
+        "git push origin main — JEDEN push obejmujący wszystkie commity tego runu",
+        "Sprawdzić GH Pages deploy: gh run list --repo SignoritaAlfa/linguaagent --limit 1"
+      ],
+      "priority": 9,
+      "passes": false,
+      "notes": "TYLKO TUTAJ push.",
+      "dependsOn": [
+        "US-001",
+        "US-002",
+        "US-003",
+        "US-004a",
+        "US-004b",
+        "US-005a",
+        "US-005b",
+        "US-006"
+      ]
+    }
+  ],
+  "metadata": {
+    "updatedAt": "2026-05-27T07:05:07.398Z"
+  }
+}
