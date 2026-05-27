@@ -118,12 +118,13 @@
         "git commit [NO] Add 3 built-in lessons A1 (no1 kafé, no2 presentere seg, no3 butikken)"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "Treść MUSI być autentycznie norweska (nie tłumaczenie 1:1 z FR). 3 lekcje × ~30 linii.",
       "dependsOn": [
         "US-001",
         "US-003"
-      ]
+      ],
+      "completionNotes": "Completed by agent"
     },
     {
       "id": "US-005b",
@@ -192,6 +193,6 @@
     }
   ],
   "metadata": {
-    "updatedAt": "2026-05-27T07:15:03.731Z"
+    "updatedAt": "2026-05-27T07:19:54.334Z"
   }
 }

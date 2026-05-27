@@ -9,6 +9,20 @@ after each iteration and it's included in prompts for context.
 - **JS lives inline in `index.html`** inside a `<script>` block. Validate with: `awk '/<script>/{p=1;next} /<\/script>/{p=0} p' index.html > /tmp/lingua.js && node --check /tmp/lingua.js`.
 - **Per-language grammar rules are DUPLICATED across ~6 prompt strings + 1 bulk-fix function.** The noun-article / verb-infinitive instruction ("FR: le/la...; IT: ...; DE: ...") appears in 3+ surface forms: `le/la/un/une`, full `le/la/l'/un/une`, and Polish names `francuski:/włoski:/niemiecki:`. Extending grammar to a new language = (1) grep all three forms and update every prompt, (2) extend `fixVocabArticles`/`vocabItemNeedsFix` (~2321): add a `<LANG>_ARTICLE_RE` const, a branch in `vocabItemNeedsFix`, the `lang !==` guard, a candidate-skip + verb heuristic, and `langName`/`articleHint`, (3) un-gate the "🔧 Popraw rodzajniki AI" button (~4244).
 - **`FILMS` (Filmoteka) is a per-language map at ~line 662** keyed by lang code (`EN`/`FR`/`IT`/`NO`...), closed by `};`. Each film: `{ id, title, type, level, platform, desc, clips:[{ id, episode, title, level, topic, desc, ytSearch }] }`. `type` only drives a binary badge — `series.type==="film" ? "🎞 Film" : "📺 Serial"` (lines ~6498, ~6608); any other value renders as Serial. Add a language = append a `<LANG>: [ ... ],` block before the closing `};`. FR-style immersion (desc/topic in target language) is the convention to copy for new langs; EN/IT use Polish topic/desc.
+- **Built-in lessons live in `const COURSE={...}` (~line 1319)** — a per-language map keyed by lang code (`EN`/`FR`/`IT`/`NO`...), closed by `};` (IT array closed at ~1485 before this story, COURSE end at ~1486). Each lesson: `{ id, title (target lang), level, topic (Polish), type:"dialog", dialog:[{s,l,t}], vocab:[{w,tr,ipa,pl,ex,exT}], fill:[{s,a,h}], grammar:[{rule,ex,exT,note}] }`. `s`=speaker, `l`=line (target), `t`=translation; vocab `w`=word w/article, `tr`=translation, `ipa`=IPA, `pl`=Polish phonetics, `ex`/`exT`=example+translation; fill `s`=sentence w/`___`, `a`=answer, `h`=hint. Add a language = change IT's closing `  ]` to `  ],` and append a `<LANG>:[ ... ]` block before `};`. **`grep -c 'id:"no'` is polluted by FILMS clip ids `nor1/nor2/nor3` (Norsemen) — it counts both lesson ids and those clips.**
+
+---
+
+## 2026-05-27 - US-005a
+- Added `NO:[...]` block to `const COURSE={...}` (~line 1486, after IT array closes, before `};`) with 3 built-in A1 lessons: no1 "På kafé" (zamawianie kawy), no2 "Å presentere seg" (przedstawianie się), no3 "På butikken" (zakupy).
+- Each lesson: `type:"dialog"`, 8 dialog turns (Aleksandra + a Norwegian: Kari/Ola/Astrid), 7-8 vocab entries, 3-4 fill exercises, 3 grammar rules. Content authentically Norwegian bokmål (kanelboller, kroner, "Vær så god", V2 word order) — not a 1:1 FR translation.
+- Vocab nouns always carry an article (`en kaffe`, `et brød`, `et smør`, `en kanelbolle`); verbs given as å-infinitives (`å bestille`, `å bo`, `å snakke`, `å lete etter`, `å trenge`). Each vocab entry has w/tr/ipa(bokmål)/pl(Polish phonetics)/ex/exT.
+- Files changed: `index.html` (+93 lines), `.ralph-tui/progress.md`. Backup at `/tmp/lingua-NO-US5a-*.html`.
+- **Learnings:**
+  - The lessons map is `const COURSE` (not `LESSONS`) — `grep -n LESSONS` returns nothing; find it via `grep -n 'const COURSE'`. EN uses 3-space indent (`   EN:[`), so a `^  [A-Z]+:\[` awk pattern misses it.
+  - AC check `grep -c 'id:"no'` returns 6, not 3 — `nor1/nor2/nor3` (Norsemen film clips from US-004b) also match. Lesson-only count via `grep -c 'id:"no[123]"'` = 3.
+  - The insertion anchor is the same shape as FILMS: IT (the last lang) ends with `     ]}` + `  ]` + `};`; changed `  ]` → `  ],` and inserted the NO block. No other COURSE close uses `  ]\n};`.
+  - `å` doubles as the infinitive marker in vocab `w` fields (parallel to the bulk-fix verb heuristic from US-003); kept dialog noun phrases natural (used "her borte" instead of an awkward "et smør" mid-dialog) while keeping articles in vocab.
 
 ---
 

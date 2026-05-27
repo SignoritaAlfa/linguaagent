@@ -1,0 +1,54 @@
+# Iteration 4 Log
+
+## Metadata
+
+- **Task ID**: US-004b
+- **Task Title**: Filmoteka NO część 2/2 — 7 filmów B2-C1
+- **Description**: Druga połowa Filmoteki — trudniejsze poziomy dla zaawansowanych.
+- **Status**: completed
+- **Task Completed**: Yes
+- **Promise Detected**: Yes
+- **Started At**: 2026-05-27T07:12:32.038Z
+- **Ended At**: 2026-05-27T07:15:03.724Z
+- **Duration**: 2m 31s
+- **Input Tokens**: 52691
+- **Output Tokens**: 10929
+- **Total Tokens**: 63620
+- **Agent**: claude
+- **Model**: claude-opus-4-7
+- **Sandbox Mode**: auto
+- **Sandbox Network**: Enabled
+--- RAW OUTPUT ---
+I'll start by studying the progress file and the existing NO Filmoteka structure from US-004a.
+[94m[Read][0m [95m/Users/aleksandrabarwasna/lingua-agent/.ralph-tui/progress.md[0m
+[94m[Bash][0m Count ytSearch and find NO block $ grep -n 'NO:' /Users/aleksandrabarwasna/lingua-agent/index.html
+Let me read the existing NO FILMS block to understand the exact structure and find where it ends.
+[94m[Read][0m [95m/Users/aleksandrabarwasna/lingua-agent/index.html[0m
+I now understand the structure completely. The NO block ends at line 1196 (lilyhammer closes with `    },`), then `  ],` (1197) and `};` (1198). Let me make the backup and insert 7 new B2-C1 films.
+[94m[Bash][0m Backup index.html before edit $ cp /Users/aleksandrabarwasna/lingua-agent/index.html /tmp/lingua-NO-US4b-$(date +%H%M).html && ls -l...
+Now I'll insert the 7 films before the closing `],` of the NO array:
+[94m[Edit][0m [95m/Users/aleksandrabarwasna/lingua-agent/index.html[0m edit: "          ytSearch:"Lilyhammer Frank business deal..." → "          ytSearch:"Lilyhammer Frank business deal..."
+Now the quality checks: `node --check` on the extracted inline script and the ytSearch count.
+[94m[Bash][0m Validate JS syntax and count ytSearch $ next} /<\/script>/{p=0} p' index.html > /tmp/lingua.js && node --check /tmp/lingua.js && echo "node ...
+Both checks pass: `node --check: PASS`, and ytSearch went 98 → 119 (+21 = exactly 7×3). Let me document the learnings.
+[94m[Edit][0m [95m/Users/aleksandrabarwasna/lingua-agent/.ralph-tui/progress.md[0m edit: "## 2026-05-27 - US-004a" → "## 2026-05-27 - US-004b
+- Appended 7 more NO films..."
+Gotowe. US-004b zrealizowane.
+
+**Co zrobiłam:**
+- Backup: `/tmp/lingua-NO-US4b-0913.html` ✅
+- Dopisałam 7 filmów B2-C1 do istniejącej tablicy `NO` w `FILMS` (przed `],` zamykającym blok): Norsemen/Vikingane, Beforeigners, Occupied/Okkupert, State of Happiness/Lykkeland, Headhunters/Hodejegerne, The Wave/Bølgen, Pyromaniac/Pyromanen
+- Każdy film po 3 klipy — `desc`+`topic` po norwesku (bokmål), `ytSearch` po angielsku, unikalne prefiksy id: nor/bef/okk/lyk/hod/bol/pyr
+
+**Quality checks:**
+- `node --check`: **PASS**
+- `grep -c ytSearch`: 98 → 119 = **+21** (dokładnie 7×3) ✅
+- progress.md zaktualizowany
+
+Jedna uwaga do architektury: `platform` jest polem free-text bez walidacji, a `type` steruje tylko binarnym badge (`"film"` → 🎞, cokolwiek innego → 📺). Trzymałam się wartości `film`/`serial` dla spójności — seriale (Vikingane, Beforeigners, Okkupert, Lykkeland) dostały `serial`, filmy (Hodejegerne, Bølgen, Pyromanen) `film`.
+
+Nie tworzę commita — zgodnie z workflow zrobi to silnik po zakończeniu.
+
+<promise>COMPLETE</promise>
+
+<DONE>

@@ -3,10 +3,10 @@
   "sessionId": "a4205311-45ac-4064-a641-1883df3f1f59",
   "status": "running",
   "startedAt": "2026-05-27T07:03:43.794Z",
-  "updatedAt": "2026-05-27T07:15:03.734Z",
-  "currentIteration": 3,
+  "updatedAt": "2026-05-27T07:19:54.337Z",
+  "currentIteration": 4,
   "maxIterations": 0,
-  "tasksCompleted": 3,
+  "tasksCompleted": 4,
   "isPaused": false,
   "agentPlugin": "claude",
   "trackerState": {
@@ -41,8 +41,8 @@
       {
         "id": "US-004b",
         "title": "Filmoteka NO część 2/2 — 7 filmów B2-C1",
-        "status": "open",
-        "completedInSession": false
+        "status": "completed",
+        "completedInSession": true
       },
       {
         "id": "US-005a",
@@ -100,6 +100,16 @@
       "durationMs": 249352,
       "startedAt": "2026-05-27T07:08:21.503Z",
       "endedAt": "2026-05-27T07:12:30.855Z"
+    },
+    {
+      "iteration": 4,
+      "status": "completed",
+      "taskId": "US-004b",
+      "taskTitle": "Filmoteka NO część 2/2 — 7 filmów B2-C1",
+      "taskCompleted": true,
+      "durationMs": 151686,
+      "startedAt": "2026-05-27T07:12:32.038Z",
+      "endedAt": "2026-05-27T07:15:03.724Z"
     }
   ],
   "skippedTaskIds": [],
