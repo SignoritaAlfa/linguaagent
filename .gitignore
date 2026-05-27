@@ -1,0 +1,11 @@
+# Ralph TUI — pliki sesji, logi, config, raporty
+.ralph-tui/
+ralph-runs/
+
+# macOS
+.DS_Store
+
+# Temp / IDE
+*.swp
+.vscode/
+.idea/
