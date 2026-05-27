@@ -1877,6 +1877,8 @@ let S={
   showAddFilm:false,addFilmTitle:"",addFilmType:"serial",addFilmLevel:"A2",
   showAddClip:false,addClipTitle:"",addClipEpisode:"",addClipDesc:"",addClipTopic:"",addClipUrl:"",addClipAutoFilling:false,
   showUpload:false,uploadLang:"FR",uploadStep:0,uploadFile:null,uploadPreview:null,uploadProcessing:false,uploadError:"",
+  // Wgrywanie własnych ćwiczeń do lekcji (np. zdjęcie strony z książki)
+  showCustomExUpload:false, customExStep:0, customExFile:null, customExText:"", customExPreview:null, customExProcessing:false, customExError:"",
   elKeyInput:"",elMsg:"",
   voiceRate:parseFloat(localStorage.getItem("lingua_rate")||"1.0"),
   lessonTab:"dialog",
@@ -3289,6 +3291,113 @@ Odpowiedz WYŁĄCZNIE czystym JSON, zero tekstu przed ani po, zero markdown:
     set({uploadProcessing:false,uploadError:e.message});
   }
 }
+
+// ── CUSTOM EXERCISES (z książki) ────────────────────────────────────────────────
+// Wyciąga ćwiczenia z materiału (zdjęcie/PDF/tekst) i sprowadza do formatu fill
+// (uzupełnianie luk) — kompatybilny z istniejącym mode='fill' w renderPractice.
+// Dodawane do lesson.customFill, równolegle do lesson.fill bazowego.
+async function processCustomExercises(lesson, lang){
+  const PROMPT = `Wyciągnij WSZYSTKIE ćwiczenia z poniższego materiału edukacyjnego (zdjęcie strony książki, PDF lub tekst).
+
+ZADANIE: KAŻDE ćwiczenie sprowadź do formatu UZUPEŁNIANIA LUK:
+- "s": zdanie z ___ (3 podkreślenia) w miejscu brakującego słowa. Np. "Mary ___ a teacher."
+- "a": prawidłowa odpowiedź dokładnie taka jak powinna wejść w lukę. Np. "is"
+- "h": krótka wskazówka po polsku co tam wstawić. Np. "czasownik 'być', 3. os. l. poj."
+- "cat": "text" jeśli to ćwiczenie kontekstowe/leksykalne (rozumienie), "grammar" jeśli czysto gramatyczne (odmiana, czasy, rodzajniki)
+
+JEŚLI ćwiczenie NIE jest typu uzupełnianie luk — przerób je SAM:
+- "Połącz w pary X=Y" → osobne luki "X = ___" z odpowiedzią "Y"
+- "Prawda/fałsz" → "Zdanie 'X' jest ___" z odpowiedzią "prawda" lub "fałsz"
+- "Przetłumacz na polski/obcy" → "PL 'X' = ___" z odpowiedzią po obcemu (lub odwrotnie)
+- "Odpowiedz na pytanie" → wytnij KLUCZOWE słowo z odpowiedzi modelowej i zostaw lukę
+- "Uporządkuj słowa w zdaniu" → "${"___"} (uporządkuj: X Y Z)" z odpowiedzią = poprawne zdanie
+- "Wstaw odpowiednią formę" → traktuj jako grammar fill normalnie
+
+Każde ćwiczenie z materiału = OSOBNA pozycja w fill[]. Jeśli w książce jest "Ćwiczenie 3: a) ___ b) ___ c) ___" — to są 3 osobne pozycje w fill[].
+
+Język lekcji: ${({EN:"angielski",FR:"francuski",IT:"włoski",NO:"norweski"})[lang]||"obcy"}.
+Kontekst lekcji: "${lesson.title||""}" — temat: ${lesson.topic||"(brak)"}.
+
+Odpowiedz WYŁĄCZNIE czystym JSON bez markdown:
+{"fill":[{"s":"zdanie z ___","a":"odpowiedź","h":"wskazówka po polsku","cat":"text"}]}`;
+
+  const _cfgCE = getLessonModelConfig();
+  if(_cfgCE.provider === "gemini" && !S.geminiKey) throw new Error("Wpisz klucz Gemini w Ustawieniach");
+  if(_cfgCE.provider === "anthropic" && !S.claudeKey) throw new Error("Wpisz klucz Anthropic w Ustawieniach");
+
+  let modelInput;
+  if(S.customExFile && S.customExFile.type && S.customExFile.type.startsWith("image/")){
+    const b64 = await fileToB64(S.customExFile);
+    modelInput = {prompt: PROMPT, image:{mimeType: S.customExFile.type, data: b64}};
+  } else if(S.customExFile && S.customExFile.type === "application/pdf"){
+    const extracted = await extractPdfText(S.customExFile);
+    if(!extracted || extracted.length < 20) throw new Error("PDF jest pusty lub nieczytelny");
+    modelInput = PROMPT + "\n\nMATERIAŁ:\n" + extracted;
+  } else if(S.customExFile && (S.customExFile.type.startsWith("text/") || /\.(md|markdown|txt)$/i.test(S.customExFile.name||""))){
+    const txt = await S.customExFile.text();
+    if(!txt || txt.trim().length < 20) throw new Error("Plik jest pusty");
+    modelInput = PROMPT + "\n\nMATERIAŁ:\n" + txt;
+  } else if((S.customExText||"").trim().length >= 20){
+    modelInput = PROMPT + "\n\nMATERIAŁ:\n" + S.customExText.trim();
+  } else {
+    throw new Error("Wybierz plik (zdjęcie/PDF/txt) albo wklej tekst");
+  }
+
+  const rawText = await callLessonModel(modelInput);
+  // Reuse parseLessonJson — ma 3-tier recovery
+  const parsed = parseLessonJson(rawText);
+  const items = parsed.fill || (Array.isArray(parsed.items) ? parsed.items : []);
+  if(!items || !items.length) throw new Error("AI nie wyciągnęło żadnych ćwiczeń — spróbuj wyraźniejsze zdjęcie albo wklej tekst");
+  // Normalize each item — wymagamy s i a (h opcjonalne)
+  const norm = items.filter(it => it && it.s && it.a).map(it => ({
+    s: String(it.s),
+    a: String(it.a),
+    h: String(it.h||""),
+    cat: (it.cat==="grammar" ? "grammar" : "text"),
+    source: "custom"
+  }));
+  if(!norm.length) throw new Error("Wyciągnięte ćwiczenia mają zły format (brakuje pola s lub a)");
+  return norm;
+}
+
+// Zapis customFill do lekcji + persist do myLessons + Drive sync
+function saveCustomExercisesToLesson(lesson, lang, newFill){
+  const ml = Object.assign({}, S.myLessons);
+  const arr = (ml[lang]||[]).slice();
+  const li = arr.findIndex(l => l.id === lesson.id);
+  if(li < 0){
+    // Lekcja nie jest jeszcze w "Moich" (może to wbudowana / film-generated) — zapisz tam
+    arr.push(Object.assign({}, lesson, {customFill: [...(lesson.customFill||[]), ...newFill]}));
+  } else {
+    arr[li] = Object.assign({}, arr[li], {customFill: [...(arr[li].customFill||[]), ...newFill]});
+  }
+  ml[lang] = arr;
+  S.myLessons = ml;
+  safeSetItem("lingua_my_lessons", JSON.stringify(ml));
+  scheduleDriveSync();
+  // Update S.lesson w pamięci jeśli to ta sama
+  if(S.lesson && S.lesson.id === lesson.id){
+    S.lesson = Object.assign({}, S.lesson, {customFill: [...(S.lesson.customFill||[]), ...newFill]});
+  }
+}
+
+function deleteCustomExercise(lesson, lang, idx){
+  const ml = Object.assign({}, S.myLessons);
+  const arr = (ml[lang]||[]).slice();
+  const li = arr.findIndex(l => l.id === lesson.id);
+  if(li < 0) return;
+  const cf = (arr[li].customFill || []).slice();
+  cf.splice(idx, 1);
+  arr[li] = Object.assign({}, arr[li], {customFill: cf});
+  ml[lang] = arr;
+  S.myLessons = ml;
+  safeSetItem("lingua_my_lessons", JSON.stringify(ml));
+  scheduleDriveSync();
+  if(S.lesson && S.lesson.id === lesson.id){
+    S.lesson = Object.assign({}, S.lesson, {customFill: cf});
+  }
+}
+
 function fileToB64(file){
   return new Promise((res,rej)=>{
     const r=new FileReader();
@@ -4594,6 +4703,125 @@ function renderUploadPanel(){
   return panel;
 }
 
+// ── Panel wgrywania własnych ćwiczeń (z książki) do bieżącej lekcji ───────────
+function renderCustomExerciseUploadPanel(lesson, lang){
+  const panel = h("div",{style:"max-width:760px;margin:24px 0;padding:20px 24px;background:var(--surface);border:1px solid var(--gold);border-radius:8px"});
+
+  // Nagłówek + close
+  const head = h("div",{style:"display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"});
+  head.appendChild(h("div",{style:"font-size:14px;font-weight:500;color:var(--gold)"},"📖 Wgraj własne ćwiczenia do lekcji"));
+  head.appendChild(h("button",{style:"background:none;border:none;color:var(--text3);cursor:pointer;font-size:20px;line-height:1",
+    onclick:()=>set({showCustomExUpload:false,customExStep:0,customExFile:null,customExText:"",customExPreview:null,customExError:""})},"✕"));
+  panel.appendChild(head);
+
+  panel.appendChild(h("div",{style:"font-size:12px;color:var(--text3);margin-bottom:18px;line-height:1.6"},
+    "Wybierz źródło — AI wyciągnie ćwiczenia i sprowadzi do uzupełniania luk. Dodadzą się do tej lekcji jako 'Moje ćwiczenia'."));
+
+  if(S.customExStep === 0){
+    // Cztery przyciski źródeł — file inputy są niewidoczne, button odpala
+    const grid = h("div",{style:"display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px"});
+
+    // 1. Zdjęcie z telefonu
+    const imgInp = h("input",{type:"file",accept:"image/*",capture:"environment",style:"display:none",
+      onchange:(e)=>{if(e.target.files[0]) set({customExFile:e.target.files[0],customExStep:1,customExText:""});}});
+    const imgBtn = h("button",{class:"sbtn",style:"padding:16px;text-align:center;font-size:13px",onclick:()=>imgInp.click()},
+      h("div",{style:"font-size:24px;margin-bottom:6px"},"📸"), h("div",{},"Zdjęcie strony"));
+    grid.appendChild(imgInp); grid.appendChild(imgBtn);
+
+    // 2. PDF
+    const pdfInp = h("input",{type:"file",accept:".pdf",style:"display:none",
+      onchange:(e)=>{if(e.target.files[0]) set({customExFile:e.target.files[0],customExStep:1,customExText:""});}});
+    const pdfBtn = h("button",{class:"sbtn",style:"padding:16px;text-align:center;font-size:13px",onclick:()=>pdfInp.click()},
+      h("div",{style:"font-size:24px;margin-bottom:6px"},"📄"), h("div",{},"Plik PDF"));
+    grid.appendChild(pdfInp); grid.appendChild(pdfBtn);
+
+    // 3. Plik tekstowy
+    const txtInp = h("input",{type:"file",accept:".md,.markdown,.txt,text/plain,text/markdown",style:"display:none",
+      onchange:(e)=>{if(e.target.files[0]) set({customExFile:e.target.files[0],customExStep:1,customExText:""});}});
+    const txtBtn = h("button",{class:"sbtn",style:"padding:16px;text-align:center;font-size:13px",onclick:()=>txtInp.click()},
+      h("div",{style:"font-size:24px;margin-bottom:6px"},"📃"), h("div",{},"Plik .txt / .md"));
+    grid.appendChild(txtInp); grid.appendChild(txtBtn);
+
+    // 4. Wklej tekst
+    const pasteBtn = h("button",{class:"sbtn",style:"padding:16px;text-align:center;font-size:13px",
+      onclick:()=>set({customExStep:2,customExFile:null})},
+      h("div",{style:"font-size:24px;margin-bottom:6px"},"✏️"), h("div",{},"Wklej tekst"));
+    grid.appendChild(pasteBtn);
+
+    panel.appendChild(grid);
+  }
+
+  if(S.customExStep === 1 && S.customExFile){
+    panel.appendChild(h("div",{class:"msg-ok",style:"margin-bottom:12px"},"✓ "+S.customExFile.name+" ("+Math.round(S.customExFile.size/1024)+" KB)"));
+    const br = h("div",{style:"display:flex;gap:8px"});
+    br.appendChild(h("button",{class:"check-btn",style:"flex:2",disabled:S.customExProcessing,
+      onclick:async ()=>{
+        set({customExProcessing:true, customExError:""});
+        try{
+          const items = await processCustomExercises(lesson, lang);
+          set({customExProcessing:false, customExStep:3, customExPreview:items});
+        }catch(e){
+          set({customExProcessing:false, customExError:e.message});
+        }
+      }
+    }, S.customExProcessing ? "⏳ Wyciągam ćwiczenia..." : "✨ Wyciągnij ćwiczenia"));
+    br.appendChild(h("button",{class:"sbtn",onclick:()=>set({customExStep:0,customExFile:null,customExError:""})},"← Wróć"));
+    panel.appendChild(br);
+  }
+
+  if(S.customExStep === 2){
+    const ta = h("textarea",{
+      style:"width:100%;min-height:160px;padding:12px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-family:inherit;font-size:13px;border-radius:4px;box-sizing:border-box;margin-bottom:10px",
+      placeholder:"Wklej tutaj treść ćwiczeń (np. 'Ćw. 1 a) She ___ a doctor. b) They ___ tired.')",
+      oninput:(e)=>{ S.customExText = e.target.value; }
+    });
+    ta.value = S.customExText||"";
+    panel.appendChild(ta);
+    panel.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-bottom:10px"},(S.customExText||"").length+" znaków"));
+    const br = h("div",{style:"display:flex;gap:8px"});
+    br.appendChild(h("button",{class:"check-btn",style:"flex:2",disabled:S.customExProcessing,
+      onclick:async ()=>{
+        if((S.customExText||"").trim().length < 20){ set({customExError:"Wklej dłuższy tekst (min. 20 znaków)"}); return; }
+        set({customExProcessing:true, customExError:""});
+        try{
+          const items = await processCustomExercises(lesson, lang);
+          set({customExProcessing:false, customExStep:3, customExPreview:items});
+        }catch(e){
+          set({customExProcessing:false, customExError:e.message});
+        }
+      }
+    }, S.customExProcessing ? "⏳ Wyciągam..." : "✨ Wyciągnij ćwiczenia"));
+    br.appendChild(h("button",{class:"sbtn",onclick:()=>set({customExStep:0,customExText:"",customExError:""})},"← Wróć"));
+    panel.appendChild(br);
+  }
+
+  if(S.customExStep === 3 && S.customExPreview){
+    panel.appendChild(h("div",{style:"font-size:13px;color:var(--text);margin-bottom:10px"},
+      "Wyciągnęłam "+S.customExPreview.length+" ćwiczeń:"));
+    const list = h("div",{style:"max-height:340px;overflow-y:auto;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:4px;margin-bottom:14px"});
+    S.customExPreview.forEach((item, i)=>{
+      const row = h("div",{style:"padding:8px 0;border-bottom:1px solid var(--border)"});
+      row.appendChild(h("div",{style:"font-size:13px;color:var(--text)"},""+(i+1)+". "+item.s));
+      row.appendChild(h("div",{style:"font-size:12px;color:var(--gold);margin-top:2px"},"Odp: "+item.a+(item.cat==="grammar"?" · gramatyka":"")));
+      if(item.h) row.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-top:2px"},item.h));
+      list.appendChild(row);
+    });
+    panel.appendChild(list);
+    const br = h("div",{style:"display:flex;gap:8px"});
+    br.appendChild(h("button",{class:"check-btn",style:"flex:2",onclick:()=>{
+      saveCustomExercisesToLesson(lesson, lang, S.customExPreview);
+      set({showCustomExUpload:false,customExStep:0,customExFile:null,customExText:"",customExPreview:null,customExError:""});
+    }},"✓ Dodaj do lekcji"));
+    br.appendChild(h("button",{class:"sbtn",onclick:()=>set({customExStep:0,customExFile:null,customExText:"",customExPreview:null,customExError:""})},"← Spróbuj inaczej"));
+    panel.appendChild(br);
+  }
+
+  if(S.customExError){
+    panel.appendChild(h("div",{class:"msg-err",style:"margin-top:12px"},"⚠ "+S.customExError));
+  }
+  return panel;
+}
+
 function renderLesson(){
   const{lesson,lang,mode,playing,playingLine}=S;
   const w=h("div",{});
@@ -4619,7 +4847,8 @@ function renderLesson(){
   const _tabs=[["dialog","Dialog"],["vocab","Słówka"]];
   if((lesson.phrases && lesson.phrases.length>0) || lesson.rawText) _tabs.push(["phrases","Zwroty"]);
   _tabs.push(["grammar","Gramatyka"]);
-  if(lesson.fill && lesson.fill.length>0) _tabs.push(["fill","Ćwiczenia"]);
+  // Pokaż zakładkę Ćwiczenia ZAWSZE — żeby user mógł też dodać własne (z książki)
+  if((lesson.fill && lesson.fill.length>0) || (lesson.customFill && lesson.customFill.length>0) || true) _tabs.push(["fill","Ćwiczenia"]);
   if(lesson.rawText) _tabs.push(["tekst","Tekst"]);
   _tabs.forEach(([id,label])=>{
     tabsEl.appendChild(h("button",{class:"lesson-tab-btn"+(S.lessonTab===id?" active":""),
@@ -5010,10 +5239,52 @@ function renderLesson(){
     main.appendChild(gw);
   }
 
-  if(S.lessonTab==="fill" && lesson.fill && lesson.fill.length>0){
+  if(S.lessonTab==="fill"){
     const fw=h("div",{class:"grammar-wrap"});
-    const textEx=lesson.fill.filter(c=>!c.cat||c.cat==="text");
-    const gramEx=lesson.fill.filter(c=>c.cat==="grammar");
+
+    // Przycisk + panel wgrywania własnych ćwiczeń (z książki / PDF / tekstu / zdjęcia)
+    if(S.showCustomExUpload){
+      fw.appendChild(renderCustomExerciseUploadPanel(lesson, lang));
+    } else {
+      fw.appendChild(h("button",{class:"sbtn",style:"margin-bottom:20px;border-color:var(--gold);color:var(--gold);padding:10px 16px",
+        onclick:()=>set({showCustomExUpload:true,customExStep:0,customExFile:null,customExText:"",customExPreview:null,customExError:""})},
+        "📖 + Wgraj własne ćwiczenia z książki"));
+    }
+
+    // Sekcja: Moje ćwiczenia (z książki) — wyświetlana NAD bazowymi
+    if(lesson.customFill && lesson.customFill.length>0){
+      fw.appendChild(h("div",{class:"sec-label",style:"margin-bottom:16px;color:var(--gold)"},"📖 Moje ćwiczenia ("+lesson.customFill.length+")"));
+      lesson.customFill.forEach((card,i)=>{
+        const blk=h("div",{class:"grammar-block",style:"border-left:3px solid var(--gold);padding-left:14px"});
+        const head=h("div",{style:"display:flex;justify-content:space-between;align-items:flex-start;gap:8px"});
+        head.appendChild(h("div",{class:"grammar-rule",style:"flex:1"},""+(i+1)+". "+card.s));
+        const delBtn=h("button",{style:"background:none;border:1px solid var(--border);color:var(--text3);font-size:11px;padding:2px 8px;cursor:pointer;border-radius:3px",
+          onclick:()=>{ if(confirm("Usunąć to ćwiczenie?")){ deleteCustomExercise(lesson, lang, i); render(); }}},"✕");
+        head.appendChild(delBtn);
+        blk.appendChild(head);
+        blk.appendChild(h("div",{class:"grammar-ex",style:"color:var(--gold)"},"Odpowiedź: "+card.a));
+        if(card.h) blk.appendChild(h("div",{class:"grammar-note"},"Wskazówka: "+card.h));
+        fw.appendChild(blk);
+      });
+      fw.appendChild(h("button",{class:"sbtn",style:"margin-top:14px;margin-bottom:28px;border-color:var(--gold);color:var(--gold)",
+        onclick:()=>startPractice({...lesson,fill:lesson.customFill},"fill")},"▶  Ćwicz moje ("+lesson.customFill.length+")"));
+    }
+
+    // Empty state — gdy lekcja nie ma ani bazowych ani custom ćwiczeń
+    if((!lesson.fill || lesson.fill.length===0) && (!lesson.customFill || lesson.customFill.length===0)){
+      fw.appendChild(h("div",{class:"empty",style:"margin-top:20px"},
+        h("div",{class:"empty-icon"},"✏️"),
+        h("div",{class:"empty-text"},"Brak ćwiczeń"),
+        h("div",{class:"empty-sub"},"Wgraj własne ćwiczenia przyciskiem powyżej, albo wygeneruj nowe AI z tekstu lekcji (zakładka Tekst)")
+      ));
+      main.appendChild(fw);
+      return w;
+    }
+
+    // Bazowe ćwiczenia z lekcji (gdy istnieją)
+    const fillBase = lesson.fill || [];
+    const textEx=fillBase.filter(c=>!c.cat||c.cat==="text");
+    const gramEx=fillBase.filter(c=>c.cat==="grammar");
     if(textEx.length>0){
       fw.appendChild(h("div",{class:"sec-label",style:"margin-bottom:16px"},"Ćwiczenia z tekstu ("+textEx.length+")"));
       textEx.forEach((card,i)=>{
@@ -5036,9 +5307,9 @@ function renderLesson(){
       });
       fw.appendChild(h("button",{class:"sbtn",style:"margin-top:14px;margin-bottom:28px",onclick:()=>startPractice({...lesson,fill:gramEx},"fill")},"▶  Ćwicz gramatykę"));
     }
-    if(textEx.length===0&&gramEx.length===0){
-      fw.appendChild(h("div",{class:"sec-label",style:"margin-bottom:16px"},"Ćwiczenia ("+lesson.fill.length+")"));
-      lesson.fill.forEach((card,i)=>{
+    if(textEx.length===0&&gramEx.length===0&&fillBase.length>0){
+      fw.appendChild(h("div",{class:"sec-label",style:"margin-bottom:16px"},"Ćwiczenia ("+fillBase.length+")"));
+      fillBase.forEach((card,i)=>{
         const blk=h("div",{class:"grammar-block"});
         blk.appendChild(h("div",{class:"grammar-rule"},""+(i+1)+". "+card.s));
         blk.appendChild(h("div",{class:"grammar-ex",style:"color:var(--gold)"},"Odpowiedź: "+card.a));
@@ -5046,7 +5317,13 @@ function renderLesson(){
         fw.appendChild(blk);
       });
     }
-    fw.appendChild(h("button",{class:"sbtn",style:"margin-top:18px",onclick:()=>startPractice(lesson,"fill")},"▶  Wszystkie ćwiczenia razem"));
+    // "Wszystkie razem" — łączy bazowe (lesson.fill) + moje (lesson.customFill)
+    const allFill = [...(lesson.fill||[]), ...(lesson.customFill||[])];
+    if(allFill.length > 0){
+      fw.appendChild(h("button",{class:"sbtn",style:"margin-top:18px",
+        onclick:()=>startPractice({...lesson, fill: allFill},"fill")},
+        "▶  Wszystkie ćwiczenia razem ("+allFill.length+")"));
+    }
     main.appendChild(fw);
   }
 
