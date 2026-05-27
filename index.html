@@ -610,6 +610,10 @@ async function deleteVideo(key){
 
 const LANGS={EN:{name:"English",flag:"🇬🇧"},FR:{name:"Français",flag:"🇫🇷"},IT:{name:"Italiano",flag:"🇮🇹"},NO:{name:"Norsk",flag:"🇳🇴"}};
 const LANG_BCP={EN:"en-GB",FR:"fr-FR",IT:"it-IT",NO:"nb-NO"};
+// Polska fleksja: forma do wstawienia po "po " (np. "po francusku")
+// Lokalnie po polsku, NIE używaj LANGS[lang].name w tekstach polskich
+// (LANGS.FR.name="Français" — to nazwa języka po francusku, nie po polsku)
+const LANG_ACC={EN:"angielsku",FR:"francusku",IT:"włosku",NO:"norwesku"};
 
 // Palety kolorów akcentu — zmieniają tylko --gold (główny kolor podświetleń, przycisków).
 // Tło i tekst zostają neutralne. --red (dla akcji destrukcyjnych) pozostaje stały.
@@ -4816,7 +4820,7 @@ function renderLesson(){
       actBtnsV.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:v}),"writing","lesson-vocab")},"✍️ Pisanie z PL"));
       actBtnsV.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:v}),"dictation","lesson-vocab")},"🎧 Dyktando"));
       actBtnsV.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:v}),"read-aloud","lesson-vocab")},"🗣️ Czytaj na głos"));
-      actBtnsV.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:v}),"speak-foreign","lesson-vocab")},"🎤 Mów po obcemu"));
+      actBtnsV.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:v}),"speak-foreign","lesson-vocab")},"🎤 Powiedz po "+LANG_ACC[lang]));
       head.appendChild(actBtnsV);
       vw.appendChild(head);
     }
@@ -4875,7 +4879,7 @@ function renderLesson(){
       actBtns.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:phrases}),"writing","lesson-phrases")},"✍️ Pisanie z PL"));
       actBtns.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:phrases}),"dictation","lesson-phrases")},"🎧 Dyktando"));
       actBtns.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:phrases}),"read-aloud","lesson-phrases")},"🗣️ Czytaj na głos"));
-      actBtns.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:phrases}),"speak-foreign","lesson-phrases")},"🎤 Mów po obcemu"));
+      actBtns.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:phrases}),"speak-foreign","lesson-phrases")},"🎤 Powiedz po "+LANG_ACC[lang]));
       head.appendChild(actBtns);
       pw.appendChild(head);
       const onDel = isOwn ? (idx)=>{
@@ -5241,7 +5245,7 @@ function renderPractice(){
                    : "← "+LANGS[lang].name;
   main.appendChild(h("button",{class:"back-btn",onclick:()=>{stopPronunciationSTT();set({screen:_backScreen, _vocabTab: S.practiceOrigin==="lesson-phrases"?"phrases":(S.practiceOrigin==="lesson-vocab"?"vocab":S._vocabTab)});}}, _backLabel));
   main.appendChild(h("div",{class:"prog-info"},
-    h("span",{},(idx+1)+" / "+cards.length+" · "+(mode==="flashcard"?"Fiszki":mode==="fill"?"Uzupełnianie":mode==="writing"?"Pisanie":mode==="dictation"?"Dyktando":mode==="read-aloud"?"Czytanie na głos":mode==="speak-foreign"?"Mów po obcemu":"")),
+    h("span",{},(idx+1)+" / "+cards.length+" · "+(mode==="flashcard"?"Fiszki":mode==="fill"?"Uzupełnianie":mode==="writing"?"Pisanie":mode==="dictation"?"Dyktando":mode==="read-aloud"?"Czytanie na głos":mode==="speak-foreign"?("Powiedz po "+LANG_ACC[lang]):"")),
     h("span",{style:"color:var(--gold)"},"✓ "+score.c+" / "+score.t)
   ));
   const pb=h("div",{class:"prog-bar"});
@@ -5301,13 +5305,13 @@ function renderPractice(){
     // Polskie tłumaczenie do pokazania (lub jeśli brak — bazowa forma)
     const target = card.w;
     const promptPL = card.tr || "(brak tłumaczenia)";
-    fw.appendChild(h("div",{style:"font-size:11px;color:var(--text3);letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px"},"Napisz po "+LANGS[lang].name));
+    fw.appendChild(h("div",{style:"font-size:11px;color:var(--text3);letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px"},"Napisz po "+LANG_ACC[lang]));
     fw.appendChild(h("div",{class:"fc-tr",style:"font-size:28px;margin-bottom:18px;color:var(--text)"},promptPL));
 
     // Input
     const inp=h("input",{
       type:"text", class:"fill-inp",
-      placeholder:"wpisz po "+LANGS[lang].name,
+      placeholder:"wpisz po "+LANG_ACC[lang],
       autocomplete:"off", autocapitalize:"off", spellcheck:"false",
       style:"font-size:20px;width:100%;max-width:520px"
     });
@@ -5393,7 +5397,7 @@ function renderPractice(){
     }
 
     // Input 1 — słowo w obcym
-    fw.appendChild(h("div",{style:"font-size:12px;color:var(--text2);margin-bottom:4px"},"Słowo po "+LANGS[lang].name+":"));
+    fw.appendChild(h("div",{style:"font-size:12px;color:var(--text2);margin-bottom:4px"},"Słowo po "+LANG_ACC[lang]+":"));
     const inp1=h("input",{
       type:"text", class:"fill-inp",
       placeholder:"co usłyszałaś",
@@ -5470,7 +5474,7 @@ function renderPractice(){
     const attempts = S.attempts || 0;
     const MAX_ATTEMPTS = 3;
     const fw = h("div",{class:"fc-wrap"});
-    fw.appendChild(h("div",{style:"font-size:11px;color:var(--text3);letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px"},"Przeczytaj na głos po "+LANGS[lang].name));
+    fw.appendChild(h("div",{style:"font-size:11px;color:var(--text3);letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px"},"Przeczytaj na głos po "+LANG_ACC[lang]));
 
     // Słowo/zwrot do przeczytania — duże
     fw.appendChild(h("div",{class:"fc-word",style:"font-size:36px;margin:6px 0 4px 0"},card.w));
@@ -5558,7 +5562,7 @@ function renderPractice(){
     const attempts = S.attempts || 0;
     const MAX_ATTEMPTS = 3;
     const fw = h("div",{class:"fc-wrap"});
-    fw.appendChild(h("div",{style:"font-size:11px;color:var(--text3);letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px"},"Powiedz po "+LANGS[lang].name));
+    fw.appendChild(h("div",{style:"font-size:11px;color:var(--text3);letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px"},"Powiedz po "+LANG_ACC[lang]));
 
     // Polski tekst — duży
     fw.appendChild(h("div",{class:"fc-tr",style:"font-size:30px;margin:6px 0 18px 0"},card.tr || "(brak tłumaczenia)"));
@@ -7694,7 +7698,7 @@ function renderMyVocab(cfg){
       br.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(fakeLesson,"flashcard",cfg.origin)},"🃏 Fiszki"));
       br.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(fakeLesson,"writing",cfg.origin)},"✍️ Pisanie z PL"));
       br.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(fakeLesson,"read-aloud",cfg.origin)},"🗣️ Czytaj na głos"));
-      br.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(fakeLesson,"speak-foreign",cfg.origin)},"🎤 Mów po obcemu"));
+      br.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(fakeLesson,"speak-foreign",cfg.origin)},"🎤 Powiedz po "+LANG_ACC[lang]));
       br.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(fakeLesson,"dictation",cfg.origin)},"🎧 Dyktando"));
       practiceBox.appendChild(br);
     } else {
