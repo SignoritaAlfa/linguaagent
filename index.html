@@ -3272,17 +3272,38 @@ async function callGemini(prompt, geminiKey){
 async function processUpload(){
   const PROMPT = `Jesteś ekspertem tworzenia materiałów do nauki języków. Przeanalizuj CAŁY poniższy materiał i stwórz KOMPLETNĄ lekcję językową w języku który widzisz w tekście.
 
-WYMAGANIA MINIMALNE (nie można ich zmniejszyć):
-- dialog: minimum 8 kwestii używając treści z materiału
-- vocab: minimum 20 słów i zwrotów z tłumaczeniem na polski
+NAJPIERW ROZPOZNAJ STRUKTURĘ MATERIAŁU — czy materiał ma DWIE części?
+
+A. CZĘŚĆ TREŚCIOWA — dialog/tekst/słówka/zasady gramatyczne wyłożone (np. "Lezione 1", "Unità 2", "Wortschatz", lista vocabolario, rozdział "Grammatica", dialog z postaciami)
+B. CZĘŚĆ ĆWICZENIOWA — zadania oznaczone numerami i etykietami: "Esercizio 1", "Esercizi", "Ćwiczenie", "Übung", "Exercise", "Activité", "Pratica", "Vero o falso?", "Completa", "Abbina", "Trasforma", "Rispondi", zadania z lukami "___", numeracja a) b) c), kratki do uzupełnienia
+
+JEŚLI MATERIAŁ MA CZĘŚĆ B (oryginalne ćwiczenia z książki):
+  → fill[] WYPEŁNIJ ORYGINALNYMI ĆWICZENIAMI Z MATERIAŁU (przepisz każde co najmniej jedno-do-jednego). Każda podpozycja a)/b)/c) = osobna pozycja w fill[]. NIE WYMYŚLAJ nowych ćwiczeń jeśli są oryginalne.
+  → dialog/vocab/grammar pochodzą z CZĘŚCI A (treści), nie z ćwiczeń.
+  → Jeśli oryginalne ćwiczenie nie jest typu "uzupełnij lukę" przerób na format luki:
+     - "Vero/Falso: zdanie X" → {s:"X jest ___", a:"vero" lub "falso", cat:"text"}
+     - "Abbina/Dopasuj: A↔B" → {s:"A = ___", a:"B", cat:"text"}
+     - "Trasforma na liczbę mnogą: il gatto" → {s:"l. mnoga: il gatto → ___", a:"i gatti", cat:"grammar"}
+     - "Rispondi: Quanti anni hai?" → {s:"Quanti anni hai? ___ (twoja odpowiedź)", a:"ho [N] anni", cat:"text"}
+     - "Completa con il verbo essere: io ___ italiana" → {s:"io ___ italiana", a:"sono", h:"essere, 1.os.", cat:"grammar"}
+     - "Przetłumacz na X / na PL: zdanie Y" → {s:"PL/X 'Y' = ___", a:"tłumaczenie", cat:"text"}
+
+JEŚLI MATERIAŁ TO TYLKO CZĘŚĆ A (czysty dialog filmowy, artykuł, post — bez wydzielonych ćwiczeń):
+  → Wygeneruj fill[] sam z dialogu/tekstu (minimum 12: 6 tekstowych, 6 gramatycznych).
+
+WYMAGANIA MINIMALNE:
+- dialog: minimum 6 kwestii z treści materiału (mniej tylko jeśli materiał to czyste ćwiczenia bez dialogu)
+- vocab: minimum 15 słów i zwrotów z tłumaczeniem na polski
   KRYTYCZNE: rzeczowniki w językach z rodzajem (FR: le/la/un/une; IT: il/la/lo/un/una/uno; DE: der/die/das; NO: en/ei/et — bokmål) ZAWSZE z rodzajnikiem w polu "w". Czasowniki w bezokoliczniku (parler, parlare, to talk, å snakke).
-- fill: minimum 12 ćwiczeń uzupełniania luk — DWIE KATEGORIE: (1) cat:"text" — zdania bezpośrednio z materiału z brakującym słowem (min 6), (2) cat:"grammar" — ćwiczenia gramatyczne na zasady widoczne w tekście (min 6)
-- grammar: minimum 4 zasady gramatyczne widoczne w materiale
+- fill: jeśli oryginalne ćwiczenia są w materiale → przepisz WSZYSTKIE (może być 4, 8, 30 — ile jest). Jeśli brak → minimum 12 wygenerowanych
+- grammar: minimum 3 zasady gramatyczne widoczne w materiale
 
 Pole "rawText": jeśli widzisz obraz, przepisz DOSŁOWNIE cały tekst z obrazu — każde słowo, w kolejności w jakiej występuje, ZACHOWUJĄC ORYGINALNE FORMATOWANIE: łamania linii (każda linia widoczna na obrazku = osobna linia, użyj \n), akapity (puste linie między akapitami = \n\n), wcięcia, listy i numerację (1., 2., 3. lub - w nowej linii). Nie sklejaj wszystkiego w jeden ciąg. Jeśli dostałeś już tekst w wiadomości, powtórz go w "rawText" identycznie z zachowaniem łamań linii.
 
+Pole "fillSource": "original" jeśli fill[] pochodzi z oryginalnych ćwiczeń materiału, "generated" jeśli sam wygenerowałeś. Użytkownik to widzi.
+
 Odpowiedz WYŁĄCZNIE czystym JSON, zero tekstu przed ani po, zero markdown:
-{"title":"tytuł lekcji","level":"B1","topic":"temat po polsku","rawText":"oryginalny tekst materiału dosłownie","dialog":[{"s":"Imię","l":"zdanie w języku obcym","t":"tłumaczenie po polsku"}],"vocab":[{"w":"słowo","tr":"tłumaczenie PL","ipa":"wymowa IPA","pl":"jak czytać po polsku","ex":"przykład użycia","exT":"tłumaczenie przykładu"}],"fill":[{"s":"zdanie z ___ luką","a":"odpowiedź","h":"wskazówka po polsku","cat":"text"},{"s":"gramatyczne z ___","a":"odpowiedź","h":"wskazówka","cat":"grammar"}],"grammar":[{"rule":"nazwa zasady","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie po polsku"}]}`;
+{"title":"tytuł lekcji","level":"B1","topic":"temat po polsku","rawText":"oryginalny tekst materiału dosłownie","fillSource":"original|generated","dialog":[{"s":"Imię","l":"zdanie w języku obcym","t":"tłumaczenie po polsku"}],"vocab":[{"w":"słowo","tr":"tłumaczenie PL","ipa":"wymowa IPA","pl":"jak czytać po polsku","ex":"przykład użycia","exT":"tłumaczenie przykładu"}],"fill":[{"s":"zdanie z ___ luką","a":"odpowiedź","h":"wskazówka po polsku","cat":"text"},{"s":"gramatyczne z ___","a":"odpowiedź","h":"wskazówka","cat":"grammar"}],"grammar":[{"rule":"nazwa zasady","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie po polsku"}]}`;
   // Wymagaj klucza odpowiedniego do wybranego modelu (Gemini lub Claude)
   const _cfgU = getLessonModelConfig();
   if(_cfgU.provider === "gemini" && !S.geminiKey){set({uploadError:"Wpisz klucz Gemini API w Ustawieniach (albo zmień model na Claude)"});return;}
@@ -4739,11 +4760,22 @@ function renderUploadPanel(){
 
   if(uploadStep===2&&uploadPreview&&typeof uploadPreview==="object"){
     const prev=uploadPreview;
+    const fillCount = (prev.fill||[]).length;
+    const fillTag = prev.fillSource === "original"
+      ? " · 📖 "+fillCount+" ćwiczeń z materiału"
+      : (prev.fillSource === "generated" ? " · ✨ "+fillCount+" ćwiczeń AI" : " · "+fillCount+" ćwiczeń");
     panel.appendChild(h("div",{class:"msg-ok"},
       h("div",{style:"font-weight:500;margin-bottom:4px"},prev.title||"Bez tytułu"),
       h("div",{style:"font-size:12px"},
-        (prev.level||"")+" · "+(prev.dialog||[]).length+" linii · "+(prev.vocab||[]).length+" słówek · "+(prev.grammar||[]).length+" zasad")
+        (prev.level||"")+" · "+(prev.dialog||[]).length+" linii · "+(prev.vocab||[]).length+" słówek"+fillTag+" · "+(prev.grammar||[]).length+" zasad")
     ));
+    if(prev.fillSource === "original" && fillCount > 0){
+      panel.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-top:6px;line-height:1.5"},
+        "AI rozpoznała ćwiczenia w wgranym materiale i przepisała je 1:1 (bez wymyślania)."));
+    } else if(prev.fillSource === "generated" && fillCount > 0){
+      panel.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-top:6px;line-height:1.5"},
+        "Materiał nie miał wydzielonych ćwiczeń, AI wygenerowała "+fillCount+" zadań z dialogu/tekstu."));
+    }
     const br=h("div",{style:"display:flex;gap:8px;margin-top:12px"});
     br.appendChild(h("button",{class:"check-btn",style:"flex:2;margin:0",onclick:()=>saveMyLesson(uploadLang,prev)},"✓ Zapisz lekcję"));
     br.appendChild(h("button",{class:"next-btn",style:"margin:0;flex:1",onclick:()=>set({uploadStep:0,uploadFile:null,uploadPreview:null})},"← Wróć"));
