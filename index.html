@@ -571,13 +571,54 @@ body{
 <div class="app" id="root"></div>
 <script>
 // ── INDEXEDDB FOR VIDEO FILES ─────────────────────────────────────────────────
-const DB_NAME="lingua_db", DB_VER=1, STORE="videos";
+const DB_NAME="lingua_db", DB_VER=2, STORE="videos", STORE_SRC="sourceFiles";
 function openDB(){
   return new Promise((res,rej)=>{
     const r=indexedDB.open(DB_NAME,DB_VER);
-    r.onupgradeneeded=e=>e.target.result.createObjectStore(STORE);
+    r.onupgradeneeded=e=>{
+      const db = e.target.result;
+      if(!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
+      if(!db.objectStoreNames.contains(STORE_SRC)) db.createObjectStore(STORE_SRC);
+    };
     r.onsuccess=e=>res(e.target.result);
     r.onerror=e=>rej(e.target.error);
+  });
+}
+// Source files (oryginalne PDF/zdjęcia z których wygenerowano lekcję) — w IDB, nie LS
+// (PDF często >1MB, localStorage by się zatkał)
+async function saveSourceFile(lessonId, fileLike){
+  const db = await openDB();
+  // fileLike: File albo {blob, name, type} — normalizujemy
+  const blob = fileLike instanceof Blob ? fileLike : fileLike.blob;
+  const meta = {
+    name: fileLike.name || "source",
+    type: fileLike.type || blob.type || "application/octet-stream",
+    size: blob.size,
+    savedAt: Date.now()
+  };
+  return new Promise((res,rej)=>{
+    const tx = db.transaction(STORE_SRC, "readwrite");
+    tx.objectStore(STORE_SRC).put({blob, meta}, lessonId);
+    tx.oncomplete = ()=>res();
+    tx.onerror = e=>rej(e.target.error);
+  });
+}
+async function loadSourceFile(lessonId){
+  const db = await openDB();
+  return new Promise((res,rej)=>{
+    const tx = db.transaction(STORE_SRC, "readonly");
+    const r = tx.objectStore(STORE_SRC).get(lessonId);
+    r.onsuccess = e=>res(e.target.result || null);
+    r.onerror = e=>rej(e.target.error);
+  });
+}
+async function deleteSourceFile(lessonId){
+  const db = await openDB();
+  return new Promise((res,rej)=>{
+    const tx = db.transaction(STORE_SRC, "readwrite");
+    tx.objectStore(STORE_SRC).delete(lessonId);
+    tx.oncomplete = ()=>res();
+    tx.onerror = e=>rej(e.target.error);
   });
 }
 async function saveVideo(key,blob){
@@ -3296,14 +3337,14 @@ WYMAGANIA MINIMALNE:
 - vocab: minimum 15 słów i zwrotów z tłumaczeniem na polski
   KRYTYCZNE: rzeczowniki w językach z rodzajem (FR: le/la/un/une; IT: il/la/lo/un/una/uno; DE: der/die/das; NO: en/ei/et — bokmål) ZAWSZE z rodzajnikiem w polu "w". Czasowniki w bezokoliczniku (parler, parlare, to talk, å snakke).
 - fill: jeśli oryginalne ćwiczenia są w materiale → przepisz WSZYSTKIE (może być 4, 8, 30 — ile jest). Jeśli brak → minimum 12 wygenerowanych
-- grammar: minimum 3 zasady gramatyczne widoczne w materiale
+- grammar: minimum 3 zasady gramatyczne widoczne w materiale. KAŻDA zasada MA MIEĆ pole "exercises" — minimum 3 ćwiczenia luk BEZPOŚREDNIO sprawdzające tę zasadę. Np. dla zasady "tryb warunkowy 'voudrais'": exercises:[{s:"Je ___ un café.",a:"voudrais",h:"chciałbym"},{s:"Elle ___ partir tôt.",a:"voudrait",h:"chciałaby (3.os.)"}]. JEŚLI ORYGINALNE ĆWICZENIA GRAMATYCZNE Z MATERIAŁU pasują do tej zasady — DODAJ JE TEŻ do exercises[] tej zasady (zamiast zostawiać tylko w globalnym fill[]). Cel: użytkownik klikając "Ćwicz tę zasadę" dostaje WSZYSTKIE ćwiczenia (wygenerowane + oryginalne) skupione na jednej regule
 
 Pole "rawText": jeśli widzisz obraz, przepisz DOSŁOWNIE cały tekst z obrazu — każde słowo, w kolejności w jakiej występuje, ZACHOWUJĄC ORYGINALNE FORMATOWANIE: łamania linii (każda linia widoczna na obrazku = osobna linia, użyj \n), akapity (puste linie między akapitami = \n\n), wcięcia, listy i numerację (1., 2., 3. lub - w nowej linii). Nie sklejaj wszystkiego w jeden ciąg. Jeśli dostałeś już tekst w wiadomości, powtórz go w "rawText" identycznie z zachowaniem łamań linii.
 
 Pole "fillSource": "original" jeśli fill[] pochodzi z oryginalnych ćwiczeń materiału, "generated" jeśli sam wygenerowałeś. Użytkownik to widzi.
 
 Odpowiedz WYŁĄCZNIE czystym JSON, zero tekstu przed ani po, zero markdown:
-{"title":"tytuł lekcji","level":"B1","topic":"temat po polsku","rawText":"oryginalny tekst materiału dosłownie","fillSource":"original|generated","dialog":[{"s":"Imię","l":"zdanie w języku obcym","t":"tłumaczenie po polsku"}],"vocab":[{"w":"słowo","tr":"tłumaczenie PL","ipa":"wymowa IPA","pl":"jak czytać po polsku","ex":"przykład użycia","exT":"tłumaczenie przykładu"}],"fill":[{"s":"zdanie z ___ luką","a":"odpowiedź","h":"wskazówka po polsku","cat":"text"},{"s":"gramatyczne z ___","a":"odpowiedź","h":"wskazówka","cat":"grammar"}],"grammar":[{"rule":"nazwa zasady","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie po polsku"}]}`;
+{"title":"tytuł lekcji","level":"B1","topic":"temat po polsku","rawText":"oryginalny tekst materiału dosłownie","fillSource":"original|generated","dialog":[{"s":"Imię","l":"zdanie w języku obcym","t":"tłumaczenie po polsku"}],"vocab":[{"w":"słowo","tr":"tłumaczenie PL","ipa":"wymowa IPA","pl":"jak czytać po polsku","ex":"przykład użycia","exT":"tłumaczenie przykładu"}],"fill":[{"s":"zdanie z ___ luką","a":"odpowiedź","h":"wskazówka po polsku","cat":"text"},{"s":"gramatyczne z ___","a":"odpowiedź","h":"wskazówka","cat":"grammar"}],"grammar":[{"rule":"nazwa zasady","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie po polsku","exercises":[{"s":"zdanie z ___","a":"odpowiedź","h":"wskazówka PL"}]}]}`;
   // Wymagaj klucza odpowiedniego do wybranego modelu (Gemini lub Claude)
   const _cfgU = getLessonModelConfig();
   if(_cfgU.provider === "gemini" && !S.geminiKey){set({uploadError:"Wpisz klucz Gemini API w Ustawieniach (albo zmień model na Claude)"});return;}
@@ -3348,6 +3389,20 @@ Odpowiedz WYŁĄCZNIE czystym JSON, zero tekstu przed ani po, zero markdown:
     json.type="dialog";
     json.source="text";
     if(_savedRawText) json.rawText=_savedRawText;
+    // Zapisz oryginalny plik (PDF/zdjęcie) do IDB pod kluczem lekcji — żeby user mógł go obejrzeć później
+    if(S.uploadFile && S.uploadFile instanceof Blob){
+      try{
+        await saveSourceFile(json.id, S.uploadFile);
+        json.hasSourceFile = true;
+        json.sourceFileName = S.uploadFile.name || "źródło";
+        json.sourceFileType = S.uploadFile.type || "application/octet-stream";
+        json.sourceFileSize = S.uploadFile.size;
+        console.log("[Upload] Source file saved to IDB for lesson", json.id);
+      }catch(e){
+        console.warn("[Upload] Failed to save source file:", e.message);
+        // Nie blokuj wgrywania lekcji — source file to bonus
+      }
+    }
     set({uploadProcessing:false,uploadStep:2,uploadPreview:json});
   }catch(e){
     set({uploadProcessing:false,uploadError:e.message});
@@ -3449,6 +3504,65 @@ function saveCustomExercisesToLesson(lesson, lang, newFill){
   if(S.lesson && S.lesson.id === lesson.id){
     S.lesson = Object.assign({}, S.lesson, {customFill: [...(S.lesson.customFill||[]), ...newFill]});
   }
+}
+
+// Modal viewer dla oryginalnego pliku lekcji (PDF/zdjęcie/text)
+function openSourceFileViewer(blobUrl, mimeType, fileName){
+  document.querySelectorAll('.src-viewer-overlay').forEach(el=>el.remove());
+  const overlay = document.createElement("div");
+  overlay.className = "src-viewer-overlay";
+  overlay.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,0.85);z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;padding:20px;overflow-y:auto";
+  const close = ()=>{ try{ URL.revokeObjectURL(blobUrl); }catch(e){} overlay.remove(); document.removeEventListener("keydown", escHandler); };
+  const escHandler = (e)=>{ if(e.key==="Escape") close(); };
+  document.addEventListener("keydown", escHandler);
+
+  // Toolbar
+  const bar = document.createElement("div");
+  bar.style.cssText = "display:flex;gap:12px;align-items:center;margin-bottom:16px;color:#fff;font-family:inherit;font-size:13px";
+  const title = document.createElement("div");
+  title.style.cssText = "flex:1;opacity:.85";
+  title.textContent = fileName || "Oryginał";
+  bar.appendChild(title);
+  const dl = document.createElement("a");
+  dl.href = blobUrl; dl.download = fileName || "source";
+  dl.textContent = "⬇ Pobierz"; dl.style.cssText = "color:#fff;text-decoration:none;padding:6px 12px;border:1px solid #fff;border-radius:4px";
+  bar.appendChild(dl);
+  const x = document.createElement("button");
+  x.textContent = "✕"; x.style.cssText = "background:none;border:none;color:#fff;font-size:24px;cursor:pointer;padding:0 8px;line-height:1";
+  x.onclick = close;
+  bar.appendChild(x);
+  overlay.appendChild(bar);
+
+  // Body — zależy od typu
+  const body = document.createElement("div");
+  body.style.cssText = "max-width:1100px;width:100%;background:#fff;border-radius:6px;overflow:hidden;display:flex;justify-content:center";
+  if(mimeType && mimeType.startsWith("image/")){
+    const img = document.createElement("img");
+    img.src = blobUrl;
+    img.style.cssText = "max-width:100%;height:auto;display:block";
+    body.appendChild(img);
+  } else if(mimeType === "application/pdf"){
+    const iframe = document.createElement("iframe");
+    iframe.src = blobUrl;
+    iframe.style.cssText = "width:100%;height:80vh;border:none;background:#fff";
+    body.appendChild(iframe);
+  } else {
+    // Text/markdown: fetchnij blob jako text i pokaż w <pre>
+    body.style.cssText += ";padding:20px;color:#000";
+    fetch(blobUrl).then(r=>r.text()).then(t=>{
+      const pre = document.createElement("pre");
+      pre.style.cssText = "white-space:pre-wrap;font-family:'DM Sans',sans-serif;font-size:13px;line-height:1.6;margin:0";
+      pre.textContent = t;
+      body.appendChild(pre);
+    }).catch(()=>{
+      body.appendChild(h("div",{},"Nie można wyświetlić — kliknij Pobierz."));
+    });
+  }
+  overlay.appendChild(body);
+
+  // Klik poza body zamyka
+  overlay.onclick = (e)=>{ if(e.target === overlay) close(); };
+  document.body.appendChild(overlay);
 }
 
 function deleteCustomExercise(lesson, lang, idx){
@@ -4930,7 +5044,7 @@ function renderLesson(){
   _tabs.push(["grammar","Gramatyka"]);
   // Pokaż zakładkę Ćwiczenia ZAWSZE — żeby user mógł też dodać własne (z książki)
   if((lesson.fill && lesson.fill.length>0) || (lesson.customFill && lesson.customFill.length>0) || true) _tabs.push(["fill","Ćwiczenia"]);
-  if(lesson.rawText) _tabs.push(["tekst","Tekst"]);
+  if(lesson.rawText || lesson.hasSourceFile) _tabs.push(["tekst","Tekst"]);
   _tabs.forEach(([id,label])=>{
     tabsEl.appendChild(h("button",{class:"lesson-tab-btn"+(S.lessonTab===id?" active":""),
       onclick:()=>set({lessonTab:id})},label));
@@ -5309,14 +5423,37 @@ function renderLesson(){
   if(S.lessonTab==="grammar"){
     const gw=h("div",{class:"grammar-wrap"});
     gw.appendChild(h("div",{class:"sec-label",style:"margin-bottom:20px"},"Gramatyka lekcji"));
-    lesson.grammar.forEach(g=>{
+    lesson.grammar.forEach((g, gi)=>{
       const blk=h("div",{class:"grammar-block"});
       blk.appendChild(h("div",{class:"grammar-rule"},g.rule));
       blk.appendChild(h("div",{class:"grammar-ex"},g.ex));
       blk.appendChild(h("div",{class:"grammar-extr"},g.exT));
       if(g.note) blk.appendChild(h("div",{class:"grammar-note"},g.note));
+      // Ćwiczenia do tej konkretnej zasady (nowość: AI generuje per-rule + dorzuca oryginalne grammar z materiału)
+      const exs = (g.exercises || []).filter(e => e && e.s && e.a);
+      if(exs.length > 0){
+        const exWrap = h("div",{style:"margin-top:14px;padding:12px 14px;background:var(--bg);border-left:3px solid var(--gold);border-radius:0 4px 4px 0"});
+        exWrap.appendChild(h("div",{style:"font-size:11px;color:var(--text3);letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px"},"Ćwiczenia tej zasady ("+exs.length+")"));
+        exs.forEach((ex,i)=>{
+          const exRow = h("div",{style:"padding:6px 0;font-size:13px;color:var(--text2);line-height:1.5"});
+          exRow.appendChild(h("div",{},""+(i+1)+". "+ex.s));
+          exRow.appendChild(h("div",{style:"color:var(--gold);font-size:12px;margin-top:2px"},"→ "+ex.a + (ex.h?" · "+ex.h:"")));
+          exWrap.appendChild(exRow);
+        });
+        exWrap.appendChild(h("button",{class:"sbtn",style:"margin-top:10px;border-color:var(--gold);color:var(--gold);font-size:12px;padding:8px 14px",
+          onclick:()=>startPractice({...lesson, fill: exs.map(e=>({...e, cat:"grammar"}))}, "fill", S.practiceOrigin||"lesson-vocab")},
+          "▶ Ćwicz tę zasadę ("+exs.length+")"));
+        blk.appendChild(exWrap);
+      }
       gw.appendChild(blk);
     });
+    // Przycisk "Ćwicz wszystkie zasady" — łączy exercises ze wszystkich rules
+    const allGramEx = lesson.grammar.reduce((acc, g) => acc.concat((g.exercises||[]).filter(e => e && e.s && e.a)), []);
+    if(allGramEx.length > 0){
+      gw.appendChild(h("button",{class:"check-btn",style:"margin-top:20px;display:block",
+        onclick:()=>startPractice({...lesson, fill: allGramEx.map(e=>({...e, cat:"grammar"}))}, "fill", S.practiceOrigin||"lesson-vocab")},
+        "▶ Ćwicz wszystkie zasady gramatyczne ("+allGramEx.length+")"));
+    }
     main.appendChild(gw);
   }
 
@@ -5408,9 +5545,43 @@ function renderLesson(){
     main.appendChild(fw);
   }
 
-  if(S.lessonTab==="tekst" && lesson.rawText){
+  if(S.lessonTab==="tekst" && (lesson.rawText || lesson.hasSourceFile)){
     const tw=h("div",{style:"max-width:700px"});
-    tw.appendChild(h("div",{class:"sec-label",style:"margin-bottom:12px"},"Oryginalny tekst"));
+
+    // Przycisk "Pokaż oryginalny plik" — jeśli lekcja powstała z PDF/zdjęcia, plik siedzi w IDB
+    if(lesson.hasSourceFile){
+      const srcBox = h("div",{style:"margin-bottom:18px;padding:14px 16px;background:var(--surface2);border:1px solid var(--gold);border-radius:6px;display:flex;align-items:center;gap:12px;flex-wrap:wrap"});
+      const iconType = (lesson.sourceFileType||"").startsWith("image/") ? "🖼️" : ((lesson.sourceFileType||"")==="application/pdf" ? "📄" : "📎");
+      srcBox.appendChild(h("div",{style:"font-size:24px"},iconType));
+      const info = h("div",{style:"flex:1;min-width:200px"});
+      info.appendChild(h("div",{style:"font-size:13px;color:var(--text)"},lesson.sourceFileName||"Oryginalny plik"));
+      const sizeKB = lesson.sourceFileSize ? Math.round(lesson.sourceFileSize/1024)+" KB · " : "";
+      info.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-top:2px"},sizeKB+(lesson.sourceFileType||"")));
+      srcBox.appendChild(info);
+      const showBtn = h("button",{class:"sbtn",style:"border-color:var(--gold);color:var(--gold)",
+        onclick:async ()=>{
+          try{
+            const entry = await loadSourceFile(lesson.id);
+            if(!entry || !entry.blob) { alert("Plik źródłowy nie znaleziony w bazie (mogła być wyczyszczona). Wgraj lekcję ponownie żeby go odtworzyć."); return; }
+            const url = URL.createObjectURL(entry.blob);
+            openSourceFileViewer(url, entry.meta?.type || lesson.sourceFileType, entry.meta?.name || lesson.sourceFileName);
+          }catch(e){
+            alert("Nie udało się otworzyć oryginalnego pliku: "+e.message);
+          }
+        }
+      },"📎 Pokaż oryginał");
+      srcBox.appendChild(showBtn);
+      tw.appendChild(srcBox);
+    }
+
+    if(lesson.rawText){
+      tw.appendChild(h("div",{class:"sec-label",style:"margin-bottom:12px"},"Oryginalny tekst"));
+    } else {
+      tw.appendChild(h("div",{style:"font-size:13px;color:var(--text3);margin-bottom:14px"},"Materiał był zdjęciem/skanem — bez tekstu źródłowego. Kliknij 'Pokaż oryginał' powyżej żeby zobaczyć plik."));
+      tw.appendChild(h("div",{},"")); // placeholder
+      main.appendChild(tw);
+      return w;
+    }
 
     // Toolbar
     const toolbar=h("div",{style:"display:flex;gap:8px;align-items:center;margin-bottom:10px;padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;flex-wrap:wrap"});
