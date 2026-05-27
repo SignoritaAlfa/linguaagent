@@ -49,11 +49,12 @@
         "git commit [NO] Extend article/infinitive rules to Norwegian (en/ei/et, å+verb)"
       ],
       "priority": 3,
-      "passes": false,
+      "passes": true,
       "notes": "Średni US. Czytaj fragmenty, NIE cały plik. Jeśli context się zapełnia, podziel commit na 2 części.",
       "dependsOn": [
         "US-001"
-      ]
+      ],
+      "completionNotes": "Completed by agent"
     },
     {
       "id": "US-004a",
@@ -189,6 +190,6 @@
     }
   ],
   "metadata": {
-    "updatedAt": "2026-05-27T07:05:07.398Z"
+    "updatedAt": "2026-05-27T07:08:20.343Z"
   }
 }

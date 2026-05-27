@@ -3,10 +3,10 @@
   "sessionId": "a4205311-45ac-4064-a641-1883df3f1f59",
   "status": "running",
   "startedAt": "2026-05-27T07:03:43.794Z",
-  "updatedAt": "2026-05-27T07:05:07.400Z",
-  "currentIteration": 0,
+  "updatedAt": "2026-05-27T07:08:20.345Z",
+  "currentIteration": 1,
   "maxIterations": 0,
-  "tasksCompleted": 0,
+  "tasksCompleted": 1,
   "isPaused": false,
   "agentPlugin": "claude",
   "trackerState": {
@@ -23,8 +23,8 @@
       {
         "id": "US-002",
         "title": "TTS — ElevenLabs voices NO + OpenAI TTS comment",
-        "status": "open",
-        "completedInSession": false
+        "status": "completed",
+        "completedInSession": true
       },
       {
         "id": "US-003",
@@ -70,7 +70,18 @@
       }
     ]
   },
-  "iterations": [],
+  "iterations": [
+    {
+      "iteration": 1,
+      "status": "completed",
+      "taskId": "US-002",
+      "taskTitle": "TTS — ElevenLabs voices NO + OpenAI TTS comment",
+      "taskCompleted": true,
+      "durationMs": 83590,
+      "startedAt": "2026-05-27T07:03:43.803Z",
+      "endedAt": "2026-05-27T07:05:07.393Z"
+    }
+  ],
   "skippedTaskIds": [],
   "cwd": "/Users/aleksandrabarwasna/lingua-agent",
   "activeTaskIds": [],
