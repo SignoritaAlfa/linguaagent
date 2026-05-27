@@ -1851,6 +1851,10 @@ let S={
   oaiVoiceFemale:localStorage.getItem("lingua_oai_vf")||"nova",
   oaiVoiceMale:localStorage.getItem("lingua_oai_vm")||"echo",
   ttsEngine:localStorage.getItem("lingua_tts")||"oai",
+  // Preferuj systemowy głos (browser TTS) dla języków nie-angielskich — lepszy akcent
+  // (OpenAI tts-1 czyta francuski/włoski/norweski z amerykańskim akcentem; macOS ma
+  // Alice/Thomas/itd. z autentycznym akcentem rodzimym). Domyślnie ON.
+  preferNativeVoiceForeign:(localStorage.getItem("lingua_native_voice_foreign")||"1")==="1",
   // Per-lesson audio: { lessonId: { full: dataUrl, female: dataUrl, male: dataUrl } }
   lessonAudio:(()=>{try{return JSON.parse(localStorage.getItem("lingua_audio")||"{}")}catch{return {}}})(),
   audioPlaying:false, audioObj:null, audioMgrLesson:null,
@@ -2231,7 +2235,8 @@ function getBrowserVoice(lang){
   const prefs={
     EN:["Daniel","Samantha","Karen","Martha","Google UK English Female","Google UK English Male"],
     FR:["Thomas","Amélie","Amelie","Marie","Google français","Google French"],
-    IT:["Alice","Luca","Google italiano","Google Italian"]
+    IT:["Alice","Luca","Google italiano","Google Italian"],
+    NO:["Nora","Henrik","Google norsk","Google Norwegian"]
   }[lang]||[];
   for(const p of prefs){const v=vs.find(x=>x.name===p);if(v)return v;}
   const lv=vs.filter(x=>x.lang.toLowerCase().startsWith(bcp));
@@ -2341,8 +2346,15 @@ async function speak(text, lang, speakerName){
     });
     setTimeout(()=>document.querySelectorAll('.word-active').forEach(s=>s.classList.remove('word-active')), spans.length * 300 + 100);
   }
+  // Preferencja: dla języków nie-angielskich, jeśli ON i przeglądarka ma głos systemowy
+  // dla tego języka — użyj browser TTS (autentyczny akcent włoski/francuski/norweski)
+  // zamiast OpenAI/EL (które potrafią czytać te języki z amerykańskim akcentem).
+  const _wantNative = S.preferNativeVoiceForeign && lang !== "EN" && !!getBrowserVoice(lang);
   try{
-    if(S.ttsEngine==="oai" && S.oaiKey){
+    if(_wantNative){
+      startWordHighlight();
+      await browserSpeak(text, lang);
+    } else if(S.ttsEngine==="oai" && S.oaiKey){
       const voice = isAleksandra ? S.oaiVoiceFemale : S.oaiVoiceMale;
       await oaiSpeak(text, voice);
     } else if(S.ttsEngine==="el" && S.elKey){
@@ -2368,7 +2380,16 @@ async function playDialog(dialog,lang){
     set({playingLine:i});
     const lineEl=document.getElementById("dline-"+i);
     if(lineEl) lineEl.scrollIntoView({behavior:"smooth",block:"center"});
-    await speak(dialog[i].l, lang, dialog[i].s);
+    const txt = (dialog[i].l||"").trim();
+    if(!txt){
+      console.warn("[playDialog] Pusta linia "+i+", skip");
+      continue;
+    }
+    try{
+      await speak(txt, lang, dialog[i].s);
+    }catch(e){
+      console.warn("[playDialog] Błąd linii "+i+", lecę dalej:", e.message);
+    }
     if(flag.v)break;
     // longer pause between different speakers, shorter for same speaker
     const nextSpeaker = dialog[i+1]?.s;
@@ -3336,6 +3357,7 @@ WYMAGANIA MINIMALNE:
 - dialog: minimum 6 kwestii z treści materiału (mniej tylko jeśli materiał to czyste ćwiczenia bez dialogu)
 - vocab: minimum 15 słów i zwrotów z tłumaczeniem na polski
   KRYTYCZNE: rzeczowniki w językach z rodzajem (FR: le/la/un/une; IT: il/la/lo/un/una/uno; DE: der/die/das; NO: en/ei/et — bokmål) ZAWSZE z rodzajnikiem w polu "w". Czasowniki w bezokoliczniku (parler, parlare, to talk, å snakke).
+- vocab to POJEDYNCZE SŁOWA. Wielowyrazowe zwroty / idiomy / kolokacje / czasowniki frazowe ("look up to", "make sense", "How come?") idą do osobnego pola "phrases" — minimum 8 zwrotów z materiału, z IPA i tłumaczeniem PL.
 - fill: jeśli oryginalne ćwiczenia są w materiale → przepisz WSZYSTKIE (może być 4, 8, 30 — ile jest). Jeśli brak → minimum 12 wygenerowanych
 - grammar: minimum 3 zasady gramatyczne widoczne w materiale. KAŻDA zasada MA MIEĆ pole "exercises" — minimum 3 ćwiczenia luk BEZPOŚREDNIO sprawdzające tę zasadę. Np. dla zasady "tryb warunkowy 'voudrais'": exercises:[{s:"Je ___ un café.",a:"voudrais",h:"chciałbym"},{s:"Elle ___ partir tôt.",a:"voudrait",h:"chciałaby (3.os.)"}]. JEŚLI ORYGINALNE ĆWICZENIA GRAMATYCZNE Z MATERIAŁU pasują do tej zasady — DODAJ JE TEŻ do exercises[] tej zasady (zamiast zostawiać tylko w globalnym fill[]). Cel: użytkownik klikając "Ćwicz tę zasadę" dostaje WSZYSTKIE ćwiczenia (wygenerowane + oryginalne) skupione na jednej regule
 
@@ -3344,7 +3366,7 @@ Pole "rawText": jeśli widzisz obraz, przepisz DOSŁOWNIE cały tekst z obrazu �
 Pole "fillSource": "original" jeśli fill[] pochodzi z oryginalnych ćwiczeń materiału, "generated" jeśli sam wygenerowałeś. Użytkownik to widzi.
 
 Odpowiedz WYŁĄCZNIE czystym JSON, zero tekstu przed ani po, zero markdown:
-{"title":"tytuł lekcji","level":"B1","topic":"temat po polsku","rawText":"oryginalny tekst materiału dosłownie","fillSource":"original|generated","dialog":[{"s":"Imię","l":"zdanie w języku obcym","t":"tłumaczenie po polsku"}],"vocab":[{"w":"słowo","tr":"tłumaczenie PL","ipa":"wymowa IPA","pl":"jak czytać po polsku","ex":"przykład użycia","exT":"tłumaczenie przykładu"}],"fill":[{"s":"zdanie z ___ luką","a":"odpowiedź","h":"wskazówka po polsku","cat":"text"},{"s":"gramatyczne z ___","a":"odpowiedź","h":"wskazówka","cat":"grammar"}],"grammar":[{"rule":"nazwa zasady","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie po polsku","exercises":[{"s":"zdanie z ___","a":"odpowiedź","h":"wskazówka PL"}]}]}`;
+{"title":"tytuł lekcji","level":"B1","topic":"temat po polsku","rawText":"oryginalny tekst materiału dosłownie","fillSource":"original|generated","dialog":[{"s":"Imię","l":"zdanie w języku obcym","t":"tłumaczenie po polsku"}],"vocab":[{"w":"pojedyncze słowo","tr":"tłumaczenie PL","ipa":"wymowa IPA","pl":"jak czytać po polsku","ex":"przykład użycia","exT":"tłumaczenie przykładu"}],"phrases":[{"w":"zwrot wielowyrazowy","tr":"tłumaczenie PL","ipa":"wymowa IPA","pl":"jak czytać","ex":"przykład z materiału","exT":"tłumaczenie"}],"fill":[{"s":"zdanie z ___ luką","a":"odpowiedź","h":"wskazówka po polsku","cat":"text"},{"s":"gramatyczne z ___","a":"odpowiedź","h":"wskazówka","cat":"grammar"}],"grammar":[{"rule":"nazwa zasady","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie po polsku","exercises":[{"s":"zdanie z ___","a":"odpowiedź","h":"wskazówka PL"}]}]}`;
   // Wymagaj klucza odpowiedniego do wybranego modelu (Gemini lub Claude)
   const _cfgU = getLessonModelConfig();
   if(_cfgU.provider === "gemini" && !S.geminiKey){set({uploadError:"Wpisz klucz Gemini API w Ustawieniach (albo zmień model na Claude)"});return;}
@@ -6468,6 +6490,22 @@ function renderSettings(){
     eg.appendChild(btn);
   });
   sw.appendChild(eg);
+
+  // Akcent rodzimy dla nie-EN
+  const nvRow = h("label",{style:"display:flex;align-items:center;gap:10px;margin-top:16px;padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:6px;cursor:pointer"});
+  const nvChk = h("input",{type:"checkbox",style:"width:18px;height:18px;cursor:pointer;accent-color:var(--gold)"});
+  nvChk.checked = !!S.preferNativeVoiceForeign;
+  nvChk.onchange = (e)=>{
+    const v = e.target.checked;
+    localStorage.setItem("lingua_native_voice_foreign", v ? "1" : "0");
+    set({preferNativeVoiceForeign: v});
+  };
+  nvRow.appendChild(nvChk);
+  const nvText = h("div",{style:"flex:1"});
+  nvText.appendChild(h("div",{style:"font-size:13px;color:var(--text)"},"Preferuj systemowy głos dla FR / IT / NO"));
+  nvText.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-top:2px;line-height:1.5"},"OpenAI/ElevenLabs czytają nie-angielskie języki z amerykańskim akcentem. macOS ma rodzime głosy (Alice IT, Thomas FR, Nora NO) — autentyczny akcent, darmowe, offline. EN dalej idzie przez wybrany silnik."));
+  nvRow.appendChild(nvText);
+  sw.appendChild(nvRow);
 
   if(ttsEngine==="oai"){
     sw.appendChild(h("div",{class:"sec-label"},"Głos żeński — Aleksandra"));
