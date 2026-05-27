@@ -3,10 +3,10 @@
   "sessionId": "a4205311-45ac-4064-a641-1883df3f1f59",
   "status": "running",
   "startedAt": "2026-05-27T07:03:43.794Z",
-  "updatedAt": "2026-05-27T07:23:21.978Z",
-  "currentIteration": 5,
+  "updatedAt": "2026-05-27T07:32:13.893Z",
+  "currentIteration": 6,
   "maxIterations": 0,
-  "tasksCompleted": 5,
+  "tasksCompleted": 6,
   "isPaused": false,
   "agentPlugin": "claude",
   "trackerState": {
@@ -53,8 +53,8 @@
       {
         "id": "US-005b",
         "title": "Lekcje NO część 2/2 — 4 lekcje A2-B1",
-        "status": "open",
-        "completedInSession": false
+        "status": "completed",
+        "completedInSession": true
       },
       {
         "id": "US-006",
@@ -120,6 +120,16 @@
       "durationMs": 289374,
       "startedAt": "2026-05-27T07:15:04.953Z",
       "endedAt": "2026-05-27T07:19:54.327Z"
+    },
+    {
+      "iteration": 6,
+      "status": "completed",
+      "taskId": "US-005b",
+      "taskTitle": "Lekcje NO część 2/2 — 4 lekcje A2-B1",
+      "taskCompleted": true,
+      "durationMs": 206434,
+      "startedAt": "2026-05-27T07:19:55.533Z",
+      "endedAt": "2026-05-27T07:23:21.967Z"
     }
   ],
   "skippedTaskIds": [],

@@ -2568,11 +2568,12 @@ async function fetchClipMetadataSuggestion(url, seriesTitle, langCode){
     catch(e){}
   }
   // Opisy generujemy w języku docelowym (FR/EN/IT) — immersja w przeglądaniu
-  const langName = {EN:"English",FR:"français",IT:"italiano"}[langCode]||"target language";
+  const langName = {EN:"English",FR:"français",IT:"italiano",NO:"Norwegian"}[langCode]||"target language";
   const promptLangInstr = {
     EN: "Write desc and topic in English (target language for immersion).",
     FR: "Écris desc et topic en français (langue cible pour l'immersion).",
-    IT: "Scrivi desc e topic in italiano (lingua di studio per immersione)."
+    IT: "Scrivi desc e topic in italiano (lingua di studio per immersione).",
+    NO: "Skriv desc og topic på norsk (målspråk for fordypning)."
   }[langCode] || "Write desc and topic in the target language.";
   const prompt = `You are generating scene metadata for a ${langName}-learning app. Based on YouTube clip info, propose concise fields describing the scene.
 
@@ -3270,7 +3271,7 @@ async function playDialogWithAudio(dialog, lang, lessonId){
 async function processFilm(){
   set({filmProcessing:true, filmError:""});
   const lang = S.filmLang;
-  const langNames = {EN:"angielskim",FR:"francuskim",IT:"włoskim"};
+  const langNames = {EN:"angielskim",FR:"francuskim",IT:"włoskim",NO:"norweskim"};
   const langName = langNames[lang];
   const file = S.filmFile;
   const isVideo = file.type.startsWith("video/");
@@ -4083,7 +4084,7 @@ function openEditEntryForm(lesson, arrayKey, lang, idx){
   const item = (lesson[arrayKey]||[])[idx];
   if(!item) return;
   const label = arrayKey==="phrases" ? "zwrot" : "słówko";
-  const langName = lang==="EN" ? "angielskim" : lang==="FR" ? "francuskim" : lang==="IT" ? "włoskim" : "obcym";
+  const langName = lang==="EN" ? "angielskim" : lang==="FR" ? "francuskim" : lang==="IT" ? "włoskim" : lang==="NO" ? "norweskim" : "obcym";
 
   const overlay = document.createElement("div");
   overlay.className = "entry-edit-overlay";
@@ -4246,7 +4247,7 @@ function renderAddEntryForm(lesson, arrayKey, lang){
 
   async function aiFillPronunciation(word){
     if(!S.claudeKey && !S.geminiKey) return null;
-    const langName = {EN:"angielskim",FR:"francuskim",IT:"włoskim",DE:"niemieckim",ES:"hiszpańskim"}[lang]||lang;
+    const langName = {EN:"angielskim",FR:"francuskim",IT:"włoskim",DE:"niemieckim",ES:"hiszpańskim",NO:"norweskim"}[lang]||lang;
     const promptText = `Podaj wymowę dla ${arrayKey==="phrases"?"zwrotu":"słowa"} "${word}" w języku ${langName}. Pole "ipa" to standard międzynarodowy fonetyczny, pole "pl" to fonetyka czytana intuicyjnie po polsku (np. dla angielskiego "hello" → "helou"). Odpowiedz TYLKO czystym JSON, bez markdown, bez komentarzy: {"ipa":"/.../","pl":"jak czytać po polsku"}`;
     try{
       const rawText = await callLessonModel(promptText);
@@ -5597,7 +5598,7 @@ function renderSettings(){
       row.appendChild(left);
       row.appendChild(h("button",{class:"sbtn",style:"font-size:11px",onclick:async(e)=>{
         e.stopPropagation();if(!oaiKey){alert("Wpisz klucz OpenAI");return;}
-        try{await oaiSpeak({EN:"Hello! How are you today?",FR:"Bonjour ! Comment allez-vous ?",IT:"Ciao! Come stai?"}[S.lang]||"Hello!",id);}
+        try{await oaiSpeak({EN:"Hello! How are you today?",FR:"Bonjour ! Comment allez-vous ?",IT:"Ciao! Come stai?",NO:"Hei! Hvordan går det med deg i dag?"}[S.lang]||"Hello!",id);}
         catch(e){alert("Błąd: "+e.message);}
       }},"▶ Test"));
       sw.appendChild(row);
@@ -5613,7 +5614,7 @@ function renderSettings(){
       row.appendChild(left);
       row.appendChild(h("button",{class:"sbtn",style:"font-size:11px",onclick:async(e)=>{
         e.stopPropagation();if(!oaiKey){alert("Wpisz klucz OpenAI");return;}
-        try{await oaiSpeak({EN:"Good morning!",FR:"Bonjour ! Vous désirez ?",IT:"Buongiorno!"}[S.lang]||"Hello!",id);}
+        try{await oaiSpeak({EN:"Good morning!",FR:"Bonjour ! Vous désirez ?",IT:"Buongiorno!",NO:"God morgen!"}[S.lang]||"Hello!",id);}
         catch(e){alert("Błąd: "+e.message);}
       }},"▶ Test"));
       sw.appendChild(row);
@@ -5641,7 +5642,7 @@ function renderSettings(){
       Object.entries(LANGS).forEach(([lc])=>{
         btns.appendChild(h("button",{class:"sbtn",style:"font-size:11px;padding:4px 8px",onclick:async()=>{
           if(!elKey){alert("Wpisz klucz ElevenLabs");return;}
-          const txt={EN:"Good morning!",FR:"Bonjour !",IT:"Buongiorno!"}[lc];
+          const txt={EN:"Good morning!",FR:"Bonjour !",IT:"Buongiorno!",NO:"God morgen!"}[lc];
           try{await elSpeak(txt,lc,id);}catch(e){alert("Błąd: "+e.message);}
         }},LANGS[lc].flag));
       });
@@ -6233,19 +6234,20 @@ async function buildLessonFromTranscript(transcript, videoId, cues, lang, opts){
   const _bcfg = getLessonModelConfig();
   if(_bcfg.provider === "gemini" && !S.geminiKey) throw new Error("Brak klucza Gemini w Ustawieniach");
   if(_bcfg.provider === "anthropic" && !S.claudeKey) throw new Error("Brak klucza Claude w Ustawieniach");
-  const langNames={EN:"angielski",FR:"francuski",IT:"włoski"};
+  const langNames={EN:"angielski",FR:"francuski",IT:"włoski",NO:"norweski"};
   // Język docelowy do pól meta (title/topic) — immersja w UI
-  const targetLangLabel = {EN:"English",FR:"français",IT:"italiano"}[lang||S.lang]||"target language";
+  const targetLangLabel = {EN:"English",FR:"français",IT:"italiano",NO:"Norwegian"}[lang||S.lang]||"target language";
   const targetLangInstr = {
     EN:"title i topic napisz po angielsku (target language)",
     FR:"title i topic napisz po francusku (langue cible)",
-    IT:"title i topic napisz po włosku (lingua di studio)"
+    IT:"title i topic napisz po włosku (lingua di studio)",
+    NO:"title i topic napisz po norwesku (målspråk)"
   }[lang||S.lang] || "title i topic napisz w języku docelowym";
   const COMMON_SECTIONS = `
 DODATKOWE SEKCJE:
 - vocab: minimum 25 POJEDYNCZYCH słów z dialogu (rzeczowniki, czasowniki, przymiotniki). NIE wkładaj tu zwrotów wielowyrazowych.
   KRYTYCZNE: dla rzeczowników w językach z rodzajem (francuski: le/la/l'/un/une; włoski: il/la/lo/l'/un/una/uno; niemiecki: der/die/das; norweski: en/ei/et — bokmål) ZAWSZE podawaj rodzajnik razem ze słowem w polu "w" (np. "le chien", "la maison", "un homme", "il cane", "la donna", "en bil"). Czasowniki norweskie w bezokoliczniku z å (np. å snakke). Pole "tr" ma rodzajnik polski jeśli pasuje.
-  Dla czasowników podawaj formę bezokolicznikową (FR: parler; IT: parlare; EN: to talk). NIE odmienione formy z dialogu.
+  Dla czasowników podawaj formę bezokolicznikową (FR: parler; IT: parlare; EN: to talk; NO: å snakke). NIE odmienione formy z dialogu.
 - phrases: minimum 15 ZWROTÓW i WYRAŻEŃ z dialogu (idiomy, czasowniki frazowe, kolokacje, utarte zwroty).
 - fill: minimum 10 ćwiczeń uzupełniania luk — (1) cat:"text" z dialogu (min 5), (2) cat:"grammar" (min 5)
 - grammar: minimum 4 zasady gramatyczne widoczne w dialogu`;
@@ -6411,7 +6413,7 @@ async function processTranscriptToLesson(transcript, videoId, cues){
   if(_pcfg.provider === "anthropic" && !S.claudeKey) throw new Error("Wymagany klucz Claude (Anthropic) w Ustawieniach");
   console.log("[LinguaAgent] Transkrypcja: "+transcript.length+" znaków"+(cues?", cues="+cues.length:", bez timestampów"));
   set({filmTranscriptText:transcript,filmTranscriptLoading:false,filmTranscriptProcessing:true,filmTranscriptError:""});
-  const langNames={EN:"angielski",FR:"francuski",IT:"włoski"};
+  const langNames={EN:"angielski",FR:"francuski",IT:"włoski",NO:"norweski"};
   const COMMON_SECTIONS = `
 DODATKOWE SEKCJE:
 - vocab: minimum 25 POJEDYNCZYCH słów z dialogu (rzeczowniki, czasowniki, przymiotniki, ciekawe pojedyncze wyrazy) z IPA i tłumaczeniem PL. NIE wkładaj tu zwrotów wielowyrazowych — te idą do "phrases".
@@ -6488,7 +6490,7 @@ async function fetchAndProcessTranscript(){
 async function fetchViaWorker(videoId){
   if(!S.workerUrl){ throw new Error("Worker nie skonfigurowany — wejdź w Ustawienia → 🎬 Worker do transkrypcji YouTube"); }
   const base = S.workerUrl.replace(/\/+$/, "");
-  const langMap = {EN:"en", FR:"fr", IT:"it"};
+  const langMap = {EN:"en", FR:"fr", IT:"it", NO:"no"};
   const lang = langMap[S.lang] || "en";
   const url = `${base}/?id=${encodeURIComponent(videoId)}&lang=${lang}`;
   const res = await fetch(url);
@@ -6508,12 +6510,13 @@ async function fetchViaWorker(videoId){
 // Działa dla filmików bez napisów. Limit: 8h/dzień darmowo, do ~2h jednego klipu.
 async function processYouTubeViaGemini(youtubeUrl, lang){
   if(!S.geminiKey) throw new Error("Brak klucza Gemini w Ustawieniach (Gemini direct YT wymaga klucza Google)");
-  const langNames={EN:"angielskim",FR:"francuskim",IT:"włoskim"};
-  const targetLangLabel = {EN:"English",FR:"français",IT:"italiano"}[lang]||lang;
+  const langNames={EN:"angielskim",FR:"francuskim",IT:"włoskim",NO:"norweskim"};
+  const targetLangLabel = {EN:"English",FR:"français",IT:"italiano",NO:"Norwegian"}[lang]||lang;
   const targetLangInstr = {
     EN:"title i topic napisz po angielsku",
     FR:"title i topic napisz po francusku",
-    IT:"title i topic napisz po włosku"
+    IT:"title i topic napisz po włosku",
+    NO:"title i topic napisz po norwesku"
   }[lang] || "title i topic napisz w języku docelowym";
 
   const PROMPT = `Obejrzyj to wideo z YouTube. Transkrybuj dialog w języku ${langNames[lang]||"oryginalnym"} dokładnie z audio i stwórz pełną lekcję językową.
@@ -7212,8 +7215,8 @@ async function doTranslate(){
   set({translateProcessing:true, translateError:"", translateResult:null});
   try{
     const lang = S.lang;
-    const langName = {EN:"angielski",FR:"francuski",IT:"włoski"}[lang]||"obcy";
-    const langAdj = {EN:"angielskim",FR:"francuskim",IT:"włoskim"}[lang]||"obcym";
+    const langName = {EN:"angielski",FR:"francuski",IT:"włoski",NO:"norweski"}[lang]||"obcy";
+    const langAdj = {EN:"angielskim",FR:"francuskim",IT:"włoskim",NO:"norweskim"}[lang]||"obcym";
     const prompt = `Przetłumacz poniższy polski tekst na ${langName} naturalnie, jak rodzimy użytkownik. Podaj też wymowę pełnego tłumaczenia (IPA i intuicyjną fonetykę po polsku) oraz wyciągnij kluczowe słowa i zwroty z tłumaczenia godne zapamiętania.\n\nTEKST PO POLSKU: "${text}"\n\nOdpowiedz TYLKO czystym JSON, bez markdown:\n{"translation":"tłumaczenie w ${langAdj}","ipa":"IPA pełnego tłumaczenia","pl":"jak czytać po polsku","alternatives":["alternatywne tłumaczenia (opcjonalnie 1-2)"],"words":[{"w":"słowo lub zwrot","tr":"po polsku","ipa":"IPA","pl":"czytaj","ex":"przykład użycia po ${langName}u","exT":"tłumaczenie przykładu"}]}\n\nwords: kluczowe słowa/zwroty z tłumaczenia (5-12 pozycji).`;
     const rawText = await callLessonModel(prompt);
     const m = rawText.match(/\{[\s\S]*\}/);

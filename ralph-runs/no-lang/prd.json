@@ -159,11 +159,12 @@
         "git commit [NO] LANG-agnostic check passed (or fix hardcoded EN/FR/IT conditions). Jeśli nic do zmiany: git commit --allow-empty"
       ],
       "priority": 8,
-      "passes": false,
+      "passes": true,
       "notes": "Może okazać się że nic do zmiany — wtedy empty commit z opisem 'no hardcoded lang conditions found'.",
       "dependsOn": [
         "US-001"
-      ]
+      ],
+      "completionNotes": "Completed by agent"
     },
     {
       "id": "US-007",
@@ -194,6 +195,6 @@
     }
   ],
   "metadata": {
-    "updatedAt": "2026-05-27T07:23:21.974Z"
+    "updatedAt": "2026-05-27T07:32:13.890Z"
   }
 }
