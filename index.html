@@ -3434,8 +3434,92 @@ function nextCard(){
 }
 function nextWritingCard(){
   const{idx,cards}=S;
+  stopPronunciationSTT();
   if(idx+1>=cards.length){set({screen:"results"});return;}
-  set({idx:idx+1, input:"", input2:"", attempts:0, submitted:false, lastResult:null});
+  set({idx:idx+1, input:"", input2:"", attempts:0, submitted:false, lastResult:null, sttTranscript:"", sttRecording:false, sttError:""});
+}
+
+// ── PRONUNCIATION (STT) HELPERS ────────────────────────────────────────────────
+// Pobłażliwa normalizacja — STT (Web Speech API) bywa nieprecyzyjny przy akcentach.
+// Pomijamy akcenty (é→e, à→a, ø→o, å→a, ç→c), apostrofy i rodzajniki rzeczowników.
+function stripAccents(s){
+  return String(s||"").normalize("NFD").replace(/[̀-ͯ]/g, "");
+}
+function stripArticles(s, lang){
+  // Rzeczowniki w językach z rodzajem — usuwamy prefix gdy STT/answer ma rodzajnik
+  const prefixes = {
+    FR: /^(le|la|l'|les|un|une|des)\s+/i,
+    IT: /^(il|la|lo|l'|le|gli|i|un|una|uno|un')\s+/i,
+    NO: /^(en|ei|et|den|det)\s+/i,
+    EN: /^(the|a|an)\s+/i,
+  };
+  const re = prefixes[lang];
+  return re ? String(s||"").replace(re, "") : String(s||"");
+}
+function normalizeForSTT(s, lang){
+  if(!s) return "";
+  let v = String(s).toLowerCase().trim();
+  v = v.replace(/[‘’‛′`'"„""]/g, "");        // wszystkie cudzysłowy/apostrofy → nic
+  v = v.replace(/[.,;:!?¿¡]/g, "");          // interpunkcja
+  v = stripAccents(v);                         // é→e, à→a, ø→o, å→a, ç→c
+  v = stripArticles(v, lang);                  // bez rodzajnika
+  v = v.replace(/\s+/g, " ").trim();           // wielokrotne spacje
+  return v;
+}
+function comparePronunciation(transcript, target, lang){
+  const t = normalizeForSTT(transcript, lang);
+  const g = normalizeForSTT(target, lang);
+  if(!t || !g) return {match:false, partial:0};
+  if(t === g) return {match:true, partial:1};
+  // Partial match — czy transcript zawiera target lub odwrotnie (przydatne dla krótkich słów w długim transcripcie)
+  if(t.includes(g) || g.includes(t)) return {match:true, partial:0.9};
+  // Fuzzy — Levenshtein-lite (procent wspólnych znaków per pozycja)
+  const len = Math.max(t.length, g.length);
+  let same = 0;
+  for(let i=0; i<Math.min(t.length, g.length); i++){
+    if(t[i] === g[i]) same++;
+  }
+  const ratio = same / len;
+  return {match: ratio >= 0.85, partial: ratio};
+}
+
+// Globalna referencja do bieżącego SpeechRecognition (żeby móc stop/restart)
+let _pronRecognition = null;
+function stopPronunciationSTT(){
+  if(_pronRecognition){ try{_pronRecognition.stop();}catch(e){} _pronRecognition = null; }
+}
+function startPronunciationSTT(lang, onPartial, onFinal, onError){
+  const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!Rec){
+    onError && onError("Przeglądarka nie obsługuje rozpoznawania mowy. Użyj Chrome, Edge lub Safari.");
+    return null;
+  }
+  stopPronunciationSTT();
+  const r = new Rec();
+  _pronRecognition = r;
+  r.lang = LANG_BCP[lang] || lang;
+  r.continuous = false;
+  r.interimResults = true;
+  let final = "";
+  r.onresult = (e)=>{
+    let interim = "";
+    for(let i=e.resultIndex; i<e.results.length; i++){
+      const txt = e.results[i][0].transcript;
+      if(e.results[i].isFinal) final += txt;
+      else interim += txt;
+    }
+    onPartial && onPartial((final + " " + interim).trim());
+  };
+  r.onend = ()=>{
+    _pronRecognition = null;
+    onFinal && onFinal(final.trim());
+  };
+  r.onerror = (ev)=>{
+    _pronRecognition = null;
+    onError && onError("Błąd mikrofonu: "+ev.error);
+  };
+  try{ r.start(); }catch(e){ onError && onError("Nie można uruchomić nagrywania: "+e.message); }
+  return r;
 }
 function rateLabel(v){
   if(v<=0.78)return "Bardzo wolno";
@@ -4731,6 +4815,8 @@ function renderLesson(){
       actBtnsV.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:v}),"flashcard","lesson-vocab")},"🃏 Fiszki ze słówek"));
       actBtnsV.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:v}),"writing","lesson-vocab")},"✍️ Pisanie z PL"));
       actBtnsV.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:v}),"dictation","lesson-vocab")},"🎧 Dyktando"));
+      actBtnsV.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:v}),"read-aloud","lesson-vocab")},"🗣️ Czytaj na głos"));
+      actBtnsV.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:v}),"speak-foreign","lesson-vocab")},"🎤 Mów po obcemu"));
       head.appendChild(actBtnsV);
       vw.appendChild(head);
     }
@@ -4788,6 +4874,8 @@ function renderLesson(){
       actBtns.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:phrases}),"flashcard","lesson-phrases")},"🃏 Fiszki ze zwrotów"));
       actBtns.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:phrases}),"writing","lesson-phrases")},"✍️ Pisanie z PL"));
       actBtns.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:phrases}),"dictation","lesson-phrases")},"🎧 Dyktando"));
+      actBtns.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:phrases}),"read-aloud","lesson-phrases")},"🗣️ Czytaj na głos"));
+      actBtns.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:phrases}),"speak-foreign","lesson-phrases")},"🎤 Mów po obcemu"));
       head.appendChild(actBtns);
       pw.appendChild(head);
       const onDel = isOwn ? (idx)=>{
@@ -5151,9 +5239,9 @@ function renderPractice(){
                    : S.practiceOrigin === "myphrases" ? "← Moje zwroty"
                    : S.practiceOrigin === "lesson-vocab" || S.practiceOrigin === "lesson-phrases" ? ("← "+(lesson.title||"Lekcja"))
                    : "← "+LANGS[lang].name;
-  main.appendChild(h("button",{class:"back-btn",onclick:()=>set({screen:_backScreen, _vocabTab: S.practiceOrigin==="lesson-phrases"?"phrases":(S.practiceOrigin==="lesson-vocab"?"vocab":S._vocabTab)})}, _backLabel));
+  main.appendChild(h("button",{class:"back-btn",onclick:()=>{stopPronunciationSTT();set({screen:_backScreen, _vocabTab: S.practiceOrigin==="lesson-phrases"?"phrases":(S.practiceOrigin==="lesson-vocab"?"vocab":S._vocabTab)});}}, _backLabel));
   main.appendChild(h("div",{class:"prog-info"},
-    h("span",{},(idx+1)+" / "+cards.length+" · "+(mode==="flashcard"?"Fiszki":mode==="fill"?"Uzupełnianie":mode==="writing"?"Pisanie":mode==="dictation"?"Dyktando":"")),
+    h("span",{},(idx+1)+" / "+cards.length+" · "+(mode==="flashcard"?"Fiszki":mode==="fill"?"Uzupełnianie":mode==="writing"?"Pisanie":mode==="dictation"?"Dyktando":mode==="read-aloud"?"Czytanie na głos":mode==="speak-foreign"?"Mów po obcemu":"")),
     h("span",{style:"color:var(--gold)"},"✓ "+score.c+" / "+score.t)
   ));
   const pb=h("div",{class:"prog-bar"});
@@ -5370,6 +5458,177 @@ function renderPractice(){
     if(!S.submitted){
       br.appendChild(h("button",{class:"check-btn",onclick:submit},"Sprawdź"));
       br.appendChild(h("button",{class:"sbtn",onclick:()=>set({submitted:true,lastResult:{givenup:true},attempts:MAX_ATTEMPTS,score:{c:S.score.c,t:S.score.t+1}})},"Poddaję się"));
+    } else {
+      br.appendChild(h("button",{class:"check-btn",onclick:nextWritingCard},"Dalej →"));
+    }
+    fw.appendChild(br);
+    main.appendChild(fw);
+  }
+
+  // ── CZYTAJ NA GŁOS (target obcy → user wymawia obcy) ─────────────────────────
+  if(mode==="read-aloud"){
+    const attempts = S.attempts || 0;
+    const MAX_ATTEMPTS = 3;
+    const fw = h("div",{class:"fc-wrap"});
+    fw.appendChild(h("div",{style:"font-size:11px;color:var(--text3);letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px"},"Przeczytaj na głos po "+LANGS[lang].name));
+
+    // Słowo/zwrot do przeczytania — duże
+    fw.appendChild(h("div",{class:"fc-word",style:"font-size:36px;margin:6px 0 4px 0"},card.w));
+    if(card.ipa) fw.appendChild(h("div",{class:"fc-ipa",style:"margin-bottom:8px"},card.ipa));
+    if(card.pl) fw.appendChild(h("div",{class:"fc-pl",style:"margin-bottom:16px"},"czytaj: "+card.pl));
+
+    // ♪ Posłuchaj — żeby user mógł najpierw usłyszeć wzór
+    fw.appendChild(h("button",{class:"sbtn",style:"margin-bottom:14px;opacity:.7",
+      onclick:()=>speak(card.w, lang, "aleksandra")},"♪ Posłuchaj wzoru"));
+
+    // Mikrofon — duży przycisk
+    const micBtn = h("button",{
+      class:"check-btn",
+      style:"font-size:24px;padding:18px 32px;display:block;width:100%;max-width:480px;margin:6px 0 14px 0;"+(S.sttRecording?"background:var(--err);color:var(--err-text)":"background:var(--gold);color:#fff")
+    }, S.sttRecording ? "⏹ Stop nagrywania" : "🎤 Nagrywaj");
+
+    // Live transcript
+    if(S.sttTranscript || S.sttRecording){
+      fw.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-bottom:4px"},S.sttRecording?"Słucham…":"Co usłyszałam:"));
+      fw.appendChild(h("div",{style:"font-size:18px;padding:10px 14px;background:var(--bg);border:1px solid var(--border);border-radius:4px;margin-bottom:14px;min-height:22px;font-family:'Cormorant Garamond',serif"},S.sttTranscript || "—"));
+    }
+
+    micBtn.onclick = ()=>{
+      if(S.sttRecording){
+        stopPronunciationSTT();
+        set({sttRecording:false});
+      } else {
+        set({sttRecording:true, sttTranscript:""});
+        startPronunciationSTT(lang,
+          (partial)=>{ S.sttTranscript = partial; render(); },
+          (final)=>{
+            const transcript = final || S.sttTranscript || "";
+            const cmp = comparePronunciation(transcript, card.w, lang);
+            if(cmp.match){
+              updateSrs(card.w, lang, true);
+              set({sttRecording:false, sttTranscript:transcript, submitted:true, lastResult:"ok", score:{c:S.score.c+1, t:S.score.t+1}});
+              setTimeout(()=>{ if(S.screen==="practice") nextWritingCard(); }, 1800);
+            } else if(attempts+1 >= MAX_ATTEMPTS){
+              updateSrs(card.w, lang, false);
+              set({sttRecording:false, sttTranscript:transcript, submitted:true, lastResult:"givenup", attempts:attempts+1, score:{c:S.score.c, t:S.score.t+1}});
+            } else {
+              set({sttRecording:false, sttTranscript:transcript, attempts:attempts+1, lastResult:"retry"});
+            }
+          },
+          (err)=>{ set({sttRecording:false, sttError:err, lastResult:"error"}); }
+        );
+      }
+    };
+    fw.appendChild(micBtn);
+
+    if(attempts > 0 && !S.submitted){
+      fw.appendChild(h("div",{style:"font-size:12px;color:var(--err-text);margin-bottom:10px"},
+        "Próba "+(attempts+1)+" z "+MAX_ATTEMPTS+(S.sttTranscript ? " · usłyszałam: \""+S.sttTranscript+"\"" : "")));
+    }
+
+    if(S.submitted){
+      if(S.lastResult==="ok"){
+        fw.appendChild(h("div",{style:"margin:10px 0;padding:14px;background:var(--ok);color:var(--ok-text);border-radius:6px;font-size:14px"},"✓ Dobra wymowa!"));
+      } else if(S.lastResult==="givenup"){
+        fw.appendChild(h("div",{style:"margin:10px 0;padding:14px;background:var(--err);color:var(--err-text);border-radius:6px"},
+          h("div",{style:"font-size:12px;margin-bottom:4px"},"Cel:"),
+          h("div",{style:"font-size:20px;font-weight:500"},card.w),
+          h("div",{style:"font-size:12px;margin-top:4px;opacity:.85"},"Posłuchaj wzoru i spróbuj jeszcze raz później")));
+      }
+    }
+    if(S.sttError){
+      fw.appendChild(h("div",{style:"margin:8px 0;padding:10px;background:var(--err);color:var(--err-text);border-radius:4px;font-size:12px"},S.sttError));
+    }
+
+    const br = h("div",{style:"display:flex;gap:10px;margin-top:10px;flex-wrap:wrap"});
+    if(!S.submitted){
+      br.appendChild(h("button",{class:"sbtn",onclick:()=>{
+        updateSrs(card.w, lang, false);
+        set({submitted:true,lastResult:"givenup",attempts:MAX_ATTEMPTS,score:{c:S.score.c,t:S.score.t+1}});
+      }},"Poddaję się"));
+    } else {
+      br.appendChild(h("button",{class:"check-btn",onclick:nextWritingCard},"Dalej →"));
+    }
+    fw.appendChild(br);
+    main.appendChild(fw);
+  }
+
+  // ── MÓW PO OBCEMU (PL → user wymawia obcy) ───────────────────────────────────
+  if(mode==="speak-foreign"){
+    const attempts = S.attempts || 0;
+    const MAX_ATTEMPTS = 3;
+    const fw = h("div",{class:"fc-wrap"});
+    fw.appendChild(h("div",{style:"font-size:11px;color:var(--text3);letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px"},"Powiedz po "+LANGS[lang].name));
+
+    // Polski tekst — duży
+    fw.appendChild(h("div",{class:"fc-tr",style:"font-size:30px;margin:6px 0 18px 0"},card.tr || "(brak tłumaczenia)"));
+
+    // Mikrofon
+    const micBtn = h("button",{
+      class:"check-btn",
+      style:"font-size:24px;padding:18px 32px;display:block;width:100%;max-width:480px;margin:6px 0 14px 0;"+(S.sttRecording?"background:var(--err);color:var(--err-text)":"background:var(--gold);color:#fff")
+    }, S.sttRecording ? "⏹ Stop nagrywania" : "🎤 Nagrywaj");
+
+    if(S.sttTranscript || S.sttRecording){
+      fw.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-bottom:4px"},S.sttRecording?"Słucham…":"Co usłyszałam:"));
+      fw.appendChild(h("div",{style:"font-size:18px;padding:10px 14px;background:var(--bg);border:1px solid var(--border);border-radius:4px;margin-bottom:14px;min-height:22px;font-family:'Cormorant Garamond',serif"},S.sttTranscript || "—"));
+    }
+
+    micBtn.onclick = ()=>{
+      if(S.sttRecording){
+        stopPronunciationSTT();
+        set({sttRecording:false});
+      } else {
+        set({sttRecording:true, sttTranscript:""});
+        startPronunciationSTT(lang,
+          (partial)=>{ S.sttTranscript = partial; render(); },
+          (final)=>{
+            const transcript = final || S.sttTranscript || "";
+            const cmp = comparePronunciation(transcript, card.w, lang);
+            if(cmp.match){
+              updateSrs(card.w, lang, true);
+              set({sttRecording:false, sttTranscript:transcript, submitted:true, lastResult:"ok", score:{c:S.score.c+1, t:S.score.t+1}});
+              setTimeout(()=>{ if(S.screen==="practice") nextWritingCard(); }, 1800);
+            } else if(attempts+1 >= MAX_ATTEMPTS){
+              updateSrs(card.w, lang, false);
+              set({sttRecording:false, sttTranscript:transcript, submitted:true, lastResult:"givenup", attempts:attempts+1, score:{c:S.score.c, t:S.score.t+1}});
+            } else {
+              set({sttRecording:false, sttTranscript:transcript, attempts:attempts+1, lastResult:"retry"});
+            }
+          },
+          (err)=>{ set({sttRecording:false, sttError:err, lastResult:"error"}); }
+        );
+      }
+    };
+    fw.appendChild(micBtn);
+
+    if(attempts > 0 && !S.submitted){
+      fw.appendChild(h("div",{style:"font-size:12px;color:var(--err-text);margin-bottom:10px"},
+        "Próba "+(attempts+1)+" z "+MAX_ATTEMPTS+(S.sttTranscript ? " · usłyszałam: \""+S.sttTranscript+"\"" : "")));
+    }
+
+    if(S.submitted){
+      if(S.lastResult==="ok"){
+        fw.appendChild(h("div",{style:"margin:10px 0;padding:14px;background:var(--ok);color:var(--ok-text);border-radius:6px;font-size:14px"},"✓ Dobrze!"));
+        if(card.ipa) fw.appendChild(h("div",{style:"font-size:12px;color:var(--text3);margin-top:6px"},"Wzór: "+card.w+(card.ipa?" "+card.ipa:"")));
+      } else if(S.lastResult==="givenup"){
+        fw.appendChild(h("div",{style:"margin:10px 0;padding:14px;background:var(--err);color:var(--err-text);border-radius:6px"},
+          h("div",{style:"font-size:12px;margin-bottom:4px"},"Poprawnie:"),
+          h("div",{style:"font-size:20px;font-weight:500"},card.w),
+          card.ipa ? h("div",{style:"font-size:12px;margin-top:4px;opacity:.85"},"IPA: "+card.ipa) : null));
+      }
+    }
+    if(S.sttError){
+      fw.appendChild(h("div",{style:"margin:8px 0;padding:10px;background:var(--err);color:var(--err-text);border-radius:4px;font-size:12px"},S.sttError));
+    }
+
+    const br = h("div",{style:"display:flex;gap:10px;margin-top:10px;flex-wrap:wrap"});
+    if(!S.submitted){
+      br.appendChild(h("button",{class:"sbtn",style:"opacity:.7",onclick:()=>speak(card.w,lang,"aleksandra")},"♪ Podpowiedź"));
+      br.appendChild(h("button",{class:"sbtn",onclick:()=>{
+        updateSrs(card.w, lang, false);
+        set({submitted:true,lastResult:"givenup",attempts:MAX_ATTEMPTS,score:{c:S.score.c,t:S.score.t+1}});
+      }},"Poddaję się"));
     } else {
       br.appendChild(h("button",{class:"check-btn",onclick:nextWritingCard},"Dalej →"));
     }
@@ -7434,6 +7693,8 @@ function renderMyVocab(cfg){
       const br = h("div",{style:"display:flex;gap:8px;flex-wrap:wrap"});
       br.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(fakeLesson,"flashcard",cfg.origin)},"🃏 Fiszki"));
       br.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(fakeLesson,"writing",cfg.origin)},"✍️ Pisanie z PL"));
+      br.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(fakeLesson,"read-aloud",cfg.origin)},"🗣️ Czytaj na głos"));
+      br.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(fakeLesson,"speak-foreign",cfg.origin)},"🎤 Mów po obcemu"));
       br.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(fakeLesson,"dictation",cfg.origin)},"🎧 Dyktando"));
       practiceBox.appendChild(br);
     } else {
