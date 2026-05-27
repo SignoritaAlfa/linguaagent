@@ -72,11 +72,12 @@
         "git commit [NO] Filmoteka część 1/2 — 7 films A1-B1 (Skam, Ragnarok, Frost, Pippi, Slow TV, Trollhunter, Lilyhammer)"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "7 pozycji × ~25 linii = ~175 linii dodatku. Nie czytaj całego pliku, tylko fragment wokół lupin + okolice IT-end gdzie wstawisz.",
       "dependsOn": [
         "US-001"
-      ]
+      ],
+      "completionNotes": "Completed by agent"
     },
     {
       "id": "US-004b",
@@ -190,6 +191,6 @@
     }
   ],
   "metadata": {
-    "updatedAt": "2026-05-27T07:08:20.343Z"
+    "updatedAt": "2026-05-27T07:12:30.860Z"
   }
 }

@@ -3,10 +3,10 @@
   "sessionId": "a4205311-45ac-4064-a641-1883df3f1f59",
   "status": "running",
   "startedAt": "2026-05-27T07:03:43.794Z",
-  "updatedAt": "2026-05-27T07:08:20.345Z",
-  "currentIteration": 1,
+  "updatedAt": "2026-05-27T07:12:30.862Z",
+  "currentIteration": 2,
   "maxIterations": 0,
-  "tasksCompleted": 1,
+  "tasksCompleted": 2,
   "isPaused": false,
   "agentPlugin": "claude",
   "trackerState": {
@@ -29,8 +29,8 @@
       {
         "id": "US-003",
         "title": "Prompt rules — en/ei/et + å+infinitive dla norweskiego",
-        "status": "open",
-        "completedInSession": false
+        "status": "completed",
+        "completedInSession": true
       },
       {
         "id": "US-004a",
@@ -80,6 +80,16 @@
       "durationMs": 83590,
       "startedAt": "2026-05-27T07:03:43.803Z",
       "endedAt": "2026-05-27T07:05:07.393Z"
+    },
+    {
+      "iteration": 2,
+      "status": "completed",
+      "taskId": "US-003",
+      "taskTitle": "Prompt rules — en/ei/et + å+infinitive dla norweskiego",
+      "taskCompleted": true,
+      "durationMs": 191766,
+      "startedAt": "2026-05-27T07:05:08.569Z",
+      "endedAt": "2026-05-27T07:08:20.335Z"
     }
   ],
   "skippedTaskIds": [],

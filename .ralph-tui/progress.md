@@ -8,6 +8,18 @@ after each iteration and it's included in prompts for context.
 - **Per-language config maps**: `index.html` holds plain JS object maps keyed by language code (`EN`/`FR`/`IT`/`NO`...), e.g. `EL_VOICES` (~line 630). Adding a language = append a new keyed block matching the existing shape. Same pattern likely repeats for `FILMS`, `LANGS`, `LANG_BCP`, `ACCENT_CHARS`.
 - **JS lives inline in `index.html`** inside a `<script>` block. Validate with: `awk '/<script>/{p=1;next} /<\/script>/{p=0} p' index.html > /tmp/lingua.js && node --check /tmp/lingua.js`.
 - **Per-language grammar rules are DUPLICATED across ~6 prompt strings + 1 bulk-fix function.** The noun-article / verb-infinitive instruction ("FR: le/la...; IT: ...; DE: ...") appears in 3+ surface forms: `le/la/un/une`, full `le/la/l'/un/une`, and Polish names `francuski:/włoski:/niemiecki:`. Extending grammar to a new language = (1) grep all three forms and update every prompt, (2) extend `fixVocabArticles`/`vocabItemNeedsFix` (~2321): add a `<LANG>_ARTICLE_RE` const, a branch in `vocabItemNeedsFix`, the `lang !==` guard, a candidate-skip + verb heuristic, and `langName`/`articleHint`, (3) un-gate the "🔧 Popraw rodzajniki AI" button (~4244).
+- **`FILMS` (Filmoteka) is a per-language map at ~line 662** keyed by lang code (`EN`/`FR`/`IT`/`NO`...), closed by `};`. Each film: `{ id, title, type, level, platform, desc, clips:[{ id, episode, title, level, topic, desc, ytSearch }] }`. `type` only drives a binary badge — `series.type==="film" ? "🎞 Film" : "📺 Serial"` (lines ~6498, ~6608); any other value renders as Serial. Add a language = append a `<LANG>: [ ... ],` block before the closing `};`. FR-style immersion (desc/topic in target language) is the convention to copy for new langs; EN/IT use Polish topic/desc.
+
+---
+
+## 2026-05-27 - US-004a
+- Added `NO: [...]` block to `FILMS` map (~line 1077, after `IT` array closes, before `};`) with 7 films A1-B1: Skam (NRK serial), Ragnarok (Netflix serial), Frost norsk dub (Disney+ film), Pippi Langstrømpe (NRK serial), Bergensbanen Slow TV (NRK), Trolljegeren (Prime film), Lilyhammer (Netflix serial).
+- Each film has 3 clips with `desc`/`topic` in Norwegian (bokmål, FR-style immersion) and `ytSearch` in English. Unique clip id prefixes: sk/ra/fro/pi/be/tj/li.
+- Files changed: `index.html` (+119 lines), `.ralph-tui/progress.md`.
+- **Learnings:**
+  - `type` is only ever read at lines ~6498/~6608 as a binary badge (film vs serial) — no filter logic, so non-"film"/"serial" values just fall through to "📺 Serial". Kept to existing `film`/`serial` values for consistency (Slow TV/docu/mockumentary mapped to the nearest of the two).
+  - Insertion anchor `    },\n  ],\n};` is unique to the FILMS-object end (EN/FR end with `  ],` followed by the next lang key, only IT/last is followed by `};`).
+  - `grep -c ytSearch` went 77 → 98 (exactly +21 = 7×3); `node --check` on the awk-extracted inline script passes.
 
 ---
 
