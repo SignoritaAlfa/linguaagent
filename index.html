@@ -3211,6 +3211,37 @@ async function extractPdfText(file){
     throw new Error("Nie można odczytać PDF: "+e.message);
   }
 }
+
+// Renderuje strony PDF do JPG (canvas) — fallback gdy PDF jest skanem (bez warstwy
+// tekstowej). Zwraca [{mimeType:"image/jpeg", data:b64}, ...] dla callLessonModel.
+// maxPages: limit żeby nie wysyłać 50 stron za jednym razem (drogie + powolne).
+async function pdfToImages(file, maxPages){
+  maxPages = maxPages || 10;
+  try{
+    pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
+    const arrayBuffer = await file.arrayBuffer();
+    const pdf = await pdfjsLib.getDocument({data:arrayBuffer}).promise;
+    const total = Math.min(pdf.numPages, maxPages);
+    const images = [];
+    for(let i=1; i<=total; i++){
+      const page = await pdf.getPage(i);
+      // scale 1.5 = ok dla A4 → ~1240x1755px (czytelne dla OCR, ~150-300 KB per strona)
+      const viewport = page.getViewport({scale: 1.5});
+      const canvas = document.createElement("canvas");
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      const ctx = canvas.getContext("2d");
+      await page.render({canvasContext: ctx, viewport: viewport}).promise;
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+      const b64 = dataUrl.split(",")[1];
+      if(b64) images.push({mimeType: "image/jpeg", data: b64});
+    }
+    return images;
+  }catch(e){
+    throw new Error("Nie można wyrenderować PDF do obrazów: "+e.message);
+  }
+}
+
 async function callGemini(prompt, geminiKey){
   const res = await fetch(
     `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${geminiKey}`,
@@ -3266,10 +3297,20 @@ Odpowiedz WYŁĄCZNIE czystym JSON, zero tekstu przed ani po, zero markdown:
       _savedRawText = textContent;
       modelInput = PROMPT+"\n\nTEKST:\n"+textContent;
     } else if(S.uploadFile && S.uploadFile.type==="application/pdf"){
-      const extractedText = await extractPdfText(S.uploadFile);
-      if(!extractedText||extractedText.length<100) throw new Error("PDF jest pusty lub nie można odczytać tekstu");
-      _savedRawText = extractedText;
-      modelInput = PROMPT+"\n\nTEKST:\n"+extractedText;
+      // Najpierw spróbuj wyciągnąć tekst (PDF z warstwą tekstową)
+      let extractedText = "";
+      try{ extractedText = await extractPdfText(S.uploadFile); }catch(e){ console.warn("[Upload] PDF text extract failed:", e.message); }
+      if(extractedText && extractedText.length >= 100){
+        _savedRawText = extractedText;
+        modelInput = PROMPT+"\n\nTEKST:\n"+extractedText;
+      } else {
+        // PDF jest skanem (lub bardzo mało tekstu) — fallback: renderuj strony do obrazów
+        console.log("[Upload] PDF text empty/short ("+(extractedText?.length||0)+" chars), fallback to images");
+        const images = await pdfToImages(S.uploadFile, 10);
+        if(!images.length) throw new Error("Nie udało się odczytać PDF — sprawdź czy plik nie jest uszkodzony");
+        modelInput = {prompt: PROMPT, images};
+        _savedRawText = ""; // brak tekstu, zostaje pusto (AI zapisze to co odczyta w polu rawText lekcji)
+      }
     } else if(S.uploadFile && S.uploadFile.type.startsWith("image/")){
       const b64=await fileToB64(S.uploadFile);
       modelInput = {prompt: PROMPT, image:{mimeType:S.uploadFile.type, data:b64}};
@@ -3330,9 +3371,17 @@ Odpowiedz WYŁĄCZNIE czystym JSON bez markdown:
     const b64 = await fileToB64(S.customExFile);
     modelInput = {prompt: PROMPT, image:{mimeType: S.customExFile.type, data: b64}};
   } else if(S.customExFile && S.customExFile.type === "application/pdf"){
-    const extracted = await extractPdfText(S.customExFile);
-    if(!extracted || extracted.length < 20) throw new Error("PDF jest pusty lub nieczytelny");
-    modelInput = PROMPT + "\n\nMATERIAŁ:\n" + extracted;
+    // Najpierw warstwa tekstowa, potem fallback do renderu stron jako obrazy
+    let extracted = "";
+    try{ extracted = await extractPdfText(S.customExFile); }catch(e){ console.warn("[CustomEx] PDF text extract failed:", e.message); }
+    if(extracted && extracted.length >= 50){
+      modelInput = PROMPT + "\n\nMATERIAŁ:\n" + extracted;
+    } else {
+      console.log("[CustomEx] PDF text empty/short, fallback to images");
+      const images = await pdfToImages(S.customExFile, 10);
+      if(!images.length) throw new Error("Nie udało się odczytać PDF — sprawdź czy plik nie jest uszkodzony");
+      modelInput = {prompt: PROMPT, images};
+    }
   } else if(S.customExFile && (S.customExFile.type.startsWith("text/") || /\.(md|markdown|txt)$/i.test(S.customExFile.name||""))){
     const txt = await S.customExFile.text();
     if(!txt || txt.trim().length < 20) throw new Error("Plik jest pusty");
@@ -6747,17 +6796,24 @@ function getLessonModelConfig(){
 }
 
 // Provider-agnostic single call. Returns raw response text (caller does parsing).
-// Accepts either a plain string prompt OR an object {prompt, image:{mimeType, data(b64)}}
-// for multimodal (image) inputs. Both Gemini and Claude support image inputs.
+// Accepts either a plain string prompt OR an object:
+//   {prompt, image:{mimeType, data(b64)}}                — single image (legacy)
+//   {prompt, images:[{mimeType, data(b64)}, ...]}        — multi-image (PDF→pages)
+// Both Gemini and Claude support multi-image input.
 async function callLessonModel(input){
   const cfg = getLessonModelConfig();
   const promptText = typeof input === "string" ? input : (input.prompt || "");
   const image = (typeof input === "object" && input.image) ? input.image : null;
+  const images = (typeof input === "object" && Array.isArray(input.images) && input.images.length)
+    ? input.images
+    : (image ? [image] : []);
 
   if(cfg.provider === "gemini"){
     if(!S.geminiKey) throw new Error("Brak klucza Gemini API w Ustawieniach");
     const parts = [];
-    if(image) parts.push({inline_data:{mime_type:image.mimeType, data:image.data}});
+    for(const img of images){
+      parts.push({inline_data:{mime_type:img.mimeType, data:img.data}});
+    }
     parts.push({text:promptText});
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/${cfg.name}:generateContent?key=${encodeURIComponent(S.geminiKey)}`,
@@ -6782,7 +6838,9 @@ async function callLessonModel(input){
   // Anthropic Claude
   if(!S.claudeKey) throw new Error("Brak klucza Claude w Ustawieniach");
   const content = [];
-  if(image) content.push({type:"image", source:{type:"base64", media_type:image.mimeType, data:image.data}});
+  for(const img of images){
+    content.push({type:"image", source:{type:"base64", media_type:img.mimeType, data:img.data}});
+  }
   content.push({type:"text", text:promptText});
   const res = await fetch("https://api.anthropic.com/v1/messages",{
     method:"POST",
