@@ -7464,13 +7464,307 @@ function renderFilmoteka(){
 }
 
 function renderSongs(){
+  const{filmSeries,filmClipId,filmYtInput,filmYtId,
+        filmTranscriptLoading,filmTranscriptProcessing,filmTranscriptError,filmTranscriptLesson,
+        rapidKey,geminiKey}=S;
+  const lang=S.songLang;
+  const _sysSongs=BUILTIN_SONGS[lang]||[];
+  const _userSongs=((S.mySongs[lang])||[]).filter(f=>!f.isOverlay);
+  const songs=[..._sysSongs,..._userSongs];
+
+  // ── POZIOM 3: widok klipu (cały utwór) ────────────────────────────────────
+  if(filmSeries&&filmClipId){
+    const series=songs.find(f=>f.id===filmSeries);
+    const allClips=(series&&series.clips)||[];
+    const clip=allClips.find(c=>c.id===filmClipId);
+    if(!clip||!series) return h("div",{});
+    const w=h("div",{});
+    w.appendChild(renderTopNav());
+    const main=h("div",{class:"main"});
+    main.appendChild(h("button",{class:"back-btn",onclick:()=>set({filmClipId:null,filmYtInput:"",filmYtId:"",filmTranscriptError:"",filmTranscriptLesson:null,filmTranscriptText:"",filmManualPaste:""})},"← "+series.title));
+    main.appendChild(h("div",{style:"font-size:10px;color:var(--text3);letter-spacing:.2em;text-transform:uppercase;margin-bottom:8px"},(series.artist||"")+" · "+(clip.level||series.level||"A2")));
+    main.appendChild(h("div",{class:"page-title",style:"font-size:26px;margin:0 0 4px"},clip.title));
+    if(clip.desc) main.appendChild(h("div",{style:"font-size:13px;color:var(--text2);margin-bottom:6px;line-height:1.6"},clip.desc));
+    if(clip.topic) main.appendChild(h("div",{style:"font-size:11px;color:var(--gold);margin-bottom:28px"},"Temat: "+clip.topic));
+    else main.appendChild(h("div",{style:"margin-bottom:28px"}));
+    const ytSearchUrl="https://www.youtube.com/results?search_query="+encodeURIComponent(clip.ytSearch);
+    const ytA=h("a",{href:ytSearchUrl,target:"_blank",
+      style:"display:inline-block;padding:10px 18px;border:1px solid var(--border2);color:var(--text2);text-decoration:none;font-size:12px;letter-spacing:.06em;margin-bottom:28px;transition:all .2s"},
+      "▶ Szukaj tej piosenki na YouTube →");
+    ytA.onmouseover=()=>{ytA.style.borderColor="var(--gold)";ytA.style.color="var(--gold)";};
+    ytA.onmouseout=()=>{ytA.style.borderColor="var(--border2)";ytA.style.color="var(--text2)";};
+    main.appendChild(ytA);
+    main.appendChild(h("div",{class:"sec-label"},"Pobierz transkrypcję i stwórz lekcję"));
+    main.appendChild(h("div",{style:"font-size:12px;color:var(--text3);margin-bottom:14px;line-height:1.8"},
+      "1. Znajdź piosenkę na YouTube (przycisk powyżej)",h("br",{}),"2. Skopiuj link z paska adresu",h("br",{}),"3. Wklej poniżej → kliknij Pobierz i stwórz lekcję"));
+    const ytInpWrap=h("div",{style:"display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap"});
+    const savedUrl=(S.filmClipUrls||{})[filmClipId];
+    if(savedUrl && !filmYtInput){
+      S.filmYtInput=savedUrl;
+      S.filmYtId=extractYtId(savedUrl)||"";
+    }
+    const ytInp=h("input",{type:"text",class:"fill-inp",style:"flex:1;min-width:300px;font-size:14px;padding:12px 14px",
+      placeholder:"https://www.youtube.com/watch?v=...",value:S.filmYtInput,
+      oninput:(e)=>{const v=e.target.value;const id=extractYtId(v);S.filmYtInput=v;S.filmYtId=id||"";saveFilmClipUrl(filmClipId, v);}});
+    ytInpWrap.appendChild(ytInp);
+    if(S.workerUrl){
+      ytInpWrap.appendChild(h("button",{class:"check-btn",style:"white-space:nowrap;padding:10px 18px;background:var(--gold);color:#fff;border-color:var(--gold)",onclick:fetchAndProcessViaWorker,title:"Worker pobiera napisy z YouTube (gdy utwór ma napisy/tekst)"},"🤖 Auto pobierz →"));
+    } else {
+      ytInpWrap.appendChild(h("button",{class:"check-btn",style:"white-space:nowrap;padding:10px 18px",onclick:fetchAndProcessTranscript,title:"Tryb RapidAPI (jeśli klucz skonfigurowany)"},"Pobierz →"));
+    }
+    if(S.geminiKey){
+      ytInpWrap.appendChild(h("button",{
+        class:"check-btn",
+        style:"white-space:nowrap;padding:10px 18px;border-color:var(--gold);color:var(--gold)",
+        title:"Gemini sam posłucha utworu (z audio) — działa też dla piosenek bez napisów. Limit 8h/dzień darmowo.",
+        onclick:fetchAndProcessViaGemini
+      },"🎬 Gemini z wideo →"));
+    }
+    main.appendChild(ytInpWrap);
+    if(!S.workerUrl){
+      main.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-bottom:14px;padding:8px 12px;background:var(--surface2);border-radius:4px"},
+        "💡 Tip: skonfiguruj ",h("strong",{},"Worker Cloudflare")," w Ustawieniach → auto-pobieranie transkrypcji bez subskrypcji RapidAPI ani manualnego wklejania. Plik z kodem i instrukcją: ",h("code",{style:"font-size:10px;background:var(--bg2);padding:1px 4px"},"worker/README.md"),"."));
+    }
+    if(filmYtId) main.appendChild(h("div",{style:"font-size:11px;color:var(--ok-text);margin-bottom:10px"},"✓ ID wideo: "+filmYtId));
+    if(!rapidKey||!geminiKey) main.appendChild(h("div",{class:"msg-err",style:"margin-bottom:10px"},"⚠️ Wejdź w Ustawienia i wpisz klucze: "+((!rapidKey)?"RapidAPI ":"")+(!geminiKey?"Gemini API":"")));
+    if(filmTranscriptError) main.appendChild(h("div",{class:"msg-err",style:"margin-bottom:10px;line-height:1.5"},filmTranscriptError));
+
+    // Show existing lessons for this clip — quick jump to lesson view
+    const sTitle=(series && series.title)||"";
+    const cTitle=(clip && clip.title)||"";
+    const normalize=(s)=>(s||"").toLowerCase().replace(/[^a-z0-9ąćęłńóśźż\s]/g,"").replace(/\s+/g," ").trim();
+    const cTitleN=normalize(cTitle);
+    const sTitleN=normalize(sTitle);
+    const existingForClip=(S.myLessons[lang]||[]).map((les,idx)=>({lesson:les, idx})).filter(({lesson})=>{
+      if(lesson.clipId && lesson.clipId===filmClipId) return true;
+      if(filmYtId && lesson.youtubeId===filmYtId) return true;
+      const tN=normalize(lesson.title);
+      if(sTitle && sTitleN.length>2 && tN.includes(sTitleN)) return true;
+      if(cTitleN.length>4 && tN.includes(cTitleN)) return true;
+      return false;
+    });
+    const linkedIds=new Set(existingForClip.map(({lesson})=>lesson.id));
+    if(existingForClip.length>0 && !filmTranscriptLesson){
+      main.appendChild(h("div",{class:"sec-label",style:"margin-top:24px;color:var(--gold)"},"📚 Twoje lekcje z tej piosenki ("+existingForClip.length+")"));
+      existingForClip.forEach(({lesson:les, idx})=>{
+        const row=h("div",{
+          style:"display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border:1px solid var(--gold);border-radius:6px;margin-bottom:8px;background:var(--surface);cursor:pointer;transition:all .15s",
+          onclick:()=>set({screen:"lesson",lesson:les,mode:"dialog",lessonTab:"dialog",playing:false,playingLine:-1})
+        });
+        row.onmouseover=()=>{ row.style.background="var(--gold-dim)"; };
+        row.onmouseout=()=>{ row.style.background="var(--surface)"; };
+        const left=h("div",{style:"flex:1;min-width:0"});
+        left.appendChild(h("div",{style:"font-size:14px;font-weight:500;color:var(--text)"},les.title||"Bez tytułu"));
+        const dialogHasTime=les.dialog && les.dialog[0] && typeof les.dialog[0].start==="number";
+        left.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-top:2px"},(les.level||"")+" · "+(les.dialog||[]).length+" kwestii · "+(les.vocab||[]).length+" słówek · "+(les.phrases||[]).length+" zwrotów"+(dialogHasTime?" · 🎬 karaoke":"")));
+        row.appendChild(left);
+        const actions=h("div",{style:"display:flex;align-items:center;gap:10px;flex-shrink:0;margin-left:12px"});
+        const renameBtn=h("button",{class:"sbtn",style:"font-size:11px;padding:4px 8px",title:"Zmień nazwę lekcji"},"✏");
+        renameBtn.onclick=(e)=>{ e.stopPropagation(); renameLesson(lang, idx); };
+        actions.appendChild(renameBtn);
+        const unlinkBtn=h("button",{class:"sbtn",style:"font-size:11px;padding:4px 8px",title:"Odepnij lekcję od tej piosenki (nie usuwa lekcji)"},"⊘");
+        unlinkBtn.onclick=(e)=>{
+          e.stopPropagation();
+          if(!confirm("Odepnij \""+(les.title||"lekcję")+"\" od tej piosenki? Lekcja zostaje, tylko nie będzie tu wyświetlana.")) return;
+          const ml=Object.assign({},S.myLessons);
+          const li=(ml[lang]||[]).findIndex(l=>l.id===les.id);
+          if(li<0) return;
+          const upd=Object.assign({}, ml[lang][li]);
+          delete upd.clipId;
+          delete upd.youtubeId;
+          ml[lang][li]=upd;
+          S.myLessons=ml;
+          localStorage.setItem("lingua_my_lessons",JSON.stringify(ml));
+          scheduleDriveSync();
+          render();
+        };
+        actions.appendChild(unlinkBtn);
+        const delBtn=h("button",{class:"sbtn",style:"font-size:11px;padding:4px 8px;border-color:var(--red);color:var(--red)",title:"Usuń tę lekcję całkowicie"},"✕");
+        delBtn.onclick=(e)=>{
+          e.stopPropagation();
+          if(!confirm("USUNĄĆ całą lekcję \""+(les.title||"")+"\"? Tego nie można cofnąć.")) return;
+          deleteMyLesson(lang, idx);
+        };
+        actions.appendChild(delBtn);
+        actions.appendChild(h("div",{style:"font-size:13px;color:var(--gold)"},"→ Otwórz"));
+        row.appendChild(actions);
+        main.appendChild(row);
+      });
+    }
+    // Manual link UI: assign any unlinked lesson to this clip
+    if(!filmTranscriptLesson && (S.myLessons[lang]||[]).length>0){
+      const unlinkedCount=(S.myLessons[lang]||[]).filter(l=>!linkedIds.has(l.id)).length;
+      if(unlinkedCount>0){
+        const wrap=h("div",{style:"margin:14px 0 18px;padding:14px;border:1px dashed var(--border);border-radius:6px;background:var(--surface)"});
+        wrap.appendChild(h("div",{style:"font-size:12px;color:var(--text2);font-weight:500;margin-bottom:6px"}, existingForClip.length>0 ? "🔗 Przypisz dodatkową lekcję do tej piosenki" : "🔗 Masz już lekcję dla tej piosenki? Przypisz ją tutaj"));
+        wrap.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-bottom:12px;line-height:1.6"},"Wybierz lekcję która dotyczy tej piosenki — pojawi się w panelu powyżej i będzie dostępna jednym kliknięciem przy każdym wejściu w utwór."));
+        const row=h("div",{style:"display:flex;gap:10px;flex-wrap:wrap;align-items:center"});
+        const sel=h("select",{style:"flex:1;min-width:240px;padding:8px 10px;border:1px solid var(--border);border-radius:4px;background:var(--surface);font-family:inherit;font-size:12px;color:var(--text);cursor:pointer"});
+        sel.appendChild(h("option",{value:""},"— wybierz lekcję —"));
+        (S.myLessons[lang]||[]).forEach(les=>{
+          if(linkedIds.has(les.id)) return;
+          const opt=h("option",{value:les.id}, (les.title||"Bez tytułu")+" — "+(les.dialog||[]).length+" kwestii");
+          sel.appendChild(opt);
+        });
+        row.appendChild(sel);
+        const btn=h("button",{class:"primary",style:"white-space:nowrap;padding:9px 18px"},"Przypisz");
+        btn.onclick=()=>{
+          const lid=sel.value;
+          if(!lid){ alert("Wybierz lekcję z listy najpierw"); return; }
+          const ml=Object.assign({},S.myLessons);
+          const arr=(ml[lang]||[]).slice();
+          const i=arr.findIndex(l=>l.id===lid);
+          if(i<0){ alert("Nie znaleziono wybranej lekcji"); return; }
+          arr[i]=Object.assign({}, arr[i], {clipId: filmClipId, clipTitle: cTitle, seriesTitle: arr[i].seriesTitle || sTitle});
+          ml[lang]=arr;
+          S.myLessons=ml;
+          localStorage.setItem("lingua_my_lessons", JSON.stringify(ml));
+          scheduleDriveSync();
+          btn.textContent="✓ Przypisano!";
+          btn.style.background="var(--ok-text)";
+          btn.style.borderColor="var(--ok-text)";
+          setTimeout(()=>render(), 600);
+        };
+        row.appendChild(btn);
+        wrap.appendChild(row);
+        main.appendChild(wrap);
+      }
+    }
+
+    // Edit-before-create panel (draft transcript)
+    if(S.filmTranscriptDraft && !filmTranscriptLoading && !filmTranscriptProcessing && !filmTranscriptLesson){
+      const draft=S.filmTranscriptDraft;
+      const isSrt=isSrtFormat(draft);
+      main.appendChild(h("div",{class:"sec-label",style:"margin-top:18px"},"📝 Edytuj transkrypcję przed stworzeniem lekcji"));
+      main.appendChild(h("div",{style:"font-size:12px;color:var(--text3);margin-bottom:12px;line-height:1.6"},
+        "Popraw co trzeba: ",h("strong",{},"wielkie litery na początku linijek"),", ",h("strong",{},"znaki interpunkcyjne"),", literówki, błędnie rozpoznane słowa. ",isSrt?h("span",{style:"color:var(--ok-text)"},"✓ Format SRT — będzie karaoke z sync."):h("span",{style:"color:var(--text3);font-style:italic"},"Plain text — bez sync z wideo (timestampy nie są wykryte).")
+      ));
+      const ta=h("textarea",{
+        style:"width:100%;min-height:340px;padding:14px;border:1px solid var(--border);background:var(--surface);font-family:"+(isSrt?"monospace":"'DM Sans',sans-serif")+";font-size:13px;line-height:1.6;border-radius:6px;resize:vertical;outline:none;color:var(--text);box-sizing:border-box;margin-bottom:10px",
+        oninput:(e)=>{ S.filmTranscriptDraft=e.target.value; }
+      });
+      ta.value=draft;
+      main.appendChild(ta);
+      main.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-bottom:14px"},draft.length+" znaków"+(isSrt?" · "+(parseSrt(draft)||[]).length+" cues":"")));
+      const btnRow=h("div",{style:"display:flex;gap:10px;flex-wrap:wrap"});
+      btnRow.appendChild(h("button",{class:"check-btn",style:"padding:10px 20px",onclick:confirmDraftAndCreate},"✨ Stwórz lekcję z tej transkrypcji"));
+      btnRow.appendChild(h("button",{class:"sbtn",onclick:()=>set({filmTranscriptDraft:"",filmTranscriptDraftVideoId:null,filmTranscriptError:""})},"✕ Anuluj"));
+      main.appendChild(btnRow);
+      w.appendChild(main); return w;
+    }
+
+    // Manual paste fallback
+    if(!filmTranscriptLoading && !filmTranscriptProcessing && !filmTranscriptLesson){
+      const det=h("details",{style:"margin-top:18px;border:1px solid var(--border);border-radius:6px;padding:10px 14px;background:var(--surface)"});
+      const sum=h("summary",{style:"cursor:pointer;font-size:12px;font-weight:500;color:var(--text);user-select:none"},"📋 Albo wklej tekst piosenki ręcznie (jeśli API nie działa)");
+      det.appendChild(sum);
+      const body=h("div",{style:"margin-top:12px"});
+      body.appendChild(h("div",{style:"font-size:12px;color:var(--text2);line-height:1.7;margin-bottom:10px"},
+        h("strong",{},"Najlepiej: pobierz SRT z timestampami (potrzebne do podświetlania w trakcie odtwarzania)"),h("br",{}),
+        "1. Wejdź na ",h("strong",{},"downsub.com")," (albo savesubs.com — free, bez API key)",h("br",{}),
+        "2. Wklej URL YouTube → wybierz język → pobierz format ",h("strong",{},"SRT"),h("br",{}),
+        "3. Otwórz pobrany plik .srt → Ctrl/Cmd+A → Ctrl/Cmd+C",h("br",{}),
+        "4. Wklej poniżej → kliknij „Stwórz lekcję\" — apka wykryje SRT i zsynchronizuje tekst z wideo",h("br",{}),
+        h("br",{}),
+        h("strong",{},"Alternatywnie: wklej sam tekst piosenki (bez podświetlania w czasie rzeczywistym)")
+      ));
+      const ta=h("textarea",{
+        style:"width:100%;min-height:140px;padding:12px;border:1px solid var(--border);background:var(--surface);font-family:'DM Sans',sans-serif;font-size:13px;line-height:1.6;border-radius:4px;resize:vertical;outline:none;color:var(--text);box-sizing:border-box;margin-bottom:10px",
+        placeholder:"Wklej tutaj tekst piosenki...",
+        oninput:(e)=>{ S.filmManualPaste=e.target.value; }
+      });
+      ta.value=S.filmManualPaste||"";
+      body.appendChild(ta);
+      body.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-bottom:10px"},(S.filmManualPaste||"").length+" znaków"));
+      body.appendChild(h("button",{class:"check-btn",style:"padding:10px 18px",onclick:processManualPasteTranscript},"✨ Stwórz lekcję z wklejonego tekstu"));
+      det.appendChild(body);
+      main.appendChild(det);
+    }
+    if(filmTranscriptLoading) main.appendChild(h("div",{style:"text-align:center;padding:28px;color:var(--text2);font-size:13px"},h("div",{style:"font-size:28px;margin-bottom:8px"},"⏳"),h("div",{},"Pobieranie transkrypcji z YouTube...")));
+    else if(filmTranscriptProcessing) main.appendChild(h("div",{style:"text-align:center;padding:28px;color:var(--text2);font-size:13px"},h("div",{style:"font-size:28px;margin-bottom:8px"},"✨"),h("div",{},"Trwa analiza tekstu..."),h("div",{style:"font-size:11px;color:var(--text3);margin-top:4px"},"może potrwać kilkanaście sekund")));
+    else if(filmTranscriptLesson){
+      main.appendChild(h("div",{class:"msg-ok",style:"margin-bottom:12px"},"✓ Gotowe! Lekcja \""+filmTranscriptLesson.title+"\" jest gotowa"));
+      main.appendChild(h("button",{class:"primary",onclick:()=>{
+        const _sl=filmTranscriptLesson;
+        _sl.source="video";
+        _sl.seriesTitle=series?.title||"";
+        _sl.clipId=filmClipId;
+        _sl.clipTitle=clip?.title||"";
+        if(series?.title&&_sl.title&&!_sl.title.startsWith(series.title)) _sl.title=series.title+" — "+_sl.title;
+        saveMyLesson(lang,_sl);set({filmClipId:null,filmYtInput:"",filmYtId:"",filmTranscriptError:"",filmTranscriptLesson:null,filmTranscriptText:"",filmManualPaste:"",filmTranscriptDraft:"",filmTranscriptDraftVideoId:null,screen:"lesson",lesson:_sl,mode:"dialog",lessonTab:"dialog",playing:false,playingLine:-1});
+      }},"+ Dodaj do Moich Lekcji"));
+      main.appendChild(h("button",{style:"background:none;border:none;color:var(--text3);cursor:pointer;font-size:12px;margin-left:16px",onclick:()=>set({filmTranscriptLesson:null,filmYtInput:"",filmYtId:"",filmTranscriptText:""})},"← Spróbuj inną piosenkę"));
+    }
+    w.appendChild(main);return w;
+  }
+
+  // ── POZIOM 2: lista klipów piosenki ───────────────────────────────────────
+  if(filmSeries){
+    const series=songs.find(f=>f.id===filmSeries);
+    if(!series) return h("div",{});
+    const w=h("div",{});
+    w.appendChild(renderTopNav());
+    const main=h("div",{class:"main"});
+    main.appendChild(h("button",{class:"back-btn",onclick:()=>set({filmSeries:null})},"← Piosenki"));
+    main.appendChild(h("div",{style:"font-size:10px;color:var(--text3);letter-spacing:.2em;text-transform:uppercase;margin-bottom:8px"},"🎵 Piosenka · "+(series.level||"A2")+(series.year?" · "+series.year:"")));
+    main.appendChild(h("div",{class:"page-title",style:"font-size:28px;margin-bottom:4px"},series.title));
+    main.appendChild(h("div",{style:"font-size:13px;color:var(--text2);margin-bottom:4px"},series.artist||""));
+    if(series.desc) main.appendChild(h("div",{style:"font-size:12px;color:var(--text2);margin-bottom:20px;line-height:1.6"},series.desc));
+    else main.appendChild(h("div",{style:"margin-bottom:20px"}));
+    main.appendChild(h("div",{class:"sec-label"},"Wybierz nagranie"));
+    const allClips=(series.clips||[]);
+    const clipList=h("div",{style:"display:flex;flex-direction:column;gap:1px;background:var(--border)"});
+    allClips.forEach(clip=>{
+      const row=h("div",{style:"background:var(--surface);padding:20px 24px;cursor:pointer;transition:background .15s;display:flex;justify-content:space-between;align-items:center",
+        onclick:()=>set({filmClipId:clip.id,lang:lang,filmYtInput:"",filmYtId:"",filmTranscriptError:"",filmTranscriptLesson:null,filmTranscriptText:"",filmManualPaste:""})});
+      row.onmouseover=()=>{row.style.background="var(--surface2)";};
+      row.onmouseout=()=>{row.style.background="var(--surface)";};
+      const left=h("div",{style:"flex:1"});
+      left.appendChild(h("div",{style:"font-size:10px;color:var(--text3);letter-spacing:.15em;text-transform:uppercase;margin-bottom:5px"},(clip.level||series.level||"A2")));
+      left.appendChild(h("div",{style:"font-size:16px;color:var(--text);font-family:'Cormorant Garamond',serif;margin-bottom:3px"},clip.title));
+      if(clip.desc) left.appendChild(h("div",{style:"font-size:12px;color:var(--text2);line-height:1.5"},clip.desc));
+      if(clip.topic) left.appendChild(h("div",{style:"font-size:11px;color:var(--gold);margin-top:5px;font-style:italic"},clip.topic));
+      row.appendChild(left);
+      row.appendChild(h("div",{style:"font-size:18px;color:var(--text3);flex-shrink:0"},"→"));
+      clipList.appendChild(row);
+    });
+    if(allClips.length===0) clipList.appendChild(h("div",{style:"background:var(--surface);padding:28px;text-align:center;color:var(--text3);font-size:13px"},"Brak nagrań dla tej piosenki"));
+    main.appendChild(clipList);
+    w.appendChild(main);return w;
+  }
+
+  // ── POZIOM 1: lista piosenek ──────────────────────────────────────────────
   const w=h("div",{});
   w.appendChild(renderTopNav());
+  w.appendChild(h("div",{class:"lang-hero"},
+    ...Object.entries(LANGS).map(([code,l])=>h("button",{class:"lang-tab"+(lang===code?" sel":""),
+      onclick:()=>{localStorage.setItem("lingua_song_lang",code);set({lang:code,songLang:code,filmSeries:null,filmClipId:null});}},
+      h("span",{class:"lang-flag"},l.flag),h("span",{class:"lang-name"},l.name)))
+  ));
   const main=h("div",{class:"main"});
   main.appendChild(h("button",{class:"back-btn",onclick:()=>set({screen:"lang"})},"← Lekcje"));
-  main.appendChild(h("div",{class:"page-title"},"🎵 Piosenki (TBD)"));
-  w.appendChild(main);
-  return w;
+  main.appendChild(h("div",{class:"page-title"},"🎵 Piosenki"));
+  main.appendChild(h("div",{class:"page-sub"},"Ucz się z piosenek — "+LANGS[lang].name));
+  if(songs.length===0){
+    main.appendChild(h("div",{style:"padding:48px 24px;text-align:center;color:var(--text3);font-size:14px"},"Brak wbudowanych piosenek dla tego języka"));
+    w.appendChild(main);return w;
+  }
+  const grid=h("div",{class:"film-grid"});
+  songs.forEach(song=>{
+    const card=h("div",{class:"film-card",style:"cursor:pointer;position:relative",onclick:()=>set({filmSeries:song.id,lang:lang})});
+    card.onmouseover=()=>{card.style.background="var(--surface2)";};
+    card.onmouseout=()=>{card.style.background="";};
+    const body=h("div",{class:"film-body"});
+    if(song.year) body.appendChild(h("div",{style:"position:absolute;top:12px;right:14px;font-size:11px;opacity:.6"},song.year));
+    body.appendChild(h("div",{style:"font-size:12px;color:var(--text2);margin-bottom:2px;padding-right:36px"},song.artist||""));
+    body.appendChild(h("div",{class:"film-title"},song.title));
+    body.appendChild(h("div",{class:"film-badge",style:"margin-top:8px"},song.level||"A2"));
+    body.appendChild(h("div",{style:"font-size:11px;color:var(--gold);margin-top:8px"},"🎵 kliknij, by stworzyć lekcję →"));
+    card.appendChild(body);
+    grid.appendChild(card);
+  });
+  main.appendChild(grid);
+  w.appendChild(main);return w;
 }
 
 // ── RENDER ────────────────────────────────────────────────────────────────────
