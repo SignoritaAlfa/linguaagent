@@ -608,8 +608,8 @@ async function deleteVideo(key){
   });
 }
 
-const LANGS={EN:{name:"English",flag:"🇬🇧"},FR:{name:"Français",flag:"🇫🇷"},IT:{name:"Italiano",flag:"🇮🇹"}};
-const LANG_BCP={EN:"en-GB",FR:"fr-FR",IT:"it-IT"};
+const LANGS={EN:{name:"English",flag:"🇬🇧"},FR:{name:"Français",flag:"🇫🇷"},IT:{name:"Italiano",flag:"🇮🇹"},NO:{name:"Norsk",flag:"🇳🇴"}};
+const LANG_BCP={EN:"en-GB",FR:"fr-FR",IT:"it-IT",NO:"nb-NO"};
 
 // Palety kolorów akcentu — zmieniają tylko --gold (główny kolor podświetleń, przycisków).
 // Tło i tekst zostają neutralne. --red (dla akcji destrukcyjnych) pozostaje stały.
@@ -2898,6 +2898,7 @@ const ACCENT_CHARS = {
   EN: [],
   FR: ["é","è","ê","ë","à","â","ä","î","ï","ô","ö","û","ü","ù","ÿ","ç","œ","æ","'"],
   IT: ["à","è","é","ì","í","î","ò","ó","ù","ú","'"],
+  NO: ["æ","ø","å","Æ","Ø","Å","'"],
 };
 function renderAccentBar(lang, inputEl){
   const chars = ACCENT_CHARS[lang] || [];
