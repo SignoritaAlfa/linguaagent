@@ -96,3 +96,15 @@ after each iteration and it's included in prompts for context.
 
 ---
 
+
+## 2026-05-27 - US-007
+- Finalized the NO run: archived PRD and did the single push of all run commits.
+- `mkdir -p docs/`, `git mv prd-norwegian.md docs/prd-norwegian.md`.
+- Final smoke test clean: awk-extracted inline `<script>` from `index.html` → `node --check` passes.
+- Committed with `[NO] Final: archive PRD to docs/` (git add -A also captured the .ralph-tui session bookkeeping + the US-006 iteration log, both already-tracked) and pushed `origin main` once.
+- Files changed: moved `prd-norwegian.md` → `docs/prd-norwegian.md`; `.ralph-tui/progress.md`, `.ralph-tui/session*.json`, `ralph-runs/no-lang/prd.json`, new US-006 log.
+- **Learnings:**
+  - Commit-message convention drifted mid-run: US-001 (`9058836`) used the `[NO]` prefix and is already on origin/main; US-002→US-006 used `feat: US-00X`. So `git log origin/main..HEAD | grep '\[NO\]'` matches ONLY the Final commit, not the whole run. Did NOT rewrite history to "fix" prefixes — risky and not requested; reported the reality instead.
+  - No `.gitignore` in repo — `.ralph-tui/*` and `ralph-runs/*` (incl. iteration logs and `prd.json`) are tracked, so `git add -A` legitimately sweeps run bookkeeping into the Final commit; consistent with prior commits.
+  - This run only ever pushes here (US-007, "TYLKO TUTAJ push"); the per-story engine auto-commit note doesn't apply to the final push story whose deliverable IS a specific commit + push.
+---

@@ -3,10 +3,10 @@
   "sessionId": "a4205311-45ac-4064-a641-1883df3f1f59",
   "status": "running",
   "startedAt": "2026-05-27T07:03:43.794Z",
-  "updatedAt": "2026-05-27T07:32:13.893Z",
-  "currentIteration": 6,
+  "updatedAt": "2026-05-27T07:32:15.083Z",
+  "currentIteration": 7,
   "maxIterations": 0,
-  "tasksCompleted": 6,
+  "tasksCompleted": 7,
   "isPaused": false,
   "agentPlugin": "claude",
   "trackerState": {
@@ -59,8 +59,8 @@
       {
         "id": "US-006",
         "title": "LANG-agnostic check — usunąć hardkodowane EN/FR/IT warunki",
-        "status": "open",
-        "completedInSession": false
+        "status": "completed",
+        "completedInSession": true
       },
       {
         "id": "US-007",
@@ -130,10 +130,22 @@
       "durationMs": 206434,
       "startedAt": "2026-05-27T07:19:55.533Z",
       "endedAt": "2026-05-27T07:23:21.967Z"
+    },
+    {
+      "iteration": 7,
+      "status": "completed",
+      "taskId": "US-006",
+      "taskTitle": "LANG-agnostic check — usunąć hardkodowane EN/FR/IT warunki",
+      "taskCompleted": true,
+      "durationMs": 530746,
+      "startedAt": "2026-05-27T07:23:23.136Z",
+      "endedAt": "2026-05-27T07:32:13.882Z"
     }
   ],
   "skippedTaskIds": [],
   "cwd": "/Users/aleksandrabarwasna/lingua-agent",
-  "activeTaskIds": [],
+  "activeTaskIds": [
+    "US-007"
+  ],
   "subagentPanelVisible": false
 }
