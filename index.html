@@ -3791,6 +3791,8 @@ function renderLang(){
     style:"background:var(--gold);color:#fff;border-color:var(--gold)",
     onclick:()=>set({screen:"filmoteka",filmLang:lang,filmUploadStep:0,filmFile:null,filmError:""})},"🎬 Filmoteka"));
   myBtns.appendChild(h("button",{class:"add-btn",
+    onclick:()=>set({screen:"songs",songLang:lang,filmSeries:null,filmClipId:null})},"🎵 Piosenki"));
+  myBtns.appendChild(h("button",{class:"add-btn",
     onclick:()=>set({showUpload:true,uploadLang:lang,uploadStep:0,uploadFile:null,uploadPreview:null,uploadError:"",uploadProcessing:false})},"+ Wgraj tekst"));
   myBtns.appendChild(h("button",{class:"add-btn",
     onclick:()=>createFolder(lang)},"+ Folder"));
