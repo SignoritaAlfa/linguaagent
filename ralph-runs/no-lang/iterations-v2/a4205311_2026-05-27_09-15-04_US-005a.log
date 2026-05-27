@@ -1,0 +1,77 @@
+# Iteration 5 Log
+
+## Metadata
+
+- **Task ID**: US-005a
+- **Task Title**: Lekcje NO część 1/2 — 3 lekcje A1
+- **Description**: Pierwsze 3 wbudowane lekcje norweskie A1 (najprostsze).
+- **Status**: completed
+- **Task Completed**: Yes
+- **Promise Detected**: Yes
+- **Started At**: 2026-05-27T07:15:04.953Z
+- **Ended At**: 2026-05-27T07:19:54.327Z
+- **Duration**: 4m 49s
+- **Input Tokens**: 74117
+- **Output Tokens**: 23098
+- **Total Tokens**: 97215
+- **Agent**: claude
+- **Model**: claude-opus-4-7
+- **Sandbox Mode**: auto
+- **Sandbox Network**: Enabled
+--- RAW OUTPUT ---
+I'll start by studying the existing patterns and the template lessons. Let me run the initial investigation in parallel.
+[94m[Bash][0m Backup index.html $ cp /Users/aleksandrabarwasna/lingua-agent/index.html /tmp/lingua-NO-US5a-$(date +%H%M).html && echo ...
+[94m[Bash][0m Find fr1/fr2 and no lessons template $ grep -n 'id:"fr1"\|id:"fr2"\|id:"no1"\|id:"no2"\|id:"no3"' /Users/aleksandrabarwasna/lingua-agent/in...
+[94m[Bash][0m Count no lessons and find LESSONS map $ grep -n "LESSONS\b\|const LESSONS\|LESSONS =" /Users/aleksandrabarwasna/lingua-agent/index.html | he...
+[94m[Read][0m [95m/Users/aleksandrabarwasna/lingua-agent/.ralph-tui/progress.md[0m
+Backup done. The `id:"no"` count returns 3, but those are likely film clip IDs (no1/no2/no3 in FILMS), not lessons. Let me examine the lessons template and structure.
+[94m[Read][0m [95m/Users/aleksandrabarwasna/lingua-agent/index.html[0m
+[94m[Bash][0m Check exact no lesson ids $ grep -n 'id:"no1"\|id:"no2"\|id:"no3"' /Users/aleksandrabarwasna/lingua-agent/index.html
+Let me find where the LESSONS map ends (to find the closing and where NO would need to be added) and check what the 3 `id:"no` matches are.
+[94m[Bash][0m Show the 3 id:no matches $ grep -n 'id:"no' /Users/aleksandrabarwasna/lingua-agent/index.html
+[94m[Bash][0m Find LESSONS declaration and usages $ grep -n 'LESSONS' /Users/aleksandrabarwasna/lingua-agent/index.html | head -20
+The 3 matches are `nor1/2/3` film clips, not lessons — so there are currently 0 NO lessons. Let me find the lessons map declaration and its structure (what comes before EN/after the last lang).
+[94m[Bash][0m Find lessons map declaration $ grep -n 'EN:\[' /Users/aleksandrabarwasna/lingua-agent/index.html | head
+The map is `const COURSE={`. Let me find its boundaries — where it starts and where the last language array closes before `};`.
+[94m[Bash][0m Find COURSE boundaries and lang keys $ awk 'NR>=1319 && NR<=1880 && /^  [A-Z]+:\[/ {print NR": "$0}' /Users/aleksandrabarwasna/lingua-agent...
+Now let me find where IT array closes and where COURSE ends (`};`). The IT block started at 1432.
+[94m[Bash][0m Find IT close and COURSE end $ | *\{id:"it| *NO:|^.*COURSE)'
+[94m[Read][0m [95m/Users/aleksandrabarwasna/lingua-agent/index.html[0m
+I now understand the structure: `const COURSE={...}` at line 1319, with EN/FR/IT arrays. IT closes at line 1485 (`  ]`), then `};` at 1486. There are currently **0** NO lessons (the 3 `id:"no` matches are `nor1/2/3` film clips). I'll add the `NO:[...]` block before the closing `};`.
+
+Let me write the 3 authentic Norwegian A1 lessons.
+[94m[Edit][0m [95m/Users/aleksandrabarwasna/lingua-agent/index.html[0m edit: "      {rule:"Di dove sei? — Skąd jesteś?",ex:"Sono..." → "      {rule:"Di dove sei? — Skąd jesteś?",ex:"Sono..."
+Now let me run the quality checks: `node --check` on the extracted inline script, and verify the lesson count.
+[94m[Bash][0m Validate inline JS syntax $ next} /<\/script>/{p=0} p' /Users/aleksandrabarwasna/lingua-agent/index.html > /tmp/lingua.js && nod...
+[94m[Bash][0m Verify NO lesson count and ids $ grep -n 'id:"no1"\|id:"no2"\|id:"no3"' /Users/aleksandrabarwasna/lingua-agent/index.html
+All checks pass: `node --check` PASS, `grep -c 'id:"no'` = 6 (≥3 required), all three lessons present. Each lesson meets the field counts (8 dialog, 7-8 vocab, 3-4 fill, 3 grammar). Now I'll document the learnings in progress.md.
+[94m[Read][0m [95m/Users/aleksandrabarwasna/lingua-agent/.ralph-tui/progress.md[0m
+[94m[Edit][0m [95m/Users/aleksandrabarwasna/lingua-agent/.ralph-tui/progress.md[0m edit: "- **`FILMS` (Filmoteka) is a per-language map at ~..." → "- **`FILMS` (Filmoteka) is a per-language map at ~..."
+[94m[Edit][0m [95m/Users/aleksandrabarwasna/lingua-agent/.ralph-tui/progress.md[0m edit: "## 2026-05-27 - US-004b" → "## 2026-05-27 - US-005a
+- Added `NO:[...]` block t..."
+Let me do a final verification of the lesson-only count and field counts.
+[94m[Bash][0m Verify lesson count and section presence $ grep -c 'id:"no[123]"' /Users/aleksandrabarwasna/lingua-agent/index.html echo "--- per-lesson dialog...
+Wszystko zweryfikowane. Zadanie US-005a ukończone.
+
+**Co zrobiłam:**
+- Dodałam blok `NO:[...]` do mapy `const COURSE={...}` (po tablicy IT, przed `};`) z 3 wbudowanymi lekcjami A1:
+  - **no1 "På kafé"** — zamawianie kawy (Kari + Aleksandra)
+  - **no2 "Å presentere seg"** — przedstawianie się (Ola + Aleksandra)
+  - **no3 "På butikken"** — zakupy (Astrid + Aleksandra)
+
+**Struktura każdej lekcji:** `type:"dialog"`, 8 kwestii dialogu, 7-8 wpisów vocab (z polami w/tr/ipa/pl/ex/exT), 3-4 ćwiczenia fill, 3 reguły grammar.
+
+**Autentyczność norweska** (nie kalka z FR): kanelboller, kroner, "Vær så god", szyk V2, "Jeg heter…" zamiast formy zwrotnej. Rzeczowniki zawsze z rodzajnikiem (`en kaffe`, `et brød`, `en kanelbolle`), czasowniki jako å-bezokoliczniki (`å bestille`, `å bo`, `å lete etter`).
+
+**Kontrole jakości:**
+- `node --check` na wyekstrahowanym skrypcie: **PASS**
+- `grep -c 'id:"no'`: **6** (≥3 wymagane — uwaga: liczy też `nor1/2/3` z filmów Norsemen; sam `id:"no[123]"` = 3)
+- Każda lekcja ma komplet sekcji dialog/vocab/fill/grammar
+
+Backup: `/tmp/lingua-NO-US5a-*.html`. Commita nie tworzę — robi to silnik po zadaniu (zgodnie z workflow).
+
+Jedna uwaga do architektury: mapa lekcji nazywa się `COURSE`, a nie `LESSONS` — `grep LESSONS` nic nie zwraca, co może mylić przy kolejnych iteracjach. Odnotowałam to w progress.md.
+
+<promise>COMPLETE</promise>
+
+<DONE>

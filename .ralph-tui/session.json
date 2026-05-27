@@ -3,10 +3,10 @@
   "sessionId": "a4205311-45ac-4064-a641-1883df3f1f59",
   "status": "running",
   "startedAt": "2026-05-27T07:03:43.794Z",
-  "updatedAt": "2026-05-27T07:19:54.337Z",
-  "currentIteration": 4,
+  "updatedAt": "2026-05-27T07:23:21.978Z",
+  "currentIteration": 5,
   "maxIterations": 0,
-  "tasksCompleted": 4,
+  "tasksCompleted": 5,
   "isPaused": false,
   "agentPlugin": "claude",
   "trackerState": {
@@ -47,8 +47,8 @@
       {
         "id": "US-005a",
         "title": "Lekcje NO część 1/2 — 3 lekcje A1",
-        "status": "open",
-        "completedInSession": false
+        "status": "completed",
+        "completedInSession": true
       },
       {
         "id": "US-005b",
@@ -110,6 +110,16 @@
       "durationMs": 151686,
       "startedAt": "2026-05-27T07:12:32.038Z",
       "endedAt": "2026-05-27T07:15:03.724Z"
+    },
+    {
+      "iteration": 5,
+      "status": "completed",
+      "taskId": "US-005a",
+      "taskTitle": "Lekcje NO część 1/2 — 3 lekcje A1",
+      "taskCompleted": true,
+      "durationMs": 289374,
+      "startedAt": "2026-05-27T07:15:04.953Z",
+      "endedAt": "2026-05-27T07:19:54.327Z"
     }
   ],
   "skippedTaskIds": [],

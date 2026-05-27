@@ -13,6 +13,18 @@ after each iteration and it's included in prompts for context.
 
 ---
 
+## 2026-05-27 - US-005b
+- Appended 4 lessons (A2-B1) to the existing `NO:[...]` array in `const COURSE` (~line 1579, after no3's grammar close, before `  ]\n};`): no4 "Hvor er…?" (A2, pytanie o drogę — Lars), no5 "På restaurant" (A2, zamawianie jedzenia — Servitør), no6 "Reise" (A2-B1, podróż — Ingrid), no7 "Vær og tid" (A2, pogoda i czas — Per).
+- Each lesson: `type:"dialog"`, 8 dialog turns (Aleksandra + a Norwegian interlocutor), 8 vocab, 4 fill, 3 grammar. Same shape as US-005a. Content authentic bokmål: directions imperatives (gå/ta til høyre/venstre), restaurant register (Jeg tar…, Vil dere ha…), travel skal-future + preteritum (bestilte/kjøpte), weather impersonal "det" + clock (kvart over ti) + "om" (za ile czasu).
+- Vocab nouns carry en/ei/et articles (en togstasjon, et lyskryss, en billett, et regntøy, et vær, en grad, en avtale); verbs as å-infinitives (å gå seg vill, å anbefale, å glede seg, å huske, å regne, å blåse, å skynde seg). Reflexives kept reflexive (å gå seg vill, å glede seg, å skynde seg, å sette seg → sett dere).
+- Files changed: `index.html` (+93 lines), `.ralph-tui/progress.md`. Backup at `/tmp/lingua-NO-US5b-0920.html`.
+- **Learnings:**
+  - Anchor for appending to the NO lesson array is the same shape as US-005a's COURSE close: no3's last grammar `]}` + `  ]` + `};` is unique (only the last lesson is followed by array-close + object-close). Changed `]}` → `]},` and inserted before `  ]`.
+  - `grep -c 'id:"no'` now returns 10 (7 lessons no1-no7 + 3 `nor1/nor2/nor3` Norsemen film clips from US-004b) — still pollluted as noted, so the AC "≥7" passes but the literal count over-reports. Clean lesson count: `grep -o 'id:"no[0-9]"'` = 7.
+  - Lesson `level` field accepts ranges ("A2-B1") freely — same as FILMS, no enum/validation; no7/no6 use it without issue.
+
+---
+
 ## 2026-05-27 - US-005a
 - Added `NO:[...]` block to `const COURSE={...}` (~line 1486, after IT array closes, before `};`) with 3 built-in A1 lessons: no1 "På kafé" (zamawianie kawy), no2 "Å presentere seg" (przedstawianie się), no3 "På butikken" (zakupy).
 - Each lesson: `type:"dialog"`, 8 dialog turns (Aleksandra + a Norwegian: Kari/Ola/Astrid), 7-8 vocab entries, 3-4 fill exercises, 3 grammar rules. Content authentically Norwegian bokmål (kanelboller, kroner, "Vær så god", V2 word order) — not a 1:1 FR translation.

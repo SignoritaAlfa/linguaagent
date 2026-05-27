@@ -140,11 +140,12 @@
         "git commit [NO] Add 4 more built-in lessons A2-B1 (no4 hvor er, no5 restaurant, no6 reise, no7 vær og tid)"
       ],
       "priority": 7,
-      "passes": false,
+      "passes": true,
       "notes": "",
       "dependsOn": [
         "US-005a"
-      ]
+      ],
+      "completionNotes": "Completed by agent"
     },
     {
       "id": "US-006",
@@ -193,6 +194,6 @@
     }
   ],
   "metadata": {
-    "updatedAt": "2026-05-27T07:19:54.334Z"
+    "updatedAt": "2026-05-27T07:23:21.974Z"
   }
 }

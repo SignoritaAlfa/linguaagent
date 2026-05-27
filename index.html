@@ -1576,6 +1576,134 @@ const COURSE={
       {rule:"Rzeczowniki zawsze z rodzajnikiem: en/ei/et",ex:"et brød, en melk, et smør",exT:"chleb, mleko, masło",note:"To jedyny sposób, by zapamiętać rodzaj rzeczownika. Ucz się 'et brød', nie samego 'brød'."},
       {rule:"'å lete etter' — szukać czegoś (z przyimkiem)",ex:"Jeg leter etter et brød.",exT:"Szukam chleba.",note:"Czasownik 'lete' wymaga przyimka 'etter' (za): lete etter = szukać. Bez 'etter' zdanie jest niepełne."},
       {rule:"Liczebnik + rzeczownik bez rodzajnika",ex:"hundre kroner, seksti kroner",exT:"sto koron, sześćdziesiąt koron",note:"Po liczbie rzeczownik idzie bez rodzajnika nieokreślonego — mówimy 'hundre kroner', nie 'hundre en krone'."}
+     ]},
+    {id:"no4",title:"Hvor er…?",level:"A2",topic:"Pytanie o drogę",type:"dialog",
+     dialog:[
+      {s:"Aleksandra",l:"Unnskyld, kan du hjelpe meg? Jeg har gått meg vill.",t:"Przepraszam, czy możesz mi pomóc? Zgubiłam się."},
+      {s:"Lars",l:"Ja, selvfølgelig. Hvor skal du?",t:"Tak, oczywiście. Dokąd idziesz?"},
+      {s:"Aleksandra",l:"Jeg leter etter togstasjonen. Hvor er den?",t:"Szukam dworca kolejowego. Gdzie on jest?"},
+      {s:"Lars",l:"Den er ikke langt herfra. Gå rett fram til lyskrysset.",t:"To niedaleko stąd. Idź prosto do skrzyżowania ze światłami."},
+      {s:"Aleksandra",l:"Og så? Skal jeg ta til høyre?",t:"A potem? Mam skręcić w prawo?"},
+      {s:"Lars",l:"Nei, ta til venstre. Da ser du stasjonen på høyre side.",t:"Nie, skręć w lewo. Wtedy zobaczysz dworzec po prawej stronie."},
+      {s:"Aleksandra",l:"Hvor lang tid tar det å gå dit?",t:"Ile czasu zajmie dojście tam?"},
+      {s:"Lars",l:"Bare fem minutter. Lykke til!",t:"Tylko pięć minut. Powodzenia!"}
+     ],
+     vocab:[
+      {w:"Unnskyld",tr:"przepraszam (zaczepiając kogoś)",ipa:"/ˈʉnʃʏl/",pl:"UN-szyl",ex:"Unnskyld, kan du hjelpe meg?",exT:"Przepraszam, czy możesz mi pomóc?"},
+      {w:"å gå seg vill",tr:"zgubić się",ipa:"/ɔ ɡɔ sæɪ vil/",pl:"o go saj wil",ex:"Jeg har gått meg vill.",exT:"Zgubiłam się."},
+      {w:"en togstasjon",tr:"dworzec kolejowy",ipa:"/en ˈtɔːɡstaˌʃuːn/",pl:"en TOG-sta-szun",ex:"Hvor er togstasjonen?",exT:"Gdzie jest dworzec kolejowy?"},
+      {w:"rett fram",tr:"prosto",ipa:"/rɛt frɑm/",pl:"ret fram",ex:"Gå rett fram.",exT:"Idź prosto."},
+      {w:"et lyskryss",tr:"skrzyżowanie ze światłami",ipa:"/et ˈlyːsˌkrʏs/",pl:"et LYS-krys",ex:"Stopp ved lyskrysset.",exT:"Zatrzymaj się przy skrzyżowaniu ze światłami."},
+      {w:"til høyre",tr:"w prawo",ipa:"/til ˈhøʏre/",pl:"til HØY-re",ex:"Ta til høyre.",exT:"Skręć w prawo."},
+      {w:"til venstre",tr:"w lewo",ipa:"/til ˈvɛnstre/",pl:"til WEN-stre",ex:"Ta til venstre.",exT:"Skręć w lewo."},
+      {w:"Hvor lang tid tar det?",tr:"Ile czasu to zajmie?",ipa:"/vʊr lɑŋ tiː tɑr deː/",pl:"wur lang ti tar de",ex:"Hvor lang tid tar det å gå dit?",exT:"Ile czasu zajmie dojście tam?"}
+     ],
+     fill:[
+      {s:"Gå ___ fram til lyskrysset.",a:"rett",h:"prosto"},
+      {s:"Ta til ___ ved krysset.",a:"venstre",h:"w lewo"},
+      {s:"Jeg har gått meg ___.",a:"vill",h:"zgubiłam się"},
+      {s:"Hvor ___ togstasjonen?",a:"er",h:"jest"}
+     ],
+     grammar:[
+      {rule:"'Hvor er…?' — pytanie o miejsce",ex:"Hvor er togstasjonen?",exT:"Gdzie jest dworzec?",note:"'Hvor' = gdzie. Po nim czasownik 'er' (jest) na drugiej pozycji, zgodnie z szykiem V2. Nie myl 'hvor' (gdzie) z 'hvordan' (jak)."},
+      {rule:"Tryb rozkazujący do wskazówek: gå, ta, stopp",ex:"Gå rett fram. Ta til høyre.",exT:"Idź prosto. Skręć w prawo.",note:"Rozkaźnik to czasownik bez końcówki -e bezokolicznika: å gå → gå!, å ta → ta!. Tak udzielamy wskazówek na ulicy."},
+      {rule:"Kierunki: til høyre / til venstre / rett fram",ex:"til høyre, til venstre, rett fram",exT:"w prawo, w lewo, prosto",note:"'til' + strona = kierunek skrętu. 'på høyre side' = po prawej stronie (gdy coś już tam jest, nie skręcamy)."}
+     ]},
+    {id:"no5",title:"På restaurant",level:"A2",topic:"Zamawianie jedzenia",type:"dialog",
+     dialog:[
+      {s:"Servitør",l:"God kveld! Har dere bestilt bord?",t:"Dobry wieczór! Czy zarezerwowaliście stolik?"},
+      {s:"Aleksandra",l:"God kveld! Ja, et bord for to, takk.",t:"Dobry wieczór! Tak, stolik dla dwojga, proszę."},
+      {s:"Servitør",l:"Vær så god, sett dere her. Her er menyen.",t:"Proszę, usiądźcie tutaj. Oto menu."},
+      {s:"Aleksandra",l:"Takk. Hva kan du anbefale?",t:"Dziękuję. Co możesz polecić?"},
+      {s:"Servitør",l:"Fisken er veldig god i dag. Vil dere ha noe å drikke?",t:"Ryba jest dziś bardzo dobra. Chcecie coś do picia?"},
+      {s:"Aleksandra",l:"Ja, jeg tar et glass vann og fisken, takk.",t:"Tak, poproszę szklankę wody i rybę."},
+      {s:"Servitør",l:"Utmerket. Maten kommer straks!",t:"Doskonale. Jedzenie zaraz będzie!"},
+      {s:"Aleksandra",l:"Flott. Kan vi få regningen etterpå?",t:"Świetnie. Czy możemy dostać rachunek potem?"}
+     ],
+     vocab:[
+      {w:"å bestille bord",tr:"zarezerwować stolik",ipa:"/ɔ beˈstilːe buːr/",pl:"o be-STIL-le bur",ex:"Har dere bestilt bord?",exT:"Czy zarezerwowaliście stolik?"},
+      {w:"en meny",tr:"menu / karta dań",ipa:"/en meˈnyː/",pl:"en me-NY",ex:"Her er menyen.",exT:"Oto menu."},
+      {w:"å anbefale",tr:"polecać",ipa:"/ɔ ˈanbeˌfɑːle/",pl:"o AN-be-fa-le",ex:"Hva kan du anbefale?",exT:"Co możesz polecić?"},
+      {w:"en fisk",tr:"ryba",ipa:"/en fisk/",pl:"en fisk",ex:"Fisken er veldig god.",exT:"Ryba jest bardzo dobra."},
+      {w:"et glass vann",tr:"szklanka wody",ipa:"/et ɡlɑs vɑnː/",pl:"et glas wann",ex:"Jeg tar et glass vann.",exT:"Poproszę szklankę wody."},
+      {w:"noe å drikke",tr:"coś do picia",ipa:"/ˈnuːe ɔ ˈdrikːe/",pl:"NU-e o DRIK-ke",ex:"Vil dere ha noe å drikke?",exT:"Chcecie coś do picia?"},
+      {w:"en regning",tr:"rachunek",ipa:"/en ˈræɪnɪŋ/",pl:"en RAJ-ning",ex:"Kan vi få regningen?",exT:"Czy możemy dostać rachunek?"},
+      {w:"Jeg tar…",tr:"Poproszę… (przy zamówieniu)",ipa:"/jæɪ tɑr/",pl:"jaj tar",ex:"Jeg tar fisken, takk.",exT:"Poproszę rybę."}
+     ],
+     fill:[
+      {s:"Har dere ___ bord?",a:"bestilt",h:"zarezerwowali (imiesłów)"},
+      {s:"Hva kan du ___?",a:"anbefale",h:"polecić"},
+      {s:"Kan vi få ___ etterpå?",a:"regningen",h:"rachunek"},
+      {s:"Jeg ___ fisken, takk.",a:"tar",h:"poproszę (dosł. biorę)"}
+     ],
+     grammar:[
+      {rule:"'Vil dere ha…?' = Chcecie…? (grzeczna oferta, l. mn.)",ex:"Vil dere ha noe å drikke?",exT:"Chcecie coś do picia?",note:"'dere' = wy. Kelner zwraca się do gości w liczbie mnogiej. Do jednej osoby: 'Vil du ha…?'."},
+      {rule:"'Jeg tar…' = Poproszę… przy składaniu zamówienia",ex:"Jeg tar fisken, takk.",exT:"Poproszę rybę.",note:"Dosłownie 'biorę'. W restauracji to naturalniejsze niż 'jeg vil ha'. Dodaj 'takk' dla grzeczności."},
+      {rule:"Rozkaźnik zwrotny w l. mn.: 'sett dere'",ex:"Vær så god, sett dere.",exT:"Proszę, usiądźcie.",note:"Czasownik 'å sette seg' (usiąść) jest zwrotny. W l. mn. zaimek to 'dere': sett dere = usiądźcie."}
+     ]},
+    {id:"no6",title:"Reise",level:"A2-B1",topic:"Podróż",type:"dialog",
+     dialog:[
+      {s:"Ingrid",l:"Skal du reise i sommer?",t:"Wybierasz się w podróż latem?"},
+      {s:"Aleksandra",l:"Ja, jeg skal til Bergen med tog. Jeg gleder meg!",t:"Tak, jadę do Bergen pociągiem. Nie mogę się doczekać!"},
+      {s:"Ingrid",l:"Så fint! Har du kjøpt billett allerede?",t:"Jak miło! Kupiłaś już bilet?"},
+      {s:"Aleksandra",l:"Ja, jeg bestilte den på nettet i går.",t:"Tak, zamówiłam go wczoraj w internecie."},
+      {s:"Ingrid",l:"Hvor lenge skal du være der?",t:"Jak długo tam będziesz?"},
+      {s:"Aleksandra",l:"En uke. Jeg vil se fjordene og gå på fjelltur.",t:"Tydzień. Chcę zobaczyć fiordy i pójść w góry."},
+      {s:"Ingrid",l:"Husk å ta med regntøy — det regner ofte i Bergen!",t:"Pamiętaj, żeby zabrać ubranie przeciwdeszczowe — w Bergen często pada!"},
+      {s:"Aleksandra",l:"God idé! Takk for tipset.",t:"Dobry pomysł! Dzięki za radę."}
+     ],
+     vocab:[
+      {w:"å reise",tr:"podróżować / wyjeżdżać",ipa:"/ɔ ˈræɪse/",pl:"o RAJ-se",ex:"Skal du reise i sommer?",exT:"Wybierasz się w podróż latem?"},
+      {w:"å glede seg",tr:"cieszyć się (na coś)",ipa:"/ɔ ˈɡleːde sæɪ/",pl:"o GLE-de saj",ex:"Jeg gleder meg til turen.",exT:"Cieszę się na wyjazd."},
+      {w:"en billett",tr:"bilet",ipa:"/en biˈlɛtː/",pl:"en bi-LET",ex:"Har du kjøpt billett?",exT:"Kupiłaś bilet?"},
+      {w:"på nettet",tr:"w internecie",ipa:"/pɔ ˈnetːe/",pl:"po NET-te",ex:"Jeg bestilte den på nettet.",exT:"Zamówiłam go w internecie."},
+      {w:"en fjelltur",tr:"wycieczka w góry",ipa:"/en ˈfjɛlːˌtʉːr/",pl:"en FJEL-tur",ex:"Jeg vil gå på fjelltur.",exT:"Chcę pójść w góry."},
+      {w:"en fjord",tr:"fiord",ipa:"/en fjuːr/",pl:"en fjur",ex:"Jeg vil se fjordene.",exT:"Chcę zobaczyć fiordy."},
+      {w:"å huske",tr:"pamiętać",ipa:"/ɔ ˈhʉske/",pl:"o HUS-ke",ex:"Husk å ta med regntøy.",exT:"Pamiętaj, żeby zabrać ubranie przeciwdeszczowe."},
+      {w:"et regntøy",tr:"odzież przeciwdeszczowa",ipa:"/et ˈræɪnˌtøʏ/",pl:"et RAJN-tøy",ex:"Ta med regntøy.",exT:"Zabierz odzież przeciwdeszczową."}
+     ],
+     fill:[
+      {s:"Jeg skal til Bergen ___ tog.",a:"med",h:"czym? — pociągiem"},
+      {s:"Jeg ___ meg til turen.",a:"gleder",h:"cieszę się"},
+      {s:"Har du kjøpt ___?",a:"billett",h:"bilet"},
+      {s:"___ å ta med regntøy.",a:"Husk",h:"pamiętaj (rozkaźnik)"}
+     ],
+     grammar:[
+      {rule:"'skal' wyraża plan / przyszłość",ex:"Jeg skal til Bergen i sommer.",exT:"Jadę do Bergen latem.",note:"'skal' + miejsce lub bezokolicznik mówi o zamiarze. Tu sam czasownik ruchu jest domyślny: 'skal til Bergen' = mam jechać do Bergen."},
+      {rule:"Czas przeszły (preteritum): bestilte, kjøpte",ex:"Jeg bestilte billetten i går.",exT:"Zamówiłam bilet wczoraj.",note:"Regularne czasowniki tworzą preteritum z końcówką -et/-te/-de: å bestille → bestilte, å kjøpe → kjøpte. Używamy go z 'i går' (wczoraj)."},
+      {rule:"'med' + środek transportu",ex:"med tog, med buss, med fly",exT:"pociągiem, autobusem, samolotem",note:"Bez rodzajnika po 'med': 'reise med tog', nie 'med et tog'. To utarta konstrukcja jak polskie 'jechać pociągiem'."}
+     ]},
+    {id:"no7",title:"Vær og tid",level:"A2",topic:"Pogoda i czas",type:"dialog",
+     dialog:[
+      {s:"Per",l:"For et vær i dag! Det regner og blåser.",t:"Co za pogoda dziś! Pada i wieje."},
+      {s:"Aleksandra",l:"Ja, det er kaldt også. Hvor mange grader er det?",t:"Tak, jest też zimno. Ile jest stopni?"},
+      {s:"Per",l:"Bare fem grader. Det blir snø til helgen.",t:"Tylko pięć stopni. W weekend będzie śnieg."},
+      {s:"Aleksandra",l:"Å nei! Hva er klokka nå?",t:"O nie! Która jest teraz godzina?"},
+      {s:"Per",l:"Den er kvart over ti. Hvorfor spør du?",t:"Jest kwadrans po dziesiątej. Dlaczego pytasz?"},
+      {s:"Aleksandra",l:"Jeg har en avtale klokka elleve.",t:"Mam spotkanie o jedenastej."},
+      {s:"Per",l:"Da må du skynde deg. Bussen går om ti minutter.",t:"To musisz się pospieszyć. Autobus odjeżdża za dziesięć minut."},
+      {s:"Aleksandra",l:"Takk! Vi ses i morgen.",t:"Dzięki! Do zobaczenia jutro."}
+     ],
+     vocab:[
+      {w:"et vær",tr:"pogoda",ipa:"/et væːr/",pl:"et wer",ex:"For et vær i dag!",exT:"Co za pogoda dziś!"},
+      {w:"å regne",tr:"padać (o deszczu)",ipa:"/ɔ ˈræɪne/",pl:"o RAJ-ne",ex:"Det regner ofte i Bergen.",exT:"W Bergen często pada."},
+      {w:"å blåse",tr:"wiać",ipa:"/ɔ ˈblɔːse/",pl:"o BLO-se",ex:"Det blåser i dag.",exT:"Dziś wieje."},
+      {w:"en grad",tr:"stopień",ipa:"/en ɡrɑːd/",pl:"en grad",ex:"Det er fem grader.",exT:"Jest pięć stopni."},
+      {w:"Hva er klokka?",tr:"Która jest godzina?",ipa:"/vɑ ær ˈklɔkːa/",pl:"wa er KLOK-ka",ex:"Hva er klokka nå?",exT:"Która jest teraz godzina?"},
+      {w:"kvart over ti",tr:"kwadrans po dziesiątej",ipa:"/kvɑrt ˈɔːver tiː/",pl:"kwart O-wer ti",ex:"Den er kvart over ti.",exT:"Jest kwadrans po dziesiątej."},
+      {w:"en avtale",tr:"spotkanie / umówienie",ipa:"/en ˈɑːvˌtɑːle/",pl:"en AV-ta-le",ex:"Jeg har en avtale klokka elleve.",exT:"Mam spotkanie o jedenastej."},
+      {w:"å skynde seg",tr:"spieszyć się",ipa:"/ɔ ˈʃʏnːe sæɪ/",pl:"o SZYN-ne saj",ex:"Du må skynde deg.",exT:"Musisz się pospieszyć."}
+     ],
+     fill:[
+      {s:"Hvor mange ___ er det ute?",a:"grader",h:"stopni"},
+      {s:"Hva er ___ nå?",a:"klokka",h:"godzina"},
+      {s:"Det ___ og blåser i dag.",a:"regner",h:"pada"},
+      {s:"Du må ___ deg, bussen går snart.",a:"skynde",h:"pospieszyć się"}
+     ],
+     grammar:[
+      {rule:"Bezosobowe 'det' o pogodzie",ex:"Det regner. Det blåser. Det er kaldt.",exT:"Pada. Wieje. Jest zimno.",note:"O pogodzie zawsze ze sztucznym podmiotem 'det' (to), jak angielskie 'it rains'. Nie pomijamy 'det'."},
+      {rule:"Godzina: 'Den er kvart over ti'",ex:"Den er kvart over ti. Klokka er elleve.",exT:"Jest kwadrans po dziesiątej. Godzina jest jedenasta.",note:"Pytamy 'Hva er klokka?', odpowiadamy 'Den er…' (gdzie 'den' zastępuje 'klokka'). 'over' = po, 'på' = za, 'kvart' = kwadrans, 'halv' = wpół do."},
+      {rule:"'om' = za (ile czasu do czegoś)",ex:"Bussen går om ti minutter.",exT:"Autobus odjeżdża za dziesięć minut.",note:"'om' + czas wskazuje moment w przyszłości: om ti minutter, om en time, om to dager. Nie myl z 'for ti minutter siden' (dziesięć minut temu)."}
      ]}
   ]
 };
