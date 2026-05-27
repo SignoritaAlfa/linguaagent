@@ -7350,9 +7350,11 @@ function renderFilmoteka(){
         h("button",{class:"primary",style:"font-size:12px;padding:8px 16px",onclick:()=>{
           if(!S.addClipTitle.trim()) return;
           const newClipId = "clip_"+Date.now();
+          // BUG FIX: chwytaj URL PRZED addClipToMyFilm — funkcja resetuje S.addClipUrl
+          // w środku przez set(), więc warunek if(S.addClipUrl) potem zawsze fail.
+          const urlToSave = (S.addClipUrl||"").trim();
           addClipToMyFilm(lang,series.id,{id:newClipId,episode:S.addClipEpisode||"Clip",title:S.addClipTitle.trim(),level:series.level||"A2",topic:(S.addClipTopic||"").trim(),desc:(S.addClipDesc||"").trim(),ytSearch:series.title+" "+S.addClipTitle.trim()});
-          // Save the URL for the new clip so user doesn't have to re-paste later
-          if((S.addClipUrl||"").trim()) saveFilmClipUrl(newClipId, S.addClipUrl.trim());
+          if(urlToSave) saveFilmClipUrl(newClipId, urlToSave);
         }},"Zapisz klip"),
         h("button",{class:"sbtn",style:"font-size:12px;padding:8px 16px",onclick:()=>set({showAddClip:false})},"Anuluj")
       ));
