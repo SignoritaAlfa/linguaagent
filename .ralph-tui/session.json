@@ -3,7 +3,7 @@
   "sessionId": "a4205311-45ac-4064-a641-1883df3f1f59",
   "status": "running",
   "startedAt": "2026-05-27T07:03:43.794Z",
-  "updatedAt": "2026-05-27T07:32:15.083Z",
+  "updatedAt": "2026-05-27T07:35:25.096Z",
   "currentIteration": 7,
   "maxIterations": 0,
   "tasksCompleted": 7,
@@ -144,8 +144,6 @@
   ],
   "skippedTaskIds": [],
   "cwd": "/Users/aleksandrabarwasna/lingua-agent",
-  "activeTaskIds": [
-    "US-007"
-  ],
+  "activeTaskIds": [],
   "subagentPanelVisible": false
 }

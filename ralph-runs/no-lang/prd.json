@@ -180,7 +180,7 @@
         "Sprawdzić GH Pages deploy: gh run list --repo SignoritaAlfa/linguaagent --limit 1"
       ],
       "priority": 9,
-      "passes": false,
+      "passes": true,
       "notes": "TYLKO TUTAJ push.",
       "dependsOn": [
         "US-001",
@@ -191,10 +191,11 @@
         "US-005a",
         "US-005b",
         "US-006"
-      ]
+      ],
+      "completionNotes": "Completed by agent"
     }
   ],
   "metadata": {
-    "updatedAt": "2026-05-27T07:32:15.082Z"
+    "updatedAt": "2026-05-27T07:35:25.092Z"
   }
 }
