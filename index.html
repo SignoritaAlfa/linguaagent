@@ -4070,6 +4070,12 @@ function h(tag,props,...ch){
     else if(k==="onchange")el.onchange=v;
     else if(k==="class")el.className=v;
     else if(k==="style")el.style.cssText=v;
+    // Boolean atrybuty (disabled/checked/selected/readonly): sama obecność atrybutu
+    // = true w HTML. setAttribute("disabled", false) NADAL wyłącza element! Dlatego
+    // ustawiamy jako property i tylko gdy truthy.
+    else if(k==="disabled"||k==="checked"||k==="selected"||k==="readonly"||k==="multiple"){
+      el[k] = !!v;
+    }
     else el.setAttribute(k,v);
   }
   for(const c of ch){
