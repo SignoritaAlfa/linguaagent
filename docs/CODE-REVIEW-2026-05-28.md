@@ -381,3 +381,94 @@ Funkcje rdzeniowe (`callLessonModel` 7348, `buildLessonFromTranscript` 7469, `pr
 | 4 | Wzorzec `try-catch` AI niejawny — łatwo pominąć w nowym handlerze | Niska | konwencja | Trzymać konwencję / `unhandledrejection` |
 
 Nic nie zmieniono w `index.html` — to wyłącznie raport (`git diff --stat index.html` pusty).
+
+---
+
+## 4. Duplikacja kodu
+
+Numery linii względem stanu pliku z momentu analizy (9175 linii). Sekcja zbiera kod nadający się do ekstrakcji — to plan na później, nic tu nie ruszam. Cztery główne ogniska: reguła rodzajników w promptach, schemat JSON lekcji, blok ładowania pliku do modelu, panele upload.
+
+### 4.1 Reguła rodzajników (FR/IT/NO/DE) w promptach AI — 8 kopii
+
+Ta sama wiedza dziedzinowa („rzeczowniki w językach z rodzajem zawsze z rodzajnikiem; czasowniki w bezokoliczniku") wklejona dosłownie lub w wariancie w ośmiu promptach:
+
+| Linia | Funkcja / kontekst | Wariant | DE? |
+|------:|--------------------|---------|:---:|
+| 2981–2983 | `fixVocabArticles` | `articleHint` per-język (inny zapis, ta sama reguła) | nie |
+| 3046 | `renderAIGenerateButton` (ekstrakcja słówek) | pełny, w `KRYTYCZNE ZASADY FORMATU "w"` | ✅ |
+| 3364 | `processUpload` (PROMPT) | jednoliniowy `KRYTYCZNE: rzeczowniki…` | ✅ |
+| 3623 | `processAddDialog` (PROMPT) | skrót `FR le/la, IT il/la/lo, NO en/ei/et` | nie |
+| 5959 | `renderLesson` (inline regeneracja słówek) | pełny `KRYTYCZNE ZASADY FORMATU "w"` | ✅ |
+| 7495 | `buildLessonFromTranscript` (`COMMON_SECTIONS`) | pełny opis per-język | ✅ |
+| 7666 | `processTranscriptToLesson` (`COMMON_SECTIONS`) | jednoliniowy | nie |
+| 7778 | `processYouTubeViaGemini` | jednoliniowy | nie |
+
+**Problem nie jest tylko w liczbie linii** — kopie się rozjechały. Część zawiera DE (`der/die/das`), część nie. Przykłady czasownika raz to `parler, parlare, to talk, å snakke`, raz tylko `å snakke`. Zmiana reguły (np. dodanie rodzajników hiszpańskich) wymaga ośmiu edycji i łatwo o pominięcie.
+
+**Propozycja:** jedna stała `const ARTICLE_RULE = "…"` (1 zdanie pełne + ewentualnie krótka wersja `ARTICLE_RULE_SHORT`). Wstrzykiwana przez `${ARTICLE_RULE}` w każdym promptcie. **Oszczędność:** ~10–15 linii, ale ważniejsza jest spójność — jedno źródło prawdy zamiast ośmiu rozjeżdżających się kopii.
+
+### 4.2 Schemat JSON lekcji w promptach — 8 kopii + powtarzany kształt `vocab`
+
+Ten sam kształt odpowiedzi (`{title, level, topic, [rawText], dialog[], vocab[], phrases[], fill[], grammar[]}`) wpisany ręcznie w ośmiu promptach:
+
+| Linia | Funkcja | Wariant schematu |
+|------:|---------|------------------|
+| 3374 | `processUpload` | pełny (+ `rawText`, `fillSource`, `section`, `exercises`) |
+| 3627 | `processAddDialog` | podzbiór: `dialog`/`vocab`/`phrases` |
+| 3820 | `processFilm` | pełny — **funkcja martwa, patrz 2.1** |
+| 7504 | `buildLessonFromTranscript` (z timestampami) | + `start`/`end` |
+| 7507 | `buildLessonFromTranscript` (bez timestampów) | bez `start`/`end` |
+| 7686 | `processTranscriptToLesson` (z timestampami) | + `start`/`end` |
+| 7700 | `processTranscriptToLesson` (bez timestampów) | bez `start`/`end` |
+| 7784 | `processYouTubeViaGemini` | + `start`/`end` |
+
+Dodatkowo wewnątrz każdego schematu powtarza się kształt pojedynczej pozycji `vocab`/`phrases` — `{"w","tr","ipa","pl","ex","exT"}` — ~15 razy w pliku, plus wrapper `{"items":[{...}]}` w 3046, 3047, 5959, 5960.
+
+**Już częściowo wyekstrahowane — ale z własną duplikacją:**
+- `COMMON_SECTIONS` (opis sekcji `vocab`/`phrases`/`fill`/`grammar`) zdefiniowana **dwa razy**: linia 7492 (`buildLessonFromTranscript`) i 7663 (`processTranscriptToLesson`) — dwie lokalne kopie tej samej stałej.
+- Blok `targetLangLabel` + `targetLangInstr` (mapa `{EN/FR/IT/NO}`) zdefiniowany **trzykrotnie**: 7485–7491, ~7663, 7760–7773.
+
+**Propozycja:** wynieść `COMMON_SECTIONS`, `targetLangLabel`/`targetLangInstr` oraz fragmenty schematu JSON do stałych modułowych (np. `LESSON_JSON_SCHEMA`, `LESSON_JSON_SCHEMA_TIMED`). To zgodne z regułą z `CLAUDE.md` §3: „Prompty trzymaj w oddzielnych plikach/stałych, nie hardkoduj wewnątrz funkcji". **Oszczędność:** ~40–60 linii + eliminacja ryzyka rozjazdu schematu między ścieżkami (już teraz `processAddDialog` ma węższy schemat niż reszta).
+
+### 4.3 Blok ładowania pliku do modelu — 3 niemal identyczne kopie
+
+Sekwencja `wybierz źródło (text / PDF→extractPdfText→fallback pdfToImages / image→normalizeImageForUpload→fileToB64) → zbuduj modelInput` powtórzona w trzech procesach:
+
+| Funkcja | Zakres bloku | ~linii | Klucz stanu | Separator | Próg tekstu PDF |
+|---------|-------------:|-------:|-------------|-----------|----------------:|
+| `processUpload` | 3383–3410 | ~28 | `S.uploadFile` / `S.uploadPreview` | `TEKST:` | ≥100 |
+| `processCustomExercises` | 3473–3498 | ~26 | `S.customExFile` / `S.customExText` | `MATERIAŁ:` | ≥50 |
+| `processAddDialog` | 3633–3658 | ~26 | `S.addDialogFile` / `S.addDialogText` | `MATERIAŁ:` | ≥50 |
+
+Różnice są kosmetyczne: nazwa klucza w `S`, etykieta separatora, próg długości tekstu z PDF (100 vs 50), treść komunikatów błędu. Cała logika rozgałęzień (image/PDF/txt/wklejony tekst), wywołania `normalizeImageForUpload`+`fileToB64`, `extractPdfText` z fallbackiem do `pdfToImages(file,10)` są identyczne. Same helpery (`fileToB64` 3707, `normalizeImageForUpload` 3721, `pdfToImages` 3283, `extractPdfText` 3240) są już wspólne — duplikuje się tylko ich *orkiestracja*.
+
+**Propozycja:** helper `async function buildModelInput(file, pasted, prompt, {sep="MATERIAŁ:", pdfTextMin=50}={})` zwracający `modelInput` (string lub `{prompt,image}`/`{prompt,images}`). Trzy bloki → trzy wywołania jednoliniowe. **Oszczędność:** ~60 linii. Bonus: ujednolicenie progu PDF (dziś 100 vs 50 bez uzasadnienia).
+
+### 4.4 Panele upload — `renderUploadPanel` / `renderCustomExerciseUploadPanel` / `renderAddDialogPanel`
+
+| Funkcja | Zakres | ~linii |
+|---------|-------:|-------:|
+| `renderUploadPanel` | 4944–5059 | ~115 |
+| `renderCustomExerciseUploadPanel` | 5060–5176 | ~116 |
+| `renderAddDialogPanel` | 5179–5279 | ~100 |
+
+Wszystkie trzy mają ten sam szkielet: nagłówek z przyciskiem ✕ → krok 0 z czterema źródłami (📸 zdjęcie z `capture:"environment"` + 📄 PDF + 📃 txt/md + ✏️ wklej, file-inputy ukryte `display:none`, button odpala `.click()`) → krok potwierdzenia pliku → krok textarea dla wklejonego tekstu → krok podglądu wyniku → banner błędu. Różnią się **wyłącznie** prefiksem kluczy stanu (`upload*` / `customEx*` / `addDialog*`), ikonami, tekstami nagłówka i funkcją przetwarzającą.
+
+`renderCustomExerciseUploadPanel` i `renderAddDialogPanel` są niemal bliźniacze (siatka `grid 1fr 1fr` czterech `sbtn`). `renderUploadPanel` jest trochę inny strukturalnie (wiersze `.upload-opt` zamiast siatki) — to najsłabiej pasujący do wspólnego wzorca.
+
+**Ocena:** najtrudniejszy do ekstrakcji z czterech ognisk i najmniej pilny. Pełny wspólny komponent musiałby przyjąć ~8 parametrów (prefiks kluczy, etykiety, ikony, callback przetwarzania, renderer podglądu) — ryzyko, że „uniwersalny" helper będzie trudniejszy w czytaniu niż trzy jawne kopie. **Realna, tania wygrana:** wydzielić sam wybór 4 źródeł (krok 0) do `renderSourcePicker(prefix, {onFile, onPaste})` — ~30 linii × 3 = powtórka, redukcja ~50 linii bez ryzyka nadmiernej abstrakcji. Pełne zlanie paneli zostawić, dopóki nie pojawi się czwarty taki panel.
+
+### 4.5 Podsumowanie duplikacji
+
+| # | Co się powtarza | Ile kopii | Gdzie (linie) | Propozycja | Szac. oszczędność |
+|---|-----------------|:---------:|---------------|------------|------------------:|
+| 1 | Reguła rodzajników FR/IT/NO(/DE) | 8 | 2981, 3046, 3364, 3623, 5959, 7495, 7666, 7778 | stała `ARTICLE_RULE` | ~10–15 lin. + spójność |
+| 2 | Schemat JSON lekcji + kształt `vocab` | 8 (+~15 inline) | 3374, 3627, 3820†, 7504, 7507, 7686, 7700, 7784 | stałe `LESSON_JSON_SCHEMA(_TIMED)`; scal `COMMON_SECTIONS` (2×) i `targetLangInstr` (3×) | ~40–60 lin. |
+| 3 | Blok ładowania pliku → modelInput | 3 | 3383–3410, 3473–3498, 3633–3658 | helper `buildModelInput(file,pasted,prompt,opts)` | ~60 lin. |
+| 4 | Panele upload (4 źródła) | 3 | 4944–5059, 5060–5176, 5179–5279 | wydzielić `renderSourcePicker` (krok 0); pełne scalenie odłożyć | ~50 lin. (krok 0) |
+
+† `processFilm` (3820) jest martwa (patrz 2.1) — przy usunięciu znika też jedna kopia schematu.
+
+**Łączny potencjał:** ~160–185 linii mniej, ale dwie najważniejsze korzyści są jakościowe: (1) jedno źródło prawdy dla reguły rodzajników i schematu JSON kończy ich obecny rozjazd między ścieżkami, (2) ujednolicenie progu PDF i obsługi błędów w ładowaniu plików. Kolejność wdrożenia wg stosunku zysk/ryzyko: 4.1 → 4.3 → 4.2 → 4.4.
+
+Nic nie zmieniono w `index.html` — to wyłącznie raport (`git diff --stat index.html` pusty).
