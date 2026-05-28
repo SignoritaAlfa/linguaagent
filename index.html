@@ -11,6 +11,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="https://www.youtube.com/iframe_api"></script>
 <style>
@@ -3399,9 +3400,10 @@ Odpowiedz WYŁĄCZNIE czystym JSON, zero tekstu przed ani po, zero markdown:
         modelInput = {prompt: PROMPT, images};
         _savedRawText = ""; // brak tekstu, zostaje pusto (AI zapisze to co odczyta w polu rawText lekcji)
       }
-    } else if(S.uploadFile && S.uploadFile.type.startsWith("image/")){
-      const b64=await fileToB64(S.uploadFile);
-      modelInput = {prompt: PROMPT, image:{mimeType:S.uploadFile.type, data:b64}};
+    } else if(S.uploadFile && (S.uploadFile.type.startsWith("image/") || /\.(heic|heif)$/i.test(S.uploadFile.name||""))){
+      const norm = await normalizeImageForUpload(S.uploadFile);
+      const b64 = await fileToB64(norm.file);
+      modelInput = {prompt: PROMPT, image:{mimeType:norm.type, data:b64}};
     } else {
       _savedRawText = S.uploadPreview;
       modelInput = PROMPT+"\n\nTEKST:\n"+S.uploadPreview;
@@ -3469,9 +3471,10 @@ Odpowiedz WYŁĄCZNIE czystym JSON bez markdown:
   if(_cfgCE.provider === "anthropic" && !S.claudeKey) throw new Error("Wpisz klucz Anthropic w Ustawieniach");
 
   let modelInput;
-  if(S.customExFile && S.customExFile.type && S.customExFile.type.startsWith("image/")){
-    const b64 = await fileToB64(S.customExFile);
-    modelInput = {prompt: PROMPT, image:{mimeType: S.customExFile.type, data: b64}};
+  if(S.customExFile && ((S.customExFile.type && S.customExFile.type.startsWith("image/")) || /\.(heic|heif)$/i.test(S.customExFile.name||""))){
+    const norm = await normalizeImageForUpload(S.customExFile);
+    const b64 = await fileToB64(norm.file);
+    modelInput = {prompt: PROMPT, image:{mimeType: norm.type, data: b64}};
   } else if(S.customExFile && S.customExFile.type === "application/pdf"){
     // Najpierw warstwa tekstowa, potem fallback do renderu stron jako obrazy
     let extracted = "";
@@ -3628,9 +3631,10 @@ Odpowiedz WYŁĄCZNIE czystym JSON bez markdown:
   if(_cfg.provider === "anthropic" && !S.claudeKey) throw new Error("Wpisz klucz Anthropic w Ustawieniach");
 
   let modelInput;
-  if(S.addDialogFile && S.addDialogFile.type && S.addDialogFile.type.startsWith("image/")){
-    const b64 = await fileToB64(S.addDialogFile);
-    modelInput = {prompt: PROMPT, image:{mimeType: S.addDialogFile.type, data: b64}};
+  if(S.addDialogFile && ((S.addDialogFile.type && S.addDialogFile.type.startsWith("image/")) || /\.(heic|heif)$/i.test(S.addDialogFile.name||""))){
+    const norm = await normalizeImageForUpload(S.addDialogFile);
+    const b64 = await fileToB64(norm.file);
+    modelInput = {prompt: PROMPT, image:{mimeType: norm.type, data: b64}};
   } else if(S.addDialogFile && S.addDialogFile.type === "application/pdf"){
     let extracted = "";
     try{ extracted = await extractPdfText(S.addDialogFile); }catch(e){}
@@ -3702,6 +3706,25 @@ function fileToB64(file){
     r.onerror=rej;
     r.readAsDataURL(file);
   });
+}
+
+// Konwersja HEIC/HEIF (format zdjęć iPhone) → JPEG. Przeglądarki i API AI
+// (Gemini/Claude) nie obsługują HEIC — multimodal przyjmuje tylko JPEG/PNG/WebP.
+// Zwraca {file, type} — skonwertowany blob albo oryginał gdy to już zwykły obraz.
+async function normalizeImageForUpload(file){
+  const name = (file.name||"").toLowerCase();
+  const isHeic = /image\/hei[cf]/i.test(file.type||"") || /\.(heic|heif)$/i.test(name);
+  if(!isHeic) return {file, type: file.type || "image/jpeg"};
+  if(typeof heic2any !== "function"){
+    throw new Error("Zdjęcie w formacie HEIC (iPhone). Biblioteka konwersji się nie wczytała — sprawdź połączenie albo zrób zdjęcie w JPG (iPhone: Ustawienia → Aparat → Formaty → Najbardziej zgodny).");
+  }
+  try{
+    const jpegBlob = await heic2any({blob: file, toType: "image/jpeg", quality: 0.85});
+    const out = Array.isArray(jpegBlob) ? jpegBlob[0] : jpegBlob;
+    return {file: out, type: "image/jpeg"};
+  }catch(e){
+    throw new Error("Nie udało się skonwertować zdjęcia HEIC: "+(e.message||e)+". Zrób zdjęcie w JPG albo zrzut ekranu.");
+  }
 }
 
 // ── AUDIO PLAYBACK ───────────────────────────────────────────────────────────
@@ -4919,7 +4942,7 @@ function renderUploadPanel(){
     imgL.appendChild(h("div",{class:"uicon"},"📸"));
     imgL.appendChild(h("div",{class:"ulabel"},"Zdjęcie / Skan"));
     imgL.appendChild(h("div",{class:"udesc"},"JPG, PNG"));
-    const ii=h("input",{type:"file",accept:"image/*",style:"display:none",onchange:(e)=>{if(e.target.files[0])set({uploadFile:e.target.files[0],uploadStep:1});}});
+    const ii=h("input",{type:"file",accept:"image/*,.heic,.heif",style:"display:none",onchange:(e)=>{if(e.target.files[0])set({uploadFile:e.target.files[0],uploadStep:1});}});
     imgL.appendChild(ii);
     ug.appendChild(imgL);
     // Opcja 2: PDF
@@ -5030,7 +5053,7 @@ function renderCustomExerciseUploadPanel(lesson, lang){
     const grid = h("div",{style:"display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px"});
 
     // 1. Zdjęcie z telefonu
-    const imgInp = h("input",{type:"file",accept:"image/*",capture:"environment",style:"display:none",
+    const imgInp = h("input",{type:"file",accept:"image/*,.heic,.heif",capture:"environment",style:"display:none",
       onchange:(e)=>{if(e.target.files[0]) set({customExFile:e.target.files[0],customExStep:1,customExText:""});}});
     const imgBtn = h("button",{class:"sbtn",style:"padding:16px;text-align:center;font-size:13px",onclick:()=>imgInp.click()},
       h("div",{style:"font-size:24px;margin-bottom:6px"},"📸"), h("div",{},"Zdjęcie strony"));
@@ -5150,7 +5173,7 @@ function renderAddDialogPanel(lesson, lang){
   if(S.addDialogStep === 0){
     panel.appendChild(h("div",{style:"font-size:12px;color:var(--text3);margin-bottom:12px"},"Wybierz źródło dialogu — AI doklei go jako nową sekcję (z słówkami i zwrotami)."));
     const grid = h("div",{style:"display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:6px"});
-    const imgInp = h("input",{type:"file",accept:"image/*",capture:"environment",style:"display:none",
+    const imgInp = h("input",{type:"file",accept:"image/*,.heic,.heif",capture:"environment",style:"display:none",
       onchange:(e)=>{if(e.target.files[0]) set({addDialogFile:e.target.files[0],addDialogStep:1,addDialogText:""});}});
     const imgBtn = h("button",{class:"sbtn",style:"padding:16px;text-align:center;font-size:13px",onclick:()=>imgInp.click()},
       h("div",{style:"font-size:24px;margin-bottom:6px"},"📸"), h("div",{},"Zdjęcie"));
