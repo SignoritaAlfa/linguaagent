@@ -263,3 +263,36 @@ Inwentarz obejmuje tylko deklaracje top-level pasujące do `^(async )?function `
 | Linia | Funkcja | async |
 |------:|---------|:-----:|
 | 9141 | `render` | |
+
+---
+
+## 2. Dead code (kandydaci)
+
+Metoda: dla każdej z 165 funkcji z inwentarza policzono wystąpienia nazwy w `index.html` przez `grep -oE "\bNAZWA\b"`. Liczba == 1 → tylko definicja, zero odwołań (także zero w stringach `onclick`, w `window.X`, w komentarzach). Liczba == 2 → definicja + jedno odwołanie; każde z 62 takich wystąpień sprawdzono ręcznie, czy to realne wywołanie/handler, czy tylko string lub komentarz.
+
+Numery linii względem stanu pliku na moment tej analizy (kilka przesunęło się o ~5 wobec inwentarza w sekcji 1 — równoległe edycje `index.html`, patrz learnings US-001).
+
+### 2.1 Funkcje — kandydaci
+
+| Funkcja | Linia | Wystąpień | Ocena | Rozmiar | Uwaga |
+|---------|------:|:---------:|-------|--------:|-------|
+| `callGemini` | 3310 | 1 | **pewny dead** | ~27 linii | Generyczny helper fetch do Gemini. Zastąpiony przez `callLessonModel` (14 wystąpień), który idzie przez `getLessonModelConfig`. Zero odwołań. |
+| `deleteSourceFile` | 616 | 1 | **pewny dead** | ~9 linii | Para `saveSourceFile`/`loadSourceFile` używana (2 wyst. każda), `deleteSourceFile` nigdy nie wołany. |
+| `deleteVideo` | 643 | 1 | **pewny dead** | ~10 linii | Analogicznie: `saveVideo`/`loadVideo` używane, `deleteVideo` nie. Wideo z IndexedDB nigdy nie jest kasowane. |
+| `processFilm` | 3808 | 2 | **do weryfikacji** | ~62 linie | Drugie wystąpienie (linia 3865) to string `"processFilm error:"` w jej własnym bloku `catch` — NIE wywołanie. Brak jakiegokolwiek `onclick`/handlera, który by ją uruchamiał → funkcja nieosiągalna. To cała funkcja feature'u (upload pliku film/audio → lekcja przez Gemini). Decyzja człowieka: dopiąć brakujący przycisk czy usunąć martwy feature. |
+
+### 2.2 Stałe (const)
+
+Sprawdzono wszystkie 25 globalnych stałych UPPERCASE (kolumna 0). Każda ma ≥2 wystąpienia (definicja + co najmniej jedno użycie) — **brak martwych stałych**. Odpowiednika usuniętej wcześniej `OAI_VOICES` już nie ma.
+
+Najniższe liczniki (definicja + 1 użycie, wszystkie żywe): `ACCENT_CHARS`, `DB_NAME`, `DB_VER`, `DRIVE_SCOPE`, `FEMALE_NAMES`, `_AUDIO_CACHE_MAX`.
+
+### 2.3 Podsumowanie
+
+- **Pewny dead (do usunięcia bez ryzyka):** `callGemini`, `deleteSourceFile`, `deleteVideo` — razem ~46 linii.
+- **Do weryfikacji:** `processFilm` (~62 linie) — nieosiągalna, ale to porzucony feature, nie śmieć po refaktorze. Wymaga decyzji: rewire vs usuń.
+- **Stałe:** zero martwych.
+
+Pozostałe 161 funkcji ma ≥2 wystąpienia i potwierdzone realne wywołanie/handler. Funkcje typu `render*` wołane są w dispatcherze `render()` (linie ~9153–9164) albo zagnieżdżone w innych widokach — nie są dead.
+
+Nic nie usunięto — to wyłącznie raport (`git diff --stat index.html` pusty).
