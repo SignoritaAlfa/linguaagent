@@ -3708,22 +3708,33 @@ function fileToB64(file){
   });
 }
 
-// Konwersja HEIC/HEIF (format zdjęć iPhone) → JPEG. Przeglądarki i API AI
-// (Gemini/Claude) nie obsługują HEIC — multimodal przyjmuje tylko JPEG/PNG/WebP.
-// Zwraca {file, type} — skonwertowany blob albo oryginał gdy to już zwykły obraz.
+// Normalizacja obrazu przed wysłaniem do AI.
+// HEIC/HEIF (iPhone): Gemini API obsługuje je NATYWNIE (image/heic, image/heif),
+// więc dla Gemini wysyłamy bez konwersji. Claude NIE obsługuje HEIC — wtedy próba
+// konwersji przez heic2any (która bywa zawodna dla nowych HEIC z HDR/10-bit).
+// Zwraca {file, type}.
 async function normalizeImageForUpload(file){
   const name = (file.name||"").toLowerCase();
   const isHeic = /image\/hei[cf]/i.test(file.type||"") || /\.(heic|heif)$/i.test(name);
   if(!isHeic) return {file, type: file.type || "image/jpeg"};
+
+  // Gemini łyka HEIC bezpośrednio — pomijamy konwersję
+  let provider = "gemini";
+  try{ provider = getLessonModelConfig().provider; }catch(e){}
+  if(provider === "gemini"){
+    return {file, type: "image/heic"};
+  }
+
+  // Claude / inne — trzeba JPEG. Spróbuj heic2any.
   if(typeof heic2any !== "function"){
-    throw new Error("Zdjęcie w formacie HEIC (iPhone). Biblioteka konwersji się nie wczytała — sprawdź połączenie albo zrób zdjęcie w JPG (iPhone: Ustawienia → Aparat → Formaty → Najbardziej zgodny).");
+    throw new Error("Zdjęcie HEIC (iPhone) + model Claude. Przełącz model na 🌟 Gemini w Ustawieniach (Gemini obsługuje HEIC bezpośrednio), albo zrób zdjęcie w JPG.");
   }
   try{
     const jpegBlob = await heic2any({blob: file, toType: "image/jpeg", quality: 0.85});
     const out = Array.isArray(jpegBlob) ? jpegBlob[0] : jpegBlob;
     return {file: out, type: "image/jpeg"};
   }catch(e){
-    throw new Error("Nie udało się skonwertować zdjęcia HEIC: "+(e.message||e)+". Zrób zdjęcie w JPG albo zrzut ekranu.");
+    throw new Error("Nie udało się skonwertować HEIC (zbyt nowy format iPhone). Najprościej: przełącz model na 🌟 Gemini w Ustawieniach — łyka HEIC bez konwersji. Albo zrób zrzut ekranu zdjęcia (PNG/JPG).");
   }
 }
 
