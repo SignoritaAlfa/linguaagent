@@ -652,6 +652,9 @@ const PALETTES = {
   gold:   { name:"Złoto klasyczne",emoji:"🟡", group:"extra",light:{gold:"#9a7b4f", gold2:"#7a6040", goldDim:"#f0e8d8"}, dark:{gold:"#c9a96e", gold2:"#e8c990", goldDim:"#3d2e18"} },
   rose:   { name:"Róż",           emoji:"🌸", group:"extra",light:{gold:"#be185d", gold2:"#9d174d", goldDim:"#fce7f3"}, dark:{gold:"#f472b6", gold2:"#f9a8d4", goldDim:"#831843"} }
 };
+// Jedno źródło prawdy dla reguły rodzajników/bezokoliczników w promptach AI.
+// Wcześniej skopiowana w wielu miejscach z rozjazdem (część miała DE, część nie).
+const ARTICLE_RULE = 'rzeczowniki w językach z rodzajem (FR: le/la/un/une; IT: il/la/lo/un/una/uno; DE: der/die/das; NO: en/ei/et — bokmål) ZAWSZE z rodzajnikiem w polu "w" (np. "le chien", "la maison", "en bil"). Czasowniki w bezokoliczniku (parler, parlare, to talk, å snakke).';
 // ElevenLabs voice IDs
 // eleven_multilingual_v2 works with all languages using same voice IDs
 // Female: Sarah (young, soft, conversational) | Male: Daniel (british, deep, natural)
@@ -3316,7 +3319,7 @@ WIELE DIALOGÓW: jeśli materiał ma KILKA osobnych dialogów/scenek (np. "Dialo
 WYMAGANIA MINIMALNE:
 - dialog: minimum 6 kwestii z treści materiału (mniej tylko jeśli materiał to czyste ćwiczenia bez dialogu). Przy kilku scenkach — wszystkie kwestie ze wszystkich scenek w jednej tablicy dialog[], rozróżnione polem section
 - vocab: minimum 15 słów i zwrotów z tłumaczeniem na polski
-  KRYTYCZNE: rzeczowniki w językach z rodzajem (FR: le/la/un/une; IT: il/la/lo/un/una/uno; DE: der/die/das; NO: en/ei/et — bokmål) ZAWSZE z rodzajnikiem w polu "w". Czasowniki w bezokoliczniku (parler, parlare, to talk, å snakke).
+  KRYTYCZNE: ${ARTICLE_RULE}
 - vocab to POJEDYNCZE SŁOWA. Wielowyrazowe zwroty / idiomy / kolokacje / czasowniki frazowe ("look up to", "make sense", "How come?") idą do osobnego pola "phrases" — minimum 8 zwrotów z materiału, z IPA i tłumaczeniem PL.
 - fill: jeśli oryginalne ćwiczenia są w materiale → przepisz WSZYSTKIE (może być 4, 8, 30 — ile jest). Jeśli brak → minimum 12 wygenerowanych
 - grammar: minimum 3 zasady gramatyczne widoczne w materiale. KAŻDA zasada MA MIEĆ pole "exercises" — minimum 3 ćwiczenia luk BEZPOŚREDNIO sprawdzające tę zasadę. Np. dla zasady "tryb warunkowy 'voudrais'": exercises:[{s:"Je ___ un café.",a:"voudrais",h:"chciałbym"},{s:"Elle ___ partir tôt.",a:"voudrait",h:"chciałaby (3.os.)"}]. JEŚLI ORYGINALNE ĆWICZENIA GRAMATYCZNE Z MATERIAŁU pasują do tej zasady — DODAJ JE TEŻ do exercises[] tej zasady (zamiast zostawiać tylko w globalnym fill[]). Cel: użytkownik klikając "Ćwicz tę zasadę" dostaje WSZYSTKIE ćwiczenia (wygenerowane + oryginalne) skupione na jednej regule
@@ -7618,7 +7621,7 @@ async function processTranscriptToLesson(transcript, videoId, cues){
   const COMMON_SECTIONS = `
 DODATKOWE SEKCJE:
 - vocab: minimum 25 POJEDYNCZYCH słów z dialogu (rzeczowniki, czasowniki, przymiotniki, ciekawe pojedyncze wyrazy) z IPA i tłumaczeniem PL. NIE wkładaj tu zwrotów wielowyrazowych — te idą do "phrases".
-  KRYTYCZNE: rzeczowniki w językach z rodzajem (FR: le/la/un/une; IT: il/la/lo/un/una/uno; NO: en/ei/et — bokmål) ZAWSZE z rodzajnikiem w polu "w" (np. "le chien", "la maison", "en bil"). Czasowniki w bezokoliczniku (parler, parlare, å snakke).
+  KRYTYCZNE: ${ARTICLE_RULE}
 - phrases: minimum 15 ZWROTÓW i WYRAŻEŃ z dialogu (idiomy, kolokwializmy, czasowniki frazowe typu "look up to", kolokacje typu "make sense", utarte zwroty typu "How come?", "You bet"). Wielowyrazowe konstrukcje godne osobnej nauki. Z IPA, tłumaczeniem PL i przykładem z dialogu.
 - fill: minimum 10 ćwiczeń uzupełniania luk — DWIE KATEGORIE: (1) cat:"text" — zdania z dialogu z brakującym słowem (min 5), (2) cat:"grammar" — ćwiczenia gramatyczne na zasady z dialogu (min 5)
 - grammar: minimum 4 zasady gramatyczne widoczne w dialogu`;
@@ -7730,7 +7733,7 @@ ZADANIE:
 
 DODATKOWE SEKCJE:
 - vocab: minimum 25 POJEDYNCZYCH słów z dialogu.
-  KRYTYCZNE: rzeczowniki w językach z rodzajem (FR: le/la/un/une; IT: il/la/lo/un/una/uno; NO: en/ei/et — bokmål) ZAWSZE z rodzajnikiem w polu "w" (np. "le chien", "la maison", "en bil"). Czasowniki w bezokoliczniku (å snakke).
+  KRYTYCZNE: ${ARTICLE_RULE}
 - phrases: minimum 15 ZWROTÓW i WYRAŻEŃ z dialogu (idiomy, czasowniki frazowe)
 - fill: minimum 10 ćwiczeń (cat:"text" min 5, cat:"grammar" min 5)
 - grammar: minimum 4 zasady gramatyczne
