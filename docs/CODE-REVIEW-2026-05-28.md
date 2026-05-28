@@ -472,3 +472,65 @@ Wszystkie trzy mają ten sam szkielet: nagłówek z przyciskiem ✕ → krok 0 z
 **Łączny potencjał:** ~160–185 linii mniej, ale dwie najważniejsze korzyści są jakościowe: (1) jedno źródło prawdy dla reguły rodzajników i schematu JSON kończy ich obecny rozjazd między ścieżkami, (2) ujednolicenie progu PDF i obsługi błędów w ładowaniu plików. Kolejność wdrożenia wg stosunku zysk/ryzyko: 4.1 → 4.3 → 4.2 → 4.4.
 
 Nic nie zmieniono w `index.html` — to wyłącznie raport (`git diff --stat index.html` pusty).
+
+---
+
+## 5. Rekomendacje (priorytety)
+
+Synteza sekcji 2–4: co robić najpierw, ułożone wg stosunku wartości do ryzyka zmiany.
+
+**Skala zadań:**
+- **Dead code do usunięcia:** ~46 linii pewnego martwego kodu (3 funkcje) gotowe od ręki + ~62 linie do decyzji (`processFilm`).
+- **Ryzyka do zaadresowania:** 4 — jedno wysokie (quota localStorage), dwa średnie (retry AI, landmina `processFilm`), jedno niskie (niejawny wzorzec try-catch).
+- **Duplikacja do scalenia:** 4 ogniska, ~160–185 linii, ale realna korzyść to koniec rozjazdu reguły rodzajników i schematu JSON.
+
+**Top 3 (zrób te jako pierwsze):**
+1. **Podmień surowe `localStorage.setItem` na `safeSetItem` dla trzech dużych kluczy** (`lingua_audio`, `lingua_my_lessons`, `lingua_lesson_videos`) plus `applyDriveData` i `importData`. To jedyne ryzyko wysokie w całym raporcie — dziś przepełnienie quota leci nieobsłużonym wyjątkiem i cicho gubi dane usera.
+2. **Skasuj pewny dead code** (`callGemini`, `deleteSourceFile`, `deleteVideo`, ~46 linii). Zero odwołań, zero ryzyka, mniej szumu przy następnych edycjach.
+3. **Wynieś regułę rodzajników do stałej `ARTICLE_RULE`.** To nie tylko -10 linii — osiem kopii się rozjechało (część ma DE, część nie), więc model dostaje różne instrukcje zależnie od ścieżki wejścia. To realny bug spójności, nie kosmetyka.
+
+### 5.1 Tabela priorytetów
+
+| Zadanie | Typ | Wartość | Ryzyko zmiany | Priorytet |
+|---------|-----|---------|:-------------:|:---------:|
+| Podmiana `localStorage.setItem` → `safeSetItem` dla 3 dużych kluczy (3751, 3758, 2012, ~23× inline, 9092) | ryzyko | Znika ryzyko WYSOKIE — uncaught `QuotaExceededError` przy zapisie audio/lekcji; koniec cichej utraty danych | Średnie | **P1** |
+| Usunięcie `callGemini` (3310) | dead code | -27 linii, mniej szumu | Niskie | **P1** |
+| Usunięcie `deleteSourceFile` (616) | dead code | -9 linii | Niskie | **P1** |
+| Usunięcie `deleteVideo` (643) | dead code | -10 linii | Niskie | **P1** |
+| Stała `ARTICLE_RULE` zamiast 8 kopii (2981, 3046, 3364, 3623, 5959, 7495, 7666, 7778) | duplikacja | -10–15 linii + koniec rozjazdu reguły (DE obecny/nieobecny) między ścieżkami | Niskie | **P1** |
+| Przepięcie żywych wywołań Gemini na `fetchWithRetry` (4469 `showWordPopup`, 7788 `processYouTubeViaGemini`) | ryzyko | Znika ryzyko ŚREDNIE — brak retry na 503/429 (popup i YT pokazują błąd zamiast ponowić) | Niskie–średnie | **P2** |
+| Helper `buildModelInput(file,pasted,prompt,opts)` zamiast 3 kopii bloku ładowania (3383, 3473, 3633) | duplikacja | -60 linii + ujednolicenie progu PDF (dziś 100 vs 50 bez powodu) | Średnie | **P2** |
+| Stałe `LESSON_JSON_SCHEMA(_TIMED)`; scal `COMMON_SECTIONS` (2×) i `targetLangInstr` (3×) | duplikacja | -40–60 linii + koniec rozjazdu schematu (`processAddDialog` ma węższy niż reszta) | Średnie | **P2** |
+| Decyzja o `processFilm` (3808): rewire (dopiąć przycisk) lub usunąć | dead code / ryzyko | -62 linie przy usunięciu; przy rewire łączy się z landminą (brak `thinkingBudget:0` + brak retry, 3.3) | Średnie–wysokie | **P3** |
+| `renderSourcePicker(prefix)` — wydzielenie kroku 0 z 3 paneli upload (4944, 5060, 5179) | duplikacja | -50 linii; pełne scalenie paneli odłożone (YAGNI, do 4. panelu) | Średnie–wysokie | **P3** |
+| Konwencja / `unhandledrejection` jako siatka dla nowych handlerów AI | ryzyko | Domyka niejawny wzorzec try-catch (ryzyko NISKIE) | Niskie | **P3** |
+
+### 5.2 (a) Bezpieczne cięcia — gotowe od ręki
+
+Pewny dead code, count==1, zero odwołań (także w `onclick`, `window.X`, stringach). Usunięcie nie ma jak nic zepsuć:
+
+| Funkcja | Linia | Rozmiar |
+|---------|------:|--------:|
+| `callGemini` | 3310 | ~27 linii |
+| `deleteSourceFile` | 616 | ~9 linii |
+| `deleteVideo` | 643 | ~10 linii |
+
+Razem **~46 linii**. Można usunąć w jednym podejściu, bez testów regresyjnych poza sprawdzeniem, że plik się parsuje. Po usunięciu znika też jedno z dwóch żywych wywołań „Gemini bez retry" z 3.2 (bo `callGemini` było martwe) i jeden brak `thinkingBudget:0` z 3.3.
+
+Tu mieści się też ekstrakcja `ARTICLE_RULE` (5.1, P1) — technicznie to refaktor, ale ryzyko niskie: zamiana ośmiu literałów na `${ARTICLE_RULE}` zmienia tylko treść promptu, nie sterowanie. Warunek: wpierw ujednolicić treść (zdecydować, czy DE wchodzi do wspólnej reguły), bo kopie są dziś rozbieżne.
+
+### 5.3 (b) Wymagające ostrożności — refaktor działającej logiki
+
+Tu zmieniamy kod, który działa. Potrzebny test ścieżki przed/po:
+
+- **`localStorage.setItem` → `safeSetItem` (P1).** Najwyższa wartość, ale dotyka ~25 miejsc zapisu żywych danych. `safeSetItem` musi zwracać sygnał sukcesu/porażki tak, żeby wołające funkcje nie założyły, że zapis się udał. Ryzyko: zmiana zachowania przy pełnej quota (dziś throw, po zmianie banner). Test: zapełnić localStorage i sprawdzić zapis audio + edycję lekcji + import.
+- **`fetchWithRetry` w `showWordPopup` i `processYouTubeViaGemini` (P2).** `showWordPopup` to łańcuch `.then()` — `fetchWithRetry` zwraca `Response`, więc podmiana jest zgodna sygnaturowo, ale trzeba sprawdzić, że backoff nie psuje istniejącej obsługi 429/400 w tych funkcjach.
+- **`buildModelInput` i stałe schematu JSON (P2).** Ekstrakcja orkiestracji ładowania plików i schematu lekcji. Ryzyko = trzy ścieżki (upload / custom exercises / add dialog) mają drobne różnice (separator, próg PDF); helper musi je sparametryzować, nie ujednolicić na siłę. Test: wygenerować lekcję z każdej z trzech ścieżek.
+- **`processFilm` (P3).** Wymaga decyzji człowieka, nie automatu — to porzucony feature (upload film/audio → lekcja), nie śmieć po refaktorze. Usunięcie: -62 linie + znika kopia schematu JSON (4.2) i dwa „martwe" wpisy z 3.2/3.3. Rewire: trzeba naraz dodać `thinkingBudget:0` i `fetchWithRetry` (landmina z 3.3), inaczej Gemini 2.5 zwróci urwany JSON.
+- **`renderSourcePicker` (P3).** Najmniej pilne. Pełne scalenie trzech paneli upload odradzam do czasu, aż pojawi się czwarty — wspólny komponent z ~8 parametrami bywa trudniejszy w czytaniu niż trzy jawne kopie.
+
+### 5.4 Sugerowana kolejność
+
+P1 (bezpieczne cięcia + quota + `ARTICLE_RULE`) → P2 (retry + `buildModelInput` + schemat JSON) → P3 (decyzja `processFilm` + `renderSourcePicker` + siatka `unhandledrejection`). Wewnątrz duplikacji kolejność zysk/ryzyko bez zmian wobec 4.5: 4.1 → 4.3 → 4.2 → 4.4.
+
+Nic nie zmieniono w `index.html` — to wyłącznie raport (`git diff --stat index.html` pusty).
