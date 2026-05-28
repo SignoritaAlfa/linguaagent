@@ -3166,8 +3166,15 @@ function parseLessonJson(rawText){
   if(titleM) result.title = titleM[1];
   const topicM = rawText.match(/"topic"\s*:\s*"([^"\\]+)"/);
   if(topicM) result.topic = topicM[1];
-  if(result.dialog.length === 0) throw new Error("Nie udało się odzyskać dialogu z odpowiedzi (pewnie obcięta)");
-  console.log("[LinguaAgent] Recovered partial lesson: "+result.dialog.length+" dialog, "+result.vocab.length+" vocab, "+result.phrases.length+" phrases");
+  // Łagodniejszy recovery: lekcja jest użyteczna jeśli ma dialog LUB vocab/fill.
+  // Twardy błąd tylko gdy NIC się nie udało odzyskać.
+  if(result.dialog.length === 0 && result.vocab.length === 0 && result.fill.length === 0){
+    throw new Error("Nie udało się odzyskać treści z odpowiedzi AI (obcięta lub zły format). Spróbuj ponownie — albo wgraj mniej stron / krótszy fragment, albo przełącz model w Ustawieniach.");
+  }
+  if(result.dialog.length === 0){
+    console.warn("[LinguaAgent] Brak dialogu w recovery, ale są inne sekcje — zwracam częściową lekcję (vocab:"+result.vocab.length+", fill:"+result.fill.length+")");
+  }
+  console.log("[LinguaAgent] Recovered partial lesson: "+result.dialog.length+" dialog, "+result.vocab.length+" vocab, "+result.phrases.length+" phrases, "+result.fill.length+" fill");
   return result;
 }
 
@@ -3324,12 +3331,12 @@ WYMAGANIA MINIMALNE:
 - fill: jeśli oryginalne ćwiczenia są w materiale → przepisz WSZYSTKIE (może być 4, 8, 30 — ile jest). Jeśli brak → minimum 12 wygenerowanych
 - grammar: minimum 3 zasady gramatyczne widoczne w materiale. KAŻDA zasada MA MIEĆ pole "exercises" — minimum 3 ćwiczenia luk BEZPOŚREDNIO sprawdzające tę zasadę. Np. dla zasady "tryb warunkowy 'voudrais'": exercises:[{s:"Je ___ un café.",a:"voudrais",h:"chciałbym"},{s:"Elle ___ partir tôt.",a:"voudrait",h:"chciałaby (3.os.)"}]. JEŚLI ORYGINALNE ĆWICZENIA GRAMATYCZNE Z MATERIAŁU pasują do tej zasady — DODAJ JE TEŻ do exercises[] tej zasady (zamiast zostawiać tylko w globalnym fill[]). Cel: użytkownik klikając "Ćwicz tę zasadę" dostaje WSZYSTKIE ćwiczenia (wygenerowane + oryginalne) skupione na jednej regule
 
-Pole "rawText": jeśli widzisz obraz, przepisz DOSŁOWNIE cały tekst z obrazu — każde słowo, w kolejności w jakiej występuje, ZACHOWUJĄC ORYGINALNE FORMATOWANIE: łamania linii (każda linia widoczna na obrazku = osobna linia, użyj \n), akapity (puste linie między akapitami = \n\n), wcięcia, listy i numerację (1., 2., 3. lub - w nowej linii). Nie sklejaj wszystkiego w jeden ciąg. Jeśli dostałeś już tekst w wiadomości, powtórz go w "rawText" identycznie z zachowaniem łamań linii.
+Pole "rawText" (NA KOŃCU, najmniej ważne — oryginał i tak jest zapisany osobno): krótki kluczowy tekst materiału do podglądu. NIE przepisuj dosłownie wielu stron — to zżera limit odpowiedzi i może uciąć resztę lekcji. Wystarczy dialog/główny tekst (do ~1500 znaków). KRYTYCZNE: najpierw wygeneruj dialog, vocab, phrases, fill, grammar w CAŁOŚCI — rawText wypełnij DOPIERO gdy reszta gotowa. Jeśli zabrakłoby miejsca, rawText może być krótki lub pusty — dialog i ćwiczenia są ważniejsze.
 
 Pole "fillSource": "original" jeśli fill[] pochodzi z oryginalnych ćwiczeń materiału, "generated" jeśli sam wygenerowałeś. Użytkownik to widzi.
 
 Odpowiedz WYŁĄCZNIE czystym JSON, zero tekstu przed ani po, zero markdown:
-{"title":"tytuł lekcji","level":"B1","topic":"temat po polsku","rawText":"oryginalny tekst materiału dosłownie","fillSource":"original|generated","dialog":[{"s":"Imię","l":"zdanie w języku obcym","t":"tłumaczenie po polsku","section":"Dialog 1: nazwa (opcjonalne, tylko gdy kilka scenek)"}],"vocab":[{"w":"pojedyncze słowo","tr":"tłumaczenie PL","ipa":"wymowa IPA","pl":"jak czytać po polsku","ex":"przykład użycia","exT":"tłumaczenie przykładu"}],"phrases":[{"w":"zwrot wielowyrazowy","tr":"tłumaczenie PL","ipa":"wymowa IPA","pl":"jak czytać","ex":"przykład z materiału","exT":"tłumaczenie"}],"fill":[{"s":"zdanie z ___ luką","a":"odpowiedź","h":"wskazówka po polsku","cat":"text"},{"s":"gramatyczne z ___","a":"odpowiedź","h":"wskazówka","cat":"grammar"}],"grammar":[{"rule":"nazwa zasady","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie po polsku","exercises":[{"s":"zdanie z ___","a":"odpowiedź","h":"wskazówka PL"}]}]}`;
+{"title":"tytuł lekcji","level":"B1","topic":"temat po polsku","fillSource":"original|generated","dialog":[{"s":"Imię","l":"zdanie w języku obcym","t":"tłumaczenie po polsku","section":"Dialog 1: nazwa (opcjonalne, tylko gdy kilka scenek)"}],"vocab":[{"w":"pojedyncze słowo","tr":"tłumaczenie PL","ipa":"wymowa IPA","pl":"jak czytać po polsku","ex":"przykład użycia","exT":"tłumaczenie przykładu"}],"phrases":[{"w":"zwrot wielowyrazowy","tr":"tłumaczenie PL","ipa":"wymowa IPA","pl":"jak czytać","ex":"przykład z materiału","exT":"tłumaczenie"}],"fill":[{"s":"zdanie z ___ luką","a":"odpowiedź","h":"wskazówka po polsku","cat":"text"},{"s":"gramatyczne z ___","a":"odpowiedź","h":"wskazówka","cat":"grammar"}],"grammar":[{"rule":"nazwa zasady","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie po polsku","exercises":[{"s":"zdanie z ___","a":"odpowiedź","h":"wskazówka PL"}]}],"rawText":"oryginalny tekst materiału — TO POLE WYPEŁNIJ NA SAMYM KOŃCU, po dialog/vocab/phrases/fill/grammar"}`;
   // Wymagaj klucza odpowiedniego do wybranego modelu (Gemini lub Claude)
   const _cfgU = getLessonModelConfig();
   if(_cfgU.provider === "gemini" && !S.geminiKey){set({uploadError:"Wpisz klucz Gemini API w Ustawieniach (albo zmień model na Claude)"});return;}
@@ -3370,7 +3377,10 @@ Odpowiedz WYŁĄCZNIE czystym JSON, zero tekstu przed ani po, zero markdown:
     // 3-tier recovery: direct parse → brace-balance retry → manual array extraction
     // (model bywa obcięty na limicie tokenów — szczególnie przy dużych PDF/zdjęciach)
     const json = parseLessonJson(rawText);
-    if(!json.dialog||!json.vocab) throw new Error("Model zwrócił niekompletne dane — spróbuj ponownie");
+    // Akceptuj lekcję jeśli ma dialog LUB vocab (częściowy recovery jest użyteczny)
+    if((!json.dialog || json.dialog.length===0) && (!json.vocab || json.vocab.length===0)){
+      throw new Error("Model zwrócił niekompletne dane — spróbuj ponownie");
+    }
     json.id="my_"+Date.now();
     json.type="dialog";
     json.source="text";
@@ -7267,7 +7277,7 @@ const GEMINI_MODEL = "gemini-2.5-flash";
 const LESSON_MODEL_CONFIG = {
   haiku:  { provider:"anthropic", name:"claude-haiku-4-5-20251001", maxTokens:32000, label:"🍃 Haiku 4.5",       desc:"~$0.10 / długa scena. Szybki, dobry kompromis. Karta Anthropic." },
   sonnet: { provider:"anthropic", name:"claude-sonnet-4-6",         maxTokens:64000, label:"💎 Sonnet 4.6",      desc:"~$0.40 / długa scena. Najlepsza jakość tłumaczeń. Karta Anthropic." },
-  gemini: { provider:"gemini",    name:GEMINI_MODEL,                maxTokens:32000, label:"🌟 Gemini 2.5 Flash", desc:"~$0.05 / scena. Tani + 1500 free/dzień. Google Cloud (polskie karty OK)." }
+  gemini: { provider:"gemini",    name:GEMINI_MODEL,                maxTokens:48000, label:"🌟 Gemini 2.5 Flash", desc:"~$0.05 / scena. Tani + 1500 free/dzień. Google Cloud (polskie karty OK)." }
 };
 function getLessonModelConfig(){
   return LESSON_MODEL_CONFIG[S.lessonModel || "gemini"] || LESSON_MODEL_CONFIG.gemini;
