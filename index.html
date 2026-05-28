@@ -7041,6 +7041,31 @@ function getLessonModelConfig(){
 //   {prompt, image:{mimeType, data(b64)}}                — single image (legacy)
 //   {prompt, images:[{mimeType, data(b64)}, ...]}        — multi-image (PDF→pages)
 // Both Gemini and Claude support multi-image input.
+// Fetch z automatycznym retry dla przejściowych błędów AI API:
+//   503 (model overloaded / high demand), 429 (rate limit), 500, 529 (Anthropic overloaded)
+// Backoff: 2s → 4s → 8s. Pokazuje banner statusu żeby user wiedział że czekamy.
+async function fetchWithRetry(url, opts, maxRetries){
+  maxRetries = (maxRetries == null) ? 3 : maxRetries;
+  const RETRYABLE = [429, 500, 503, 529];
+  let res;
+  for(let attempt=0; attempt<=maxRetries; attempt++){
+    res = await fetch(url, opts);
+    if(res.ok) { if(attempt>0 && typeof showRegenStatus==="function") document.querySelectorAll('.regen-status-banner').forEach(el=>el.remove()); return res; }
+    if(RETRYABLE.includes(res.status) && attempt < maxRetries){
+      const wait = Math.min(2000 * Math.pow(2, attempt), 15000); // 2s, 4s, 8s
+      const reason = res.status===503 ? "model przeciążony" : res.status===429 ? "limit zapytań" : "błąd serwera "+res.status;
+      console.warn(`[fetchWithRetry] HTTP ${res.status} (${reason}), retry ${attempt+1}/${maxRetries} za ${wait}ms`);
+      if(typeof showRegenStatus==="function"){
+        showRegenStatus("⏳ AI "+reason+" — ponawiam za "+(wait/1000)+"s ("+(attempt+1)+"/"+maxRetries+")...", "info");
+      }
+      await new Promise(r=>setTimeout(r, wait));
+      continue;
+    }
+    return res; // non-retryable albo wyczerpane próby — oddaj do obsługi błędu
+  }
+  return res;
+}
+
 async function callLessonModel(input){
   const cfg = getLessonModelConfig();
   const promptText = typeof input === "string" ? input : (input.prompt || "");
@@ -7056,7 +7081,7 @@ async function callLessonModel(input){
       parts.push({inline_data:{mime_type:img.mimeType, data:img.data}});
     }
     parts.push({text:promptText});
-    const res = await fetch(
+    const res = await fetchWithRetry(
       `https://generativelanguage.googleapis.com/v1beta/models/${cfg.name}:generateContent?key=${encodeURIComponent(S.geminiKey)}`,
       {
         method:"POST",
@@ -7071,6 +7096,8 @@ async function callLessonModel(input){
     );
     if(!res.ok){
       const err = await res.json().catch(()=>({}));
+      if(res.status === 503) throw new Error("Gemini przeciążony (503) — Google ma chwilowy szczyt obciążenia. Spróbowałam kilka razy. Odczekaj 1-2 min albo przełącz model na Haiku/Sonnet w Ustawieniach.");
+      if(res.status === 429) throw new Error("Gemini limit zapytań (429) — darmowy tier to ~15/min. Odczekaj minutę albo przełącz na Haiku/Sonnet.");
       throw new Error("Gemini API "+res.status+": "+(err?.error?.message||"sprawdź klucz lub limit"));
     }
     const data = await res.json();
@@ -7094,7 +7121,7 @@ async function callLessonModel(input){
     content.push({type:"image", source:{type:"base64", media_type:img.mimeType, data:img.data}});
   }
   content.push({type:"text", text:promptText});
-  const res = await fetch("https://api.anthropic.com/v1/messages",{
+  const res = await fetchWithRetry("https://api.anthropic.com/v1/messages",{
     method:"POST",
     headers:{"x-api-key":S.claudeKey,"anthropic-version":"2023-06-01","content-type":"application/json","anthropic-dangerous-direct-browser-access":"true"},
     body:JSON.stringify({model:cfg.name, max_tokens:cfg.maxTokens, messages:[{role:"user",content}]})
