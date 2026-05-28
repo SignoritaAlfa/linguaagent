@@ -296,3 +296,88 @@ Najniższe liczniki (definicja + 1 użycie, wszystkie żywe): `ACCENT_CHARS`, `D
 Pozostałe 161 funkcji ma ≥2 wystąpienia i potwierdzone realne wywołanie/handler. Funkcje typu `render*` wołane są w dispatcherze `render()` (linie ~9153–9164) albo zagnieżdżone w innych widokach — nie są dead.
 
 Nic nie usunięto — to wyłącznie raport (`git diff --stat index.html` pusty).
+
+---
+
+## 3. Niespójności i ryzyka
+
+Numery linii względem stanu pliku z momentu tej analizy (9175 linii). Sekcja wyłapuje wzorce, które przy edycji mogą cicho wprowadzić bug — głównie: zapisy do localStorage z pominięciem ochrony quota, wywołania AI z pominięciem retry, oraz braki `thinkingBudget:0` w martwym kodzie.
+
+### 3.1 `localStorage.setItem` zamiast `safeSetItem` — RYZYKO WYSOKIE
+
+`safeSetItem` (linia 2537) łapie `QuotaExceededError`, liczy zużycie i pokazuje bannerem komunikat usercie. Problem: jest wywoływane tylko w **4 miejscach** (wszystkie dla `lingua_my_lessons`):
+
+| Linia | Funkcja | Klucz |
+|------:|---------|-------|
+| 2573 | `saveMyLesson` | `lingua_my_lessons` |
+| 3530 | `saveCustomExercisesToLesson` | `lingua_my_lessons` |
+| 3607 | `deleteCustomExercise` | `lingua_my_lessons` |
+| 3699 | `saveAddedDialog` | `lingua_my_lessons` |
+
+Pozostałe **~75 wywołań `localStorage.setItem`** idzie surowo, bez obsługi quota. Gdy przeglądarka odrzuci zapis (limit ~5 MB), w funkcji bez `try-catch` poleci nieobsłużony wyjątek → przerwany render / cicha utrata danych. Najgroźniejsze (duże dane):
+
+| Linia | Funkcja | Klucz | Ryzyko |
+|------:|---------|-------|--------|
+| 3751 | `saveLessonAudio` | `lingua_audio` | **Krytyczne** — base64 audio (setki KB–MB na slot). Najszybciej przepełni quota, a zapis surowy. |
+| 3758 | `deleteLessonAudio` | `lingua_audio` | Zapis całego obiektu audio surowo. |
+| 2012 | `applyDriveData` | `lingua_audio` | Bulk import z Drive — `lingua_audio` + `lingua_my_lessons` + 18 innych kluczy, wszystkie surowo, bez quota. Pull dużego konta = pewny throw. |
+| 3858 | `processFilm` | `lingua_lesson_videos` | (funkcja martwa, patrz 2.1) |
+| 2581 | `deleteMyLesson` | `lingua_my_lessons` | Niespójne z `saveMyLesson` (obok, używa `safeSetItem`). |
+| 3010, 3080, 3108, 4833, 4924, 5327, 5338, 5435, 5647, 5660, 5704, 5717, 5935, 6033, 6082, 6108, 7622, 8051, 8095, 8474, 8518, 8798, 8811 | inline edycje lekcji (`render*`, callbacki) | `lingua_my_lessons` | ~23 surowych zapisów tego samego dużego klucza, który `saveMyLesson` chroni. Edytując lekcję omijasz ochronę. |
+| 9092–9096 | `importData` | `lingua_my_lessons`, `lingua_my_films`, `lingua_word_status`, `lingua_srs` | Import pliku usera — duży payload, surowo. |
+| 7435, 7452, 7458 | cache lekcji | `lingua_lesson_cache` | Cache do 30 lekcji, surowo (ma jednak własny `try` przy odczycie). |
+
+**Sugestia:** podmienić surowe `localStorage.setItem` na `safeSetItem` przynajmniej dla trzech dużych kluczy — `lingua_audio`, `lingua_my_lessons`, `lingua_lesson_videos` — oraz w `applyDriveData` i `importData`. Wyjątki, które już mają własny `try/catch` inline (`4452`, `4457` — `POPUP_CACHE`), można zostawić.
+
+### 3.2 Bezpośredni `fetch()` do AI z pominięciem `fetchWithRetry` — RYZYKO ŚREDNIE
+
+`fetchWithRetry` (linia 7326) robi backoff 2s→4s→8s na 429/500/503/529. Używają go poprawnie obie ścieżki w `callLessonModel`: Gemini (7363) i Anthropic (7403). Ale dwa **żywe** wywołania do `generativelanguage` idą bezpośrednim `fetch` — brak auto-retry na chwilowe 503/429:
+
+| Linia | Funkcja | Stan | Uwaga |
+|------:|---------|------|-------|
+| 4469 | `showWordPopup` (popup tłumaczenia słowa) | **żywa** | Surowy `fetch`. Ma inline komunikat dla 429, ale bez ponowienia — przy 503 popup pokazuje błąd zamiast spróbować ponownie. |
+| 7788 | `processYouTubeViaGemini` | **żywa** | Surowy `fetch` (z `fileData` YT). Obsługuje 429/400, ale nie ponawia 503 ("model przeciążony"), który na Gemini bywa częsty. |
+| 3311 | `callGemini` | **martwa** (patrz 2.1) | Surowy `fetch`, brak retry. |
+| 3832 | `processFilm` | **martwa/nieosiągalna** (patrz 2.1) | Surowy `fetch`, brak retry. |
+
+**Sugestia:** przepiąć `4469` i `7788` na `fetchWithRetry`. `showWordPopup` używa łańcucha `.then()` — wystarczy zamienić `fetch(...)` na `fetchWithRetry(...)`, sygnatura odpowiedzi jest zgodna (zwraca `Response`).
+
+### 3.3 `thinkingBudget:0` w wywołaniach Gemini — żywe ścieżki OK
+
+Wszystkie 5 wywołań `generativelanguage`:
+
+| Linia | Funkcja | `thinkingConfig:{thinkingBudget:0}` | Stan |
+|------:|---------|:-----------------------------------:|------|
+| 4469 | `showWordPopup` | ✅ (4478) | żywa |
+| 7364 | `callLessonModel` (Gemini) | ✅ (7372) | żywa |
+| 7789 | `processYouTubeViaGemini` | ✅ (7801) | żywa |
+| 3312 | `callGemini` | ❌ brak | martwa |
+| 3832 | `processFilm` | ❌ brak `generationConfig` w ogóle | martwa/nieosiągalna |
+
+**Wniosek:** każda **żywa** ścieżka ma `thinkingBudget:0` — spójne. Brak go tylko w martwym kodzie. **Landmina:** jeśli `processFilm` zostanie podpięta z powrotem (decyzja z 2.1), to wpada w pułapkę z dwóch stron naraz — brak `thinkingBudget:0` (Gemini 2.5 zżera output na "myślenie" → urwany/pusty JSON) **oraz** brak retry. Przy ożywianiu tej funkcji trzeba dodać oba.
+
+### 3.4 `try-catch` przy wywołaniach AI — wzorzec spójny (throw-w-głąb, catch-na-wejściu)
+
+Funkcje rdzeniowe (`callLessonModel` 7348, `buildLessonFromTranscript` 7469, `processTranscriptToLesson` 7645, `processYouTubeViaGemini` 7757) **świadomie rzucają** wyjątki bez własnego `try-catch`, a łapią je punkty wejścia (handlery `onclick` / akcje usera). Sprawdzone — wszystkie wejścia mają `try-catch` ustawiający komunikat błędu w stanie:
+
+| Wejście (łapie) | Linia `catch` | Wywołuje AI |
+|-----------------|:-------------:|-------------|
+| `doTranslate` | 8778 | `callLessonModel` (8773) |
+| `confirmDraftAndCreate` | 7900 | `processTranscriptToLesson` → `callLessonModel` |
+| `regenerateLessonDialog` | 7585 | `buildLessonFromTranscript` → `callLessonModel` |
+| `fixVocabArticles` | 3013 | `callLessonModel` (2994) |
+| `showWordPopup` | `.catch` 4521 | `fetch` Gemini |
+| callbacki w `renderLesson` / `openEditEntryForm` | 5961+, 4882+ | `callLessonModel` |
+
+**Ocena:** brak krytycznej luki. Ryzyko jest inne — wzorzec jest niejawny. Kto doda nowy `onclick:()=>jakasFunkcjaAI()` (fire-and-forget) i zapomni `try-catch`, dostanie nieobsłużony rejection bez komunikatu dla usera. **Sugestia:** trzymać konwencję „każdy nowy handler wołający AI ma własny `try-catch` + `set({...Error})}`" — tak jak istniejące. Ewentualnie globalny `window.addEventListener("unhandledrejection", ...)` jako siatka bezpieczeństwa.
+
+### 3.5 Podsumowanie ryzyk
+
+| # | Ryzyko | Waga | Lokalizacja | Sugestia |
+|---|--------|------|-------------|----------|
+| 1 | Duże zapisy (`lingua_audio`, `lingua_my_lessons`) omijają `safeSetItem` → uncaught QuotaExceededError | **Wysoka** | 3751, 3758, 2012, ~23× inline, 9092 | Podmienić na `safeSetItem` dla 3 dużych kluczy |
+| 2 | Żywe wywołania Gemini bez `fetchWithRetry` → brak retry na 503 | Średnia | 4469, 7788 | Przepiąć na `fetchWithRetry` |
+| 3 | `processFilm` przy ożywieniu: brak `thinkingBudget:0` + brak retry | Średnia (warunkowa) | 3832 | Dodać oba przy decyzji z 2.1 |
+| 4 | Wzorzec `try-catch` AI niejawny — łatwo pominąć w nowym handlerze | Niska | konwencja | Trzymać konwencję / `unhandledrejection` |
+
+Nic nie zmieniono w `index.html` — to wyłącznie raport (`git diff --stat index.html` pusty).
