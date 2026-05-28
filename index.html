@@ -3659,9 +3659,14 @@ Odpowiedz WYŁĄCZNIE czystym JSON bez markdown:
   const parsed = parseLessonJson(rawText);
   const dialog = (parsed.dialog||[]).filter(d => d && d.l);
   if(!dialog.length) throw new Error("AI nie wyciągnęło dialogu — spróbuj wyraźniejszy materiał");
-  // Nadaj sekcję: nazwa od usera lub auto "Dialog N"
-  const existingSections = new Set((lesson.dialog||[]).map(l=>l.section).filter(Boolean));
-  const autoName = sectionName || ("Dialog "+(existingSections.size + 2)); // +2 bo główny = 1
+  // Nadaj sekcję: nazwa od usera lub auto "Dialog N".
+  // Numer = liczba istniejących GRUP dialogowych + 1, gdzie grupa to:
+  // każda unikalna nazwa sekcji + (1 grupa dla kwestii bez sekcji = przyszły "Dialog 1").
+  const allSections = (lesson.dialog||[]).map(l=>(l.section||"").trim());
+  const uniqueNamed = new Set(allSections.filter(Boolean));
+  const hasUnnamed = allSections.some(s=>!s);
+  const groupCount = uniqueNamed.size + (hasUnnamed ? 1 : 0);
+  const autoName = sectionName || ("Dialog "+(groupCount + 1));
   dialog.forEach(d=>{ if(!d.section || !d.section.trim()) d.section = autoName; });
   return {
     dialog,
