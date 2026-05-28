@@ -5517,10 +5517,20 @@ function renderLesson(){
     const hasSections = lesson.dialog.some(l => l.section && l.section.trim());
     if(hasSections){
       // Grupuj kolejne kwestie po section (zachowaj porządek)
-      let curSection = null, sectionLines = [];
+      let curSection = null, sectionLines = [], secIndex = 0;
       const flushSection = ()=>{
         if(!sectionLines.length) return;
-        const secName = curSection || "Dialog";
+        secIndex++;
+        // Auto-renumeracja: sekcje typu "Dialog N" / "Dialogo N" przeliczamy
+        // sekwencyjnie (1,2,3...) niezależnie od numeru nadanego przez AI/upload,
+        // zachowując opis po numerze ("Dialog 2: Al bar"). Opisowe nazwy bez
+        // "Dialog N" zostawiamy bez zmian.
+        let secName = curSection || "Dialog";
+        const m = secName.match(/^Dialog[o]?\s*\d*\s*[:.\-–]?\s*(.*)$/i);
+        if(m){
+          const desc = (m[1]||"").trim();
+          secName = "Dialog " + secIndex + (desc ? ": " + desc : "");
+        }
         const secHead = h("div",{style:"display:flex;align-items:center;justify-content:space-between;margin:18px 0 8px 0;padding-bottom:6px;border-bottom:2px solid var(--gold);gap:10px;flex-wrap:wrap"});
         secHead.appendChild(h("div",{style:"font-size:13px;font-weight:600;color:var(--gold);letter-spacing:.03em"},secName));
         // ▶ Odtwórz tę sekcję
