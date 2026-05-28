@@ -7063,7 +7063,9 @@ async function callLessonModel(input){
         headers:{"Content-Type":"application/json"},
         body:JSON.stringify({
           contents:[{parts}],
-          generationConfig:{temperature:0.3, maxOutputTokens: cfg.maxTokens}
+          // thinkingBudget:0 — KRYTYCZNE: bez tego Gemini 2.5 Flash zużywa output tokens
+          // na "myślenie", co przy multi-image + długim prompcie urywa JSON w połowie
+          generationConfig:{temperature:0.3, maxOutputTokens: cfg.maxTokens, thinkingConfig:{thinkingBudget:0}}
         })
       }
     );
@@ -7072,8 +7074,17 @@ async function callLessonModel(input){
       throw new Error("Gemini API "+res.status+": "+(err?.error?.message||"sprawdź klucz lub limit"));
     }
     const data = await res.json();
-    const txt = data?.candidates?.[0]?.content?.parts?.[0]?.text || data?.candidates?.[0]?.output || "";
-    if(!txt) throw new Error("Gemini nie zwrócił tekstu");
+    const cand = data?.candidates?.[0];
+    const txt = cand?.content?.parts?.map(p=>p.text||"").join("") || cand?.output || "";
+    const finishReason = cand?.finishReason || "";
+    if(!txt){
+      if(finishReason === "MAX_TOKENS") throw new Error("Gemini: odpowiedź przekroczyła limit tokenów — materiał za duży. Spróbuj wgrać mniej stron / krótszy fragment");
+      if(finishReason === "SAFETY") throw new Error("Gemini odrzucił treść (filtr bezpieczeństwa) — spróbuj inny materiał");
+      throw new Error("Gemini nie zwrócił tekstu"+(finishReason?" (finishReason: "+finishReason+")":""));
+    }
+    if(finishReason === "MAX_TOKENS"){
+      console.warn("[callLessonModel] Gemini finishReason=MAX_TOKENS — odpowiedź może być obcięta, parseLessonJson spróbuje odzyskać");
+    }
     return txt;
   }
   // Anthropic Claude
