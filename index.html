@@ -1924,6 +1924,8 @@ let S={
   showUpload:false,uploadLang:"FR",uploadStep:0,uploadFile:null,uploadPreview:null,uploadProcessing:false,uploadError:"",
   // Wgrywanie własnych ćwiczeń do lekcji (np. zdjęcie strony z książki)
   showCustomExUpload:false, customExStep:0, customExFile:null, customExText:"", customExPreview:null, customExProcessing:false, customExError:"",
+  // Dodawanie kolejnego dialogu do istniejącej lekcji (sekcje)
+  showAddDialog:false, addDialogStep:0, addDialogFile:null, addDialogText:"", addDialogPreview:null, addDialogProcessing:false, addDialogError:"", addDialogSectionName:"",
   elKeyInput:"",elMsg:"",
   voiceRate:parseFloat(localStorage.getItem("lingua_rate")||"1.0"),
   lessonTab:"dialog",
@@ -3353,8 +3355,10 @@ JEŚLI MATERIAŁ MA CZĘŚĆ B (oryginalne ćwiczenia z książki):
 JEŚLI MATERIAŁ TO TYLKO CZĘŚĆ A (czysty dialog filmowy, artykuł, post — bez wydzielonych ćwiczeń):
   → Wygeneruj fill[] sam z dialogu/tekstu (minimum 12: 6 tekstowych, 6 gramatycznych).
 
+WIELE DIALOGÓW: jeśli materiał ma KILKA osobnych dialogów/scenek (np. "Dialogo 1", "Dialogo 2", albo wyraźnie oddzielone rozmowy w różnych sytuacjach), oznacz KAŻDĄ kwestię polem "section" = krótka nazwa tej scenki (np. "Dialog 1: W barze", "Dialog 2: W hotelu"). Kwestie z tej samej scenki mają identyczne "section". Jeśli materiał to JEDEN ciągły dialog — pomiń pole section (albo daj puste).
+
 WYMAGANIA MINIMALNE:
-- dialog: minimum 6 kwestii z treści materiału (mniej tylko jeśli materiał to czyste ćwiczenia bez dialogu)
+- dialog: minimum 6 kwestii z treści materiału (mniej tylko jeśli materiał to czyste ćwiczenia bez dialogu). Przy kilku scenkach — wszystkie kwestie ze wszystkich scenek w jednej tablicy dialog[], rozróżnione polem section
 - vocab: minimum 15 słów i zwrotów z tłumaczeniem na polski
   KRYTYCZNE: rzeczowniki w językach z rodzajem (FR: le/la/un/une; IT: il/la/lo/un/una/uno; DE: der/die/das; NO: en/ei/et — bokmål) ZAWSZE z rodzajnikiem w polu "w". Czasowniki w bezokoliczniku (parler, parlare, to talk, å snakke).
 - vocab to POJEDYNCZE SŁOWA. Wielowyrazowe zwroty / idiomy / kolokacje / czasowniki frazowe ("look up to", "make sense", "How come?") idą do osobnego pola "phrases" — minimum 8 zwrotów z materiału, z IPA i tłumaczeniem PL.
@@ -3366,7 +3370,7 @@ Pole "rawText": jeśli widzisz obraz, przepisz DOSŁOWNIE cały tekst z obrazu �
 Pole "fillSource": "original" jeśli fill[] pochodzi z oryginalnych ćwiczeń materiału, "generated" jeśli sam wygenerowałeś. Użytkownik to widzi.
 
 Odpowiedz WYŁĄCZNIE czystym JSON, zero tekstu przed ani po, zero markdown:
-{"title":"tytuł lekcji","level":"B1","topic":"temat po polsku","rawText":"oryginalny tekst materiału dosłownie","fillSource":"original|generated","dialog":[{"s":"Imię","l":"zdanie w języku obcym","t":"tłumaczenie po polsku"}],"vocab":[{"w":"pojedyncze słowo","tr":"tłumaczenie PL","ipa":"wymowa IPA","pl":"jak czytać po polsku","ex":"przykład użycia","exT":"tłumaczenie przykładu"}],"phrases":[{"w":"zwrot wielowyrazowy","tr":"tłumaczenie PL","ipa":"wymowa IPA","pl":"jak czytać","ex":"przykład z materiału","exT":"tłumaczenie"}],"fill":[{"s":"zdanie z ___ luką","a":"odpowiedź","h":"wskazówka po polsku","cat":"text"},{"s":"gramatyczne z ___","a":"odpowiedź","h":"wskazówka","cat":"grammar"}],"grammar":[{"rule":"nazwa zasady","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie po polsku","exercises":[{"s":"zdanie z ___","a":"odpowiedź","h":"wskazówka PL"}]}]}`;
+{"title":"tytuł lekcji","level":"B1","topic":"temat po polsku","rawText":"oryginalny tekst materiału dosłownie","fillSource":"original|generated","dialog":[{"s":"Imię","l":"zdanie w języku obcym","t":"tłumaczenie po polsku","section":"Dialog 1: nazwa (opcjonalne, tylko gdy kilka scenek)"}],"vocab":[{"w":"pojedyncze słowo","tr":"tłumaczenie PL","ipa":"wymowa IPA","pl":"jak czytać po polsku","ex":"przykład użycia","exT":"tłumaczenie przykładu"}],"phrases":[{"w":"zwrot wielowyrazowy","tr":"tłumaczenie PL","ipa":"wymowa IPA","pl":"jak czytać","ex":"przykład z materiału","exT":"tłumaczenie"}],"fill":[{"s":"zdanie z ___ luką","a":"odpowiedź","h":"wskazówka po polsku","cat":"text"},{"s":"gramatyczne z ___","a":"odpowiedź","h":"wskazówka","cat":"grammar"}],"grammar":[{"rule":"nazwa zasady","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie po polsku","exercises":[{"s":"zdanie z ___","a":"odpowiedź","h":"wskazówka PL"}]}]}`;
   // Wymagaj klucza odpowiedniego do wybranego modelu (Gemini lub Claude)
   const _cfgU = getLessonModelConfig();
   if(_cfgU.provider === "gemini" && !S.geminiKey){set({uploadError:"Wpisz klucz Gemini API w Ustawieniach (albo zmień model na Claude)"});return;}
@@ -3601,6 +3605,93 @@ function deleteCustomExercise(lesson, lang, idx){
   scheduleDriveSync();
   if(S.lesson && S.lesson.id === lesson.id){
     S.lesson = Object.assign({}, S.lesson, {customFill: cf});
+  }
+}
+
+// ── DODAWANIE KOLEJNEGO DIALOGU do istniejącej lekcji ──────────────────────────
+// Generuje dialog + vocab + phrases z nowego materiału, dokleja jako nowa sekcja.
+async function processAddDialog(lesson, lang){
+  const sectionName = (S.addDialogSectionName||"").trim();
+  const PROMPT = `Z poniższego materiału wyciągnij DIALOG w języku ${({EN:"angielskim",FR:"francuskim",IT:"włoskim",NO:"norweskim"})[lang]||"obcym"} i przygotuj go jako część istniejącej lekcji.
+
+ZASADY:
+- dialog: każda wypowiedź = osobna kwestia {s (kto mówi), l (dosłowny tekst), t (tłumaczenie PL)}. Weź WSZYSTKIE wypowiedzi z materiału, nie skracaj. Popraw interpunkcję/kapitalizację.
+- Jeśli materiał ma kilka scenek, oznacz kwestie polem section (nazwa scenki). Jeśli jeden dialog — pomiń section.
+- vocab: 8-15 POJEDYNCZYCH słów z tego dialogu (rzeczowniki z rodzajnikiem: FR le/la, IT il/la/lo, NO en/ei/et; czasowniki w bezokoliczniku). {w,tr,ipa,pl,ex,exT}
+- phrases: 5-10 ZWROTÓW wielowyrazowych z tego dialogu. {w,tr,ipa,pl,ex,exT}
+
+Odpowiedz WYŁĄCZNIE czystym JSON bez markdown:
+{"dialog":[{"s":"imię","l":"tekst","t":"tłumaczenie PL","section":"opcjonalnie"}],"vocab":[{"w":"słowo","tr":"tłum","ipa":"IPA","pl":"wymowa","ex":"zdanie","exT":"tłum"}],"phrases":[{"w":"zwrot","tr":"tłum","ipa":"IPA","pl":"wymowa","ex":"zdanie","exT":"tłum"}]}`;
+
+  const _cfg = getLessonModelConfig();
+  if(_cfg.provider === "gemini" && !S.geminiKey) throw new Error("Wpisz klucz Gemini w Ustawieniach");
+  if(_cfg.provider === "anthropic" && !S.claudeKey) throw new Error("Wpisz klucz Anthropic w Ustawieniach");
+
+  let modelInput;
+  if(S.addDialogFile && S.addDialogFile.type && S.addDialogFile.type.startsWith("image/")){
+    const b64 = await fileToB64(S.addDialogFile);
+    modelInput = {prompt: PROMPT, image:{mimeType: S.addDialogFile.type, data: b64}};
+  } else if(S.addDialogFile && S.addDialogFile.type === "application/pdf"){
+    let extracted = "";
+    try{ extracted = await extractPdfText(S.addDialogFile); }catch(e){}
+    if(extracted && extracted.length >= 50){
+      modelInput = PROMPT + "\n\nMATERIAŁ:\n" + extracted;
+    } else {
+      const images = await pdfToImages(S.addDialogFile, 10);
+      if(!images.length) throw new Error("Nie udało się odczytać PDF");
+      modelInput = {prompt: PROMPT, images};
+    }
+  } else if(S.addDialogFile && (S.addDialogFile.type.startsWith("text/") || /\.(md|markdown|txt)$/i.test(S.addDialogFile.name||""))){
+    const txt = await S.addDialogFile.text();
+    if(!txt || txt.trim().length < 20) throw new Error("Plik jest pusty");
+    modelInput = PROMPT + "\n\nMATERIAŁ:\n" + txt;
+  } else if((S.addDialogText||"").trim().length >= 20){
+    modelInput = PROMPT + "\n\nMATERIAŁ:\n" + S.addDialogText.trim();
+  } else {
+    throw new Error("Wybierz plik (zdjęcie/PDF/txt) albo wklej tekst");
+  }
+
+  const rawText = await callLessonModel(modelInput);
+  const parsed = parseLessonJson(rawText);
+  const dialog = (parsed.dialog||[]).filter(d => d && d.l);
+  if(!dialog.length) throw new Error("AI nie wyciągnęło dialogu — spróbuj wyraźniejszy materiał");
+  // Nadaj sekcję: nazwa od usera lub auto "Dialog N"
+  const existingSections = new Set((lesson.dialog||[]).map(l=>l.section).filter(Boolean));
+  const autoName = sectionName || ("Dialog "+(existingSections.size + 2)); // +2 bo główny = 1
+  dialog.forEach(d=>{ if(!d.section || !d.section.trim()) d.section = autoName; });
+  return {
+    dialog,
+    vocab: (parsed.vocab||[]).filter(v => v && v.w),
+    phrases: (parsed.phrases||[]).filter(p => p && p.w),
+    sectionName: autoName
+  };
+}
+
+// Append wygenerowanego dialogu (+ vocab/phrases) do lekcji + persist
+function saveAddedDialog(lesson, lang, added){
+  const ml = Object.assign({}, S.myLessons);
+  const arr = (ml[lang]||[]).slice();
+  const li = arr.findIndex(l => l.id === lesson.id);
+  if(li < 0) return;
+  const cur = arr[li];
+  // Jeśli istniejący dialog NIE ma sekcji a dodajemy nowy z sekcją — nadaj staremu "Dialog 1"
+  let baseDialog = (cur.dialog||[]).slice();
+  if(added.dialog.some(d=>d.section) && !baseDialog.some(d=>d.section)){
+    baseDialog = baseDialog.map(d=>Object.assign({}, d, {section: "Dialog 1"}));
+  }
+  const merged = {
+    dialog: baseDialog.concat(added.dialog),
+    vocab: (cur.vocab||[]).concat(added.vocab.filter(v => !(cur.vocab||[]).some(x=>x.w===v.w))),
+    phrases: (cur.phrases||[]).concat(added.phrases.filter(p => !(cur.phrases||[]).some(x=>x.w===p.w)))
+  };
+  arr[li] = Object.assign({}, cur, merged);
+  ml[lang] = arr;
+  S.myLessons = ml;
+  safeSetItem("lingua_my_lessons", JSON.stringify(ml));
+  scheduleDriveSync();
+  // Update lekcji w pamięci
+  if(S.lesson && S.lesson.id === lesson.id){
+    S.lesson = Object.assign({}, S.lesson, merged);
   }
 }
 
@@ -5039,6 +5130,108 @@ function renderCustomExerciseUploadPanel(lesson, lang){
   return panel;
 }
 
+// Panel dodawania kolejnego dialogu do lekcji
+function renderAddDialogPanel(lesson, lang){
+  const panel = h("div",{style:"margin-top:20px;padding:20px 24px;background:var(--surface);border:1px solid var(--gold);border-radius:8px"});
+  const head = h("div",{style:"display:flex;justify-content:space-between;align-items:center;margin-bottom:14px"});
+  head.appendChild(h("div",{style:"font-size:14px;font-weight:500;color:var(--gold)"},"➕ Dodaj kolejny dialog"));
+  head.appendChild(h("button",{style:"background:none;border:none;color:var(--text3);cursor:pointer;font-size:20px;line-height:1",
+    onclick:()=>set({showAddDialog:false,addDialogStep:0,addDialogFile:null,addDialogText:"",addDialogPreview:null,addDialogError:"",addDialogSectionName:""})},"✕"));
+  panel.appendChild(head);
+
+  // Nazwa sekcji (opcjonalna)
+  panel.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-bottom:4px"},"Nazwa sekcji (opcjonalnie — np. Dialog w restauracji):"));
+  const nameInp = h("input",{type:"text",class:"fill-inp",style:"width:100%;margin-bottom:14px;font-size:13px;box-sizing:border-box",
+    placeholder:"zostaw puste = automatyczne Dialog N",
+    oninput:(e)=>{ S.addDialogSectionName = e.target.value; }});
+  nameInp.value = S.addDialogSectionName||"";
+  panel.appendChild(nameInp);
+
+  if(S.addDialogStep === 0){
+    panel.appendChild(h("div",{style:"font-size:12px;color:var(--text3);margin-bottom:12px"},"Wybierz źródło dialogu — AI doklei go jako nową sekcję (z słówkami i zwrotami)."));
+    const grid = h("div",{style:"display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:6px"});
+    const imgInp = h("input",{type:"file",accept:"image/*",capture:"environment",style:"display:none",
+      onchange:(e)=>{if(e.target.files[0]) set({addDialogFile:e.target.files[0],addDialogStep:1,addDialogText:""});}});
+    const imgBtn = h("button",{class:"sbtn",style:"padding:16px;text-align:center;font-size:13px",onclick:()=>imgInp.click()},
+      h("div",{style:"font-size:24px;margin-bottom:6px"},"📸"), h("div",{},"Zdjęcie"));
+    grid.appendChild(imgInp); grid.appendChild(imgBtn);
+    const pdfInp = h("input",{type:"file",accept:".pdf",style:"display:none",
+      onchange:(e)=>{if(e.target.files[0]) set({addDialogFile:e.target.files[0],addDialogStep:1,addDialogText:""});}});
+    const pdfBtn = h("button",{class:"sbtn",style:"padding:16px;text-align:center;font-size:13px",onclick:()=>pdfInp.click()},
+      h("div",{style:"font-size:24px;margin-bottom:6px"},"📄"), h("div",{},"PDF"));
+    grid.appendChild(pdfInp); grid.appendChild(pdfBtn);
+    const txtInp = h("input",{type:"file",accept:".md,.markdown,.txt,text/plain,text/markdown",style:"display:none",
+      onchange:(e)=>{if(e.target.files[0]) set({addDialogFile:e.target.files[0],addDialogStep:1,addDialogText:""});}});
+    const txtBtn = h("button",{class:"sbtn",style:"padding:16px;text-align:center;font-size:13px",onclick:()=>txtInp.click()},
+      h("div",{style:"font-size:24px;margin-bottom:6px"},"📃"), h("div",{},".txt / .md"));
+    grid.appendChild(txtInp); grid.appendChild(txtBtn);
+    const pasteBtn = h("button",{class:"sbtn",style:"padding:16px;text-align:center;font-size:13px",onclick:()=>set({addDialogStep:2,addDialogFile:null})},
+      h("div",{style:"font-size:24px;margin-bottom:6px"},"✏️"), h("div",{},"Wklej tekst"));
+    grid.appendChild(pasteBtn);
+    panel.appendChild(grid);
+  }
+
+  const runExtract = async ()=>{
+    set({addDialogProcessing:true, addDialogError:""});
+    try{
+      const added = await processAddDialog(lesson, lang);
+      set({addDialogProcessing:false, addDialogStep:3, addDialogPreview:added});
+    }catch(e){
+      set({addDialogProcessing:false, addDialogError:e.message});
+    }
+  };
+
+  if(S.addDialogStep === 1 && S.addDialogFile){
+    panel.appendChild(h("div",{class:"msg-ok",style:"margin-bottom:12px"},"✓ "+S.addDialogFile.name+" ("+Math.round(S.addDialogFile.size/1024)+" KB)"));
+    const br = h("div",{style:"display:flex;gap:8px"});
+    br.appendChild(h("button",{class:"check-btn",style:"flex:2",disabled:S.addDialogProcessing,onclick:runExtract},
+      S.addDialogProcessing ? "⏳ Wyciągam dialog..." : "✨ Wyciągnij dialog"));
+    br.appendChild(h("button",{class:"sbtn",onclick:()=>set({addDialogStep:0,addDialogFile:null,addDialogError:""})},"← Wróć"));
+    panel.appendChild(br);
+  }
+
+  if(S.addDialogStep === 2){
+    const ta = h("textarea",{style:"width:100%;min-height:160px;padding:12px;border:1px solid var(--border);background:var(--bg);color:var(--text);font-family:inherit;font-size:13px;border-radius:4px;box-sizing:border-box;margin-bottom:10px",
+      placeholder:"Wklej treść dialogu (np. 'Anna: Ciao! Come stai? Marco: Bene, grazie!')",
+      oninput:(e)=>{ S.addDialogText = e.target.value; }});
+    ta.value = S.addDialogText||"";
+    panel.appendChild(ta);
+    const br = h("div",{style:"display:flex;gap:8px"});
+    br.appendChild(h("button",{class:"check-btn",style:"flex:2",disabled:S.addDialogProcessing,onclick:()=>{
+      if((S.addDialogText||"").trim().length < 20){ set({addDialogError:"Wklej dłuższy tekst (min 20 znaków)"}); return; }
+      runExtract();
+    }}, S.addDialogProcessing ? "⏳ Wyciągam..." : "✨ Wyciągnij dialog"));
+    br.appendChild(h("button",{class:"sbtn",onclick:()=>set({addDialogStep:0,addDialogText:"",addDialogError:""})},"← Wróć"));
+    panel.appendChild(br);
+  }
+
+  if(S.addDialogStep === 3 && S.addDialogPreview){
+    const p = S.addDialogPreview;
+    panel.appendChild(h("div",{style:"font-size:13px;color:var(--text);margin-bottom:10px"},
+      "Sekcja „"+p.sectionName+"”: "+p.dialog.length+" kwestii · "+p.vocab.length+" słówek · "+p.phrases.length+" zwrotów"));
+    const list = h("div",{style:"max-height:240px;overflow-y:auto;padding:10px;background:var(--bg);border:1px solid var(--border);border-radius:4px;margin-bottom:14px"});
+    p.dialog.slice(0,8).forEach(d=>{
+      list.appendChild(h("div",{style:"padding:4px 0;font-size:12px"},
+        h("span",{style:"color:var(--gold);font-weight:500"},(d.s||"")+": "),
+        h("span",{style:"color:var(--text2)"},d.l)));
+    });
+    if(p.dialog.length>8) list.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-top:4px"},"…i "+(p.dialog.length-8)+" więcej"));
+    panel.appendChild(list);
+    const br = h("div",{style:"display:flex;gap:8px"});
+    br.appendChild(h("button",{class:"check-btn",style:"flex:2",onclick:()=>{
+      saveAddedDialog(lesson, lang, p);
+      set({showAddDialog:false,addDialogStep:0,addDialogFile:null,addDialogText:"",addDialogPreview:null,addDialogError:"",addDialogSectionName:""});
+    }},"✓ Dodaj do lekcji"));
+    br.appendChild(h("button",{class:"sbtn",onclick:()=>set({addDialogStep:0,addDialogFile:null,addDialogText:"",addDialogPreview:null,addDialogError:""})},"← Inaczej"));
+    panel.appendChild(br);
+  }
+
+  if(S.addDialogError){
+    panel.appendChild(h("div",{class:"msg-err",style:"margin-top:12px"},"⚠ "+S.addDialogError));
+  }
+  return panel;
+}
+
 function renderLesson(){
   const{lesson,lang,mode,playing,playingLine}=S;
   const w=h("div",{});
@@ -5274,9 +5467,10 @@ function renderLesson(){
     dw.appendChild(dc);
 
     const wordStatus = JSON.parse(localStorage.getItem("lingua_word_status")||"{}");
-    lesson.dialog.forEach((line,lineIdx)=>{
+    // Renderer pojedynczej kwestii dialogu (zachowuje globalny lineIdx dla highlightu/seek)
+    const renderDialogLine = (line, lineIdx)=>{
       const row=h("div",{class:"dline"+(playingLine===lineIdx?" active":""),id:"dline-"+lineIdx});
-      const spkDiv=h("div",{class:"spk"+(line.s==="Aleksandra"?" me":"")},line.s.toUpperCase());
+      const spkDiv=h("div",{class:"spk"+(line.s==="Aleksandra"?" me":"")},(line.s||"").toUpperCase());
       spkDiv.appendChild(h("button",{class:"spk-btn",onclick:()=>{stopDialog();speak(line.l,lang,line.s);}},playingLine===lineIdx?"▶":"♪"));
       row.appendChild(spkDiv);
       const txt=h("div",{class:"dline-text"});
@@ -5303,8 +5497,48 @@ function renderLesson(){
       txt.appendChild(origDiv);
       txt.appendChild(h("div",{class:"dline-tr"},line.t));
       row.appendChild(txt);
-      dw.appendChild(row);
-    });
+      return row;
+    };
+
+    // Czy dialog ma sekcje? Grupujemy zachowując kolejność i globalne indeksy
+    const hasSections = lesson.dialog.some(l => l.section && l.section.trim());
+    if(hasSections){
+      // Grupuj kolejne kwestie po section (zachowaj porządek)
+      let curSection = null, sectionLines = [];
+      const flushSection = ()=>{
+        if(!sectionLines.length) return;
+        const secName = curSection || "Dialog";
+        const secHead = h("div",{style:"display:flex;align-items:center;justify-content:space-between;margin:18px 0 8px 0;padding-bottom:6px;border-bottom:2px solid var(--gold);gap:10px;flex-wrap:wrap"});
+        secHead.appendChild(h("div",{style:"font-size:13px;font-weight:600;color:var(--gold);letter-spacing:.03em"},secName));
+        // ▶ Odtwórz tę sekcję
+        const secLinesCopy = sectionLines.map(x=>x.line);
+        secHead.appendChild(h("button",{class:"sbtn",style:"font-size:11px;padding:5px 12px",
+          onclick:()=>playDialog(secLinesCopy, lang)},"▶ Odtwórz sekcję"));
+        dw.appendChild(secHead);
+        sectionLines.forEach(({line, idx})=> dw.appendChild(renderDialogLine(line, idx)));
+        sectionLines = [];
+      };
+      lesson.dialog.forEach((line, lineIdx)=>{
+        const sec = (line.section || "").trim() || "Dialog";
+        if(sec !== curSection){ flushSection(); curSection = sec; }
+        sectionLines.push({line, idx: lineIdx});
+      });
+      flushSection();
+    } else {
+      lesson.dialog.forEach((line,lineIdx)=> dw.appendChild(renderDialogLine(line, lineIdx)));
+    }
+
+    // Przycisk "+ Dodaj dialog" (lub panel gdy otwarty) — tylko dla własnych lekcji
+    const isOwnLesson = (S.myLessons[lang]||[]).some(l=>l.id===lesson.id);
+    if(isOwnLesson){
+      if(S.showAddDialog){
+        dw.appendChild(renderAddDialogPanel(lesson, lang));
+      } else {
+        dw.appendChild(h("button",{class:"sbtn",style:"margin-top:20px;border-color:var(--gold);color:var(--gold);padding:10px 16px",
+          onclick:()=>set({showAddDialog:true,addDialogStep:0,addDialogFile:null,addDialogText:"",addDialogPreview:null,addDialogError:"",addDialogSectionName:""})},
+          "➕ Dodaj kolejny dialog do tej lekcji"));
+      }
+    }
     main.appendChild(dw);
 
     const vw=h("div",{class:"vocab-wrap"});
