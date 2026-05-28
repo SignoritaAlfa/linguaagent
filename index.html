@@ -613,15 +613,6 @@ async function loadSourceFile(lessonId){
     r.onerror = e=>rej(e.target.error);
   });
 }
-async function deleteSourceFile(lessonId){
-  const db = await openDB();
-  return new Promise((res,rej)=>{
-    const tx = db.transaction(STORE_SRC, "readwrite");
-    tx.objectStore(STORE_SRC).delete(lessonId);
-    tx.oncomplete = ()=>res();
-    tx.onerror = e=>rej(e.target.error);
-  });
-}
 async function saveVideo(key,blob){
   const db=await openDB();
   return new Promise((res,rej)=>{
@@ -638,15 +629,6 @@ async function loadVideo(key){
     const r=tx.objectStore(STORE).get(key);
     r.onsuccess=e=>res(e.target.result);
     r.onerror=e=>rej(e.target.error);
-  });
-}
-async function deleteVideo(key){
-  const db=await openDB();
-  return new Promise((res,rej)=>{
-    const tx=db.transaction(STORE,"readwrite");
-    tx.objectStore(STORE).delete(key);
-    tx.oncomplete=()=>res();
-    tx.onerror=e=>rej(e.target.error);
   });
 }
 
@@ -3305,33 +3287,6 @@ async function pdfToImages(file, maxPages){
   }catch(e){
     throw new Error("Nie można wyrenderować PDF do obrazów: "+e.message);
   }
-}
-
-async function callGemini(prompt, geminiKey){
-  const res = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${geminiKey}`,
-    {
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({
-        contents:[{parts:[{text:prompt}]}],
-        generationConfig:{temperature:0.3,maxOutputTokens:4000}
-      })
-    }
-  );
-  if(!res.ok){
-    const err = await res.json().catch(()=>({}));
-    throw new Error("Gemini API błąd "+res.status+": "+(err?.error?.message||"sprawdź klucz API"));
-  }
-  const data = await res.json();
-  const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text
-    || data?.candidates?.[0]?.output
-    || data?.text
-    || "";
-  if(!rawText) throw new Error("Gemini nie zwrócił tekstu — spróbuj ponownie");
-  const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-  if(!jsonMatch) throw new Error("Gemini nie zwrócił poprawnego JSON — spróbuj ponownie");
-  return JSON.parse(jsonMatch[0]);
 }
 
 async function processUpload(){
