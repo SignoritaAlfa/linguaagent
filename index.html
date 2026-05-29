@@ -8275,7 +8275,10 @@ function renderFilmoteka(){
       acw.appendChild(acEp);acw.appendChild(acTi);acw.appendChild(acDe);acw.appendChild(acTo);
       acw.appendChild(h("div",{style:"display:flex;gap:8px"},
         h("button",{class:"primary",style:"font-size:12px;padding:8px 16px",onclick:()=>{
-          if(!S.addClipTitle.trim()) return;
+          if(!(S.addClipTitle||"").trim()){
+            alert("Wpisz tytuł klipu — to pole wymagane (np. „Kłótnia przy stole\").");
+            return;
+          }
           const newClipId = "clip_"+Date.now();
           // BUG FIX: chwytaj URL PRZED addClipToMyFilm — funkcja resetuje S.addClipUrl
           // w środku przez set(), więc warunek if(S.addClipUrl) potem zawsze fail.
