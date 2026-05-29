@@ -3299,6 +3299,54 @@ async function pdfToImages(file, maxPages){
   }
 }
 
+// Jeden próg dla wszystkich ścieżek: ile znaków warstwy tekstowej PDF wystarczy,
+// żeby użyć tekstu zamiast renderować strony jako obrazy. <100 znaków = niemal na
+// pewno skan/śmieci → idziemy w obrazy (OCR przez model). Wcześniej rozjazd 100 vs 50.
+const PDF_TEXT_MIN_CHARS = 100;
+
+// Wspólny builder inputu do callLessonModel z pliku (image / PDF / txt) albo z
+// wklejonego tekstu. Zwraca {input, rawText}: input → do callLessonModel,
+// rawText → wyciągnięty tekst źródła ("" gdy obraz/skan, do zapisania w lesson.rawText).
+// opts: {label:"TEKST"|"MATERIAŁ", minTextLen:20, pdfMinChars:PDF_TEXT_MIN_CHARS, logTag:""}
+async function buildModelInput(prompt, file, pasteText, opts){
+  opts = opts || {};
+  const label = opts.label || "TEKST";
+  const minTextLen = opts.minTextLen != null ? opts.minTextLen : 20;
+  const pdfMinChars = opts.pdfMinChars != null ? opts.pdfMinChars : PDF_TEXT_MIN_CHARS;
+  const tag = opts.logTag ? "["+opts.logTag+"] " : "";
+  const wrap = (t)=> prompt + "\n\n" + label + ":\n" + t;
+  // obraz (w tym HEIC/HEIF z iPhone'a)
+  if(file && ((file.type && file.type.startsWith("image/")) || /\.(heic|heif)$/i.test(file.name||""))){
+    const norm = await normalizeImageForUpload(file);
+    const b64 = await fileToB64(norm.file);
+    return { input:{prompt, image:{mimeType:norm.type, data:b64}}, rawText:"" };
+  }
+  // PDF: najpierw warstwa tekstowa, fallback do renderu stron jako obrazy
+  if(file && file.type === "application/pdf"){
+    let extracted = "";
+    try{ extracted = await extractPdfText(file); }catch(e){ console.warn(tag+"PDF text extract failed:", e.message); }
+    if(extracted && extracted.length >= pdfMinChars){
+      return { input: wrap(extracted), rawText: extracted };
+    }
+    console.log(tag+"PDF text empty/short ("+(extracted?.length||0)+" znaków), fallback to images");
+    const images = await pdfToImages(file, 10);
+    if(!images.length) throw new Error("Nie udało się odczytać PDF — sprawdź czy plik nie jest uszkodzony");
+    return { input:{prompt, images}, rawText:"" };
+  }
+  // plik tekstowy (.txt/.md/markdown)
+  if(file && ((file.type && file.type.startsWith("text/")) || /\.(md|markdown|txt)$/i.test(file.name||""))){
+    const txt = await file.text();
+    if(!txt || txt.trim().length < minTextLen) throw new Error("Plik tekstowy jest pusty lub za krótki (minimum "+minTextLen+" znaków)");
+    return { input: wrap(txt), rawText: txt };
+  }
+  // wklejony tekst
+  const pasted = (pasteText||"").trim();
+  if(pasted.length >= minTextLen){
+    return { input: wrap(pasted), rawText: pasted };
+  }
+  throw new Error("Wybierz plik (zdjęcie/PDF/txt) albo wklej tekst");
+}
+
 async function processUpload(){
   const PROMPT = `Jesteś ekspertem tworzenia materiałów do nauki języków. Przeanalizuj CAŁY poniższy materiał i stwórz KOMPLETNĄ lekcję językową w języku który widzisz w tekście.
 
@@ -3343,36 +3391,9 @@ Odpowiedz WYŁĄCZNIE czystym JSON, zero tekstu przed ani po, zero markdown:
   if(_cfgU.provider === "anthropic" && !S.claudeKey){set({uploadError:"Wpisz klucz Anthropic API w Ustawieniach (albo zmień model na Gemini)"});return;}
   set({uploadProcessing:true, uploadError:""});
   try{
-    let modelInput;
-    let _savedRawText = null;
-    if(S.uploadFile && (S.uploadFile.type.startsWith("text/") || /\.(md|markdown|txt)$/i.test(S.uploadFile.name))){
-      const textContent = await S.uploadFile.text();
-      if(!textContent||textContent.trim().length<20) throw new Error("Plik tekstowy jest pusty lub za krótki (minimum 20 znaków)");
-      _savedRawText = textContent;
-      modelInput = PROMPT+"\n\nTEKST:\n"+textContent;
-    } else if(S.uploadFile && S.uploadFile.type==="application/pdf"){
-      // Najpierw spróbuj wyciągnąć tekst (PDF z warstwą tekstową)
-      let extractedText = "";
-      try{ extractedText = await extractPdfText(S.uploadFile); }catch(e){ console.warn("[Upload] PDF text extract failed:", e.message); }
-      if(extractedText && extractedText.length >= 100){
-        _savedRawText = extractedText;
-        modelInput = PROMPT+"\n\nTEKST:\n"+extractedText;
-      } else {
-        // PDF jest skanem (lub bardzo mało tekstu) — fallback: renderuj strony do obrazów
-        console.log("[Upload] PDF text empty/short ("+(extractedText?.length||0)+" chars), fallback to images");
-        const images = await pdfToImages(S.uploadFile, 10);
-        if(!images.length) throw new Error("Nie udało się odczytać PDF — sprawdź czy plik nie jest uszkodzony");
-        modelInput = {prompt: PROMPT, images};
-        _savedRawText = ""; // brak tekstu, zostaje pusto (AI zapisze to co odczyta w polu rawText lekcji)
-      }
-    } else if(S.uploadFile && (S.uploadFile.type.startsWith("image/") || /\.(heic|heif)$/i.test(S.uploadFile.name||""))){
-      const norm = await normalizeImageForUpload(S.uploadFile);
-      const b64 = await fileToB64(norm.file);
-      modelInput = {prompt: PROMPT, image:{mimeType:norm.type, data:b64}};
-    } else {
-      _savedRawText = S.uploadPreview;
-      modelInput = PROMPT+"\n\nTEKST:\n"+S.uploadPreview;
-    }
+    const built = await buildModelInput(PROMPT, S.uploadFile, S.uploadPreview, {label:"TEKST", logTag:"Upload"});
+    const modelInput = built.input;
+    const _savedRawText = built.rawText; // "" gdy obraz/skan → niżej zapisywane tylko gdy niepuste
     const rawText = await callLessonModel(modelInput);
     // 3-tier recovery: direct parse → brace-balance retry → manual array extraction
     // (model bywa obcięty na limicie tokenów — szczególnie przy dużych PDF/zdjęciach)
@@ -3438,32 +3459,8 @@ Odpowiedz WYŁĄCZNIE czystym JSON bez markdown:
   if(_cfgCE.provider === "gemini" && !S.geminiKey) throw new Error("Wpisz klucz Gemini w Ustawieniach");
   if(_cfgCE.provider === "anthropic" && !S.claudeKey) throw new Error("Wpisz klucz Anthropic w Ustawieniach");
 
-  let modelInput;
-  if(S.customExFile && ((S.customExFile.type && S.customExFile.type.startsWith("image/")) || /\.(heic|heif)$/i.test(S.customExFile.name||""))){
-    const norm = await normalizeImageForUpload(S.customExFile);
-    const b64 = await fileToB64(norm.file);
-    modelInput = {prompt: PROMPT, image:{mimeType: norm.type, data: b64}};
-  } else if(S.customExFile && S.customExFile.type === "application/pdf"){
-    // Najpierw warstwa tekstowa, potem fallback do renderu stron jako obrazy
-    let extracted = "";
-    try{ extracted = await extractPdfText(S.customExFile); }catch(e){ console.warn("[CustomEx] PDF text extract failed:", e.message); }
-    if(extracted && extracted.length >= 50){
-      modelInput = PROMPT + "\n\nMATERIAŁ:\n" + extracted;
-    } else {
-      console.log("[CustomEx] PDF text empty/short, fallback to images");
-      const images = await pdfToImages(S.customExFile, 10);
-      if(!images.length) throw new Error("Nie udało się odczytać PDF — sprawdź czy plik nie jest uszkodzony");
-      modelInput = {prompt: PROMPT, images};
-    }
-  } else if(S.customExFile && (S.customExFile.type.startsWith("text/") || /\.(md|markdown|txt)$/i.test(S.customExFile.name||""))){
-    const txt = await S.customExFile.text();
-    if(!txt || txt.trim().length < 20) throw new Error("Plik jest pusty");
-    modelInput = PROMPT + "\n\nMATERIAŁ:\n" + txt;
-  } else if((S.customExText||"").trim().length >= 20){
-    modelInput = PROMPT + "\n\nMATERIAŁ:\n" + S.customExText.trim();
-  } else {
-    throw new Error("Wybierz plik (zdjęcie/PDF/txt) albo wklej tekst");
-  }
+  const built = await buildModelInput(PROMPT, S.customExFile, S.customExText, {label:"MATERIAŁ", logTag:"CustomEx"});
+  const modelInput = built.input;
 
   const rawText = await callLessonModel(modelInput);
   // Reuse parseLessonJson — ma 3-tier recovery
@@ -3598,30 +3595,8 @@ Odpowiedz WYŁĄCZNIE czystym JSON bez markdown:
   if(_cfg.provider === "gemini" && !S.geminiKey) throw new Error("Wpisz klucz Gemini w Ustawieniach");
   if(_cfg.provider === "anthropic" && !S.claudeKey) throw new Error("Wpisz klucz Anthropic w Ustawieniach");
 
-  let modelInput;
-  if(S.addDialogFile && ((S.addDialogFile.type && S.addDialogFile.type.startsWith("image/")) || /\.(heic|heif)$/i.test(S.addDialogFile.name||""))){
-    const norm = await normalizeImageForUpload(S.addDialogFile);
-    const b64 = await fileToB64(norm.file);
-    modelInput = {prompt: PROMPT, image:{mimeType: norm.type, data: b64}};
-  } else if(S.addDialogFile && S.addDialogFile.type === "application/pdf"){
-    let extracted = "";
-    try{ extracted = await extractPdfText(S.addDialogFile); }catch(e){}
-    if(extracted && extracted.length >= 50){
-      modelInput = PROMPT + "\n\nMATERIAŁ:\n" + extracted;
-    } else {
-      const images = await pdfToImages(S.addDialogFile, 10);
-      if(!images.length) throw new Error("Nie udało się odczytać PDF");
-      modelInput = {prompt: PROMPT, images};
-    }
-  } else if(S.addDialogFile && (S.addDialogFile.type.startsWith("text/") || /\.(md|markdown|txt)$/i.test(S.addDialogFile.name||""))){
-    const txt = await S.addDialogFile.text();
-    if(!txt || txt.trim().length < 20) throw new Error("Plik jest pusty");
-    modelInput = PROMPT + "\n\nMATERIAŁ:\n" + txt;
-  } else if((S.addDialogText||"").trim().length >= 20){
-    modelInput = PROMPT + "\n\nMATERIAŁ:\n" + S.addDialogText.trim();
-  } else {
-    throw new Error("Wybierz plik (zdjęcie/PDF/txt) albo wklej tekst");
-  }
+  const built = await buildModelInput(PROMPT, S.addDialogFile, S.addDialogText, {label:"MATERIAŁ", logTag:"AddDialog"});
+  const modelInput = built.input;
 
   const rawText = await callLessonModel(modelInput);
   const parsed = parseLessonJson(rawText);
