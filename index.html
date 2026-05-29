@@ -7622,8 +7622,12 @@ async function regenerateLessonDialog(lesson, lang, opts){
 
 async function processTranscriptToLesson(transcript, videoId, cues){
   if(!transcript||!transcript.trim()) throw new Error("Pusta transkrypcja");
-  // CACHE: skip Claude call if same transcript was processed before
-  const cachedLesson = getCachedLesson(transcript, S.lang);
+  // CACHE: skip Claude call if same transcript was processed before.
+  // ALE: jeśli ten videoId ma już lekcję, user tworzy KOLEJNĄ świadomie —
+  // pomijamy cache (świeże generowanie), żeby nie dostać dokładnej kopii starej.
+  const alreadyHasLessonForVideo = videoId &&
+    Object.values(S.myLessons||{}).some(arr => (arr||[]).some(l => l.youtubeId === videoId));
+  const cachedLesson = alreadyHasLessonForVideo ? null : getCachedLesson(transcript, S.lang);
   if(cachedLesson){
     console.log("[LessonCache] HIT in processTranscriptToLesson — $0 cost");
     const lesson = JSON.parse(JSON.stringify(cachedLesson));
