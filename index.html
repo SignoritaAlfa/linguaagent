@@ -7682,7 +7682,7 @@ ZADANIE:
 ${COMMON_SECTIONS}
 
 Odpowiedz TYLKO czystym JSON bez markdown:
-{"title":"tytuł sceny","level":"A2","topic":"temat po polsku","dialog":[{"s":"imię","l":"dokładny tekst","t":"tłumaczenie polskie","start":1.23,"end":4.56}],"vocab":[{"w":"pojedyncze słowo","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie z dialogu","exT":"tłumaczenie"}],"phrases":[{"w":"zwrot wielowyrazowy","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie z dialogu","exT":"tłumaczenie"}],"fill":[{"s":"zdanie z ___","a":"odpowiedź","h":"wskazówka PL","cat":"text"},{"s":"gramatyczne z ___","a":"odpowiedź","h":"wskazówka","cat":"grammar"}],"grammar":[{"rule":"zasada","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie PL"}]}
+{"title":"krótki tytuł sceny W JĘZYKU ORYGINAŁU (${langNames[S.lang]}) — zachowaj oryginalną pisownię i akcenty (é à ç ø itd.), NIE tłumacz na polski","level":"A2","topic":"temat po polsku","dialog":[{"s":"imię","l":"dokładny tekst","t":"tłumaczenie polskie","start":1.23,"end":4.56}],"vocab":[{"w":"pojedyncze słowo","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie z dialogu","exT":"tłumaczenie"}],"phrases":[{"w":"zwrot wielowyrazowy","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie z dialogu","exT":"tłumaczenie"}],"fill":[{"s":"zdanie z ___","a":"odpowiedź","h":"wskazówka PL","cat":"text"},{"s":"gramatyczne z ___","a":"odpowiedź","h":"wskazówka","cat":"grammar"}],"grammar":[{"rule":"zasada","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie PL"}]}
 
 TRANSKRYPCJA Z TIMESTAMPAMI:
 ${formatted}`;
@@ -7696,7 +7696,7 @@ POSTACIE: Zidentyfikuj kto mówi na podstawie kontekstu. Dla znanych seriali (np
 ${COMMON_SECTIONS}
 
 Odpowiedz TYLKO czystym JSON bez markdown:
-{"title":"tytuł sceny","level":"A2","topic":"temat po polsku","dialog":[{"s":"imię postaci","l":"dokładny tekst z transkrypcji","t":"tłumaczenie polskie"}],"vocab":[{"w":"pojedyncze słowo","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie z dialogu","exT":"tłumaczenie"}],"phrases":[{"w":"zwrot wielowyrazowy","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie z dialogu","exT":"tłumaczenie"}],"fill":[{"s":"zdanie z ___","a":"odpowiedź","h":"wskazówka PL","cat":"text"},{"s":"gramatyczne z ___","a":"odpowiedź","h":"wskazówka","cat":"grammar"}],"grammar":[{"rule":"zasada","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie PL"}]}
+{"title":"krótki tytuł sceny W JĘZYKU ORYGINAŁU (${langNames[S.lang]}) — zachowaj oryginalną pisownię i akcenty (é à ç ø itd.), NIE tłumacz na polski","level":"A2","topic":"temat po polsku","dialog":[{"s":"imię postaci","l":"dokładny tekst z transkrypcji","t":"tłumaczenie polskie"}],"vocab":[{"w":"pojedyncze słowo","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie z dialogu","exT":"tłumaczenie"}],"phrases":[{"w":"zwrot wielowyrazowy","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie z dialogu","exT":"tłumaczenie"}],"fill":[{"s":"zdanie z ___","a":"odpowiedź","h":"wskazówka PL","cat":"text"},{"s":"gramatyczne z ___","a":"odpowiedź","h":"wskazówka","cat":"grammar"}],"grammar":[{"rule":"zasada","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie PL"}]}
 
 TRANSKRYPCJA:
 ${trimmedTranscript}`;
@@ -7795,8 +7795,9 @@ Odpowiedz TYLKO czystym JSON bez markdown:
 {"title":"tytuł po ${targetLangLabel}","level":"A2","topic":"temat po ${targetLangLabel}","dialog":[{"s":"imię","l":"tekst","t":"tłumaczenie PL","start":1.23,"end":4.56}],"vocab":[{"w":"słowo","tr":"tłumaczenie PL","ipa":"IPA","pl":"wymowa PL","ex":"zdanie","exT":"tłumaczenie"}],"phrases":[{"w":"zwrot","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie","exT":"tłumaczenie"}],"fill":[{"s":"zdanie z ___","a":"odp","h":"wskazówka","cat":"text"}],"grammar":[{"rule":"zasada","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie PL"}]}`;
 
   const cfg = getLessonModelConfig();
-  // Wymuszamy Gemini niezależnie od wybranego modelu (tylko Gemini obsługuje YT URL)
-  const res = await fetch(
+  // Wymuszamy Gemini niezależnie od wybranego modelu (tylko Gemini obsługuje YT URL).
+  // fetchWithRetry — timeout 120s + retry na 503/429 (bez tego wisiało w nieskończoność).
+  const res = await fetchWithRetry(
     `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(S.geminiKey)}`,
     {
       method:"POST",
@@ -7817,13 +7818,14 @@ Odpowiedz TYLKO czystym JSON bez markdown:
   if(!res.ok){
     const err = await res.json().catch(()=>({}));
     const msg = err?.error?.message||"sprawdź klucz/limit";
-    if(res.status === 429) throw new Error("Gemini 429: limit dzienny YouTube (8h/dzień) — spróbuj jutro");
-    if(res.status === 400 && /not supported/i.test(msg)) throw new Error("Gemini nie potrafi przetworzyć tego filmu (może być prywatny, age-restricted lub zbyt długi)");
-    throw new Error("Gemini "+res.status+": "+msg);
+    if(res.status === 429) throw new Error("Gemini 429: limit dzienny YouTube (8h/dzień) — spróbuj jutro, albo użyj ręcznego wklejenia transkrypcji.");
+    if(res.status === 400 && /not supported|unsupported|cannot|access/i.test(msg)) throw new Error("Gemini nie ma dostępu do tego filmu (komercyjny/chroniony/age-restricted — częste dla filmów typu Le Prénom). Użyj ręcznego wklejenia: downsub.com → SRT → wklej niżej.");
+    throw new Error("Gemini "+res.status+": "+msg+" — jeśli to film komercyjny, użyj ręcznego wklejenia transkrypcji niżej.");
   }
   const data = await res.json();
-  const txt = data?.candidates?.[0]?.content?.parts?.[0]?.text || "";
-  if(!txt) throw new Error("Gemini zwrócił pustą odpowiedź — film może być za długi");
+  const cand = data?.candidates?.[0];
+  const txt = cand?.content?.parts?.map(p=>p.text||"").join("") || "";
+  if(!txt) throw new Error("Gemini zwrócił pustą odpowiedź"+(cand?.finishReason?" ("+cand.finishReason+")":"")+" — film może być chroniony lub za długi. Użyj ręcznego wklejenia transkrypcji niżej.");
   const newLesson = parseLessonJson(txt);
   if(!newLesson.dialog || newLesson.dialog.length===0) throw new Error("Gemini nie zwrócił dialogu");
   return newLesson;
