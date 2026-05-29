@@ -7272,6 +7272,36 @@ function parseSrt(text){
   return cues.length > 0 ? cues : null;
 }
 
+// Parsuje format transkrypcji z panelu YouTube "Pokaż transkrypcję":
+//   "1:57\nnon c'est..." (timestamp w osobnej linii) LUB "1:57 non c'est..." (inline).
+//   Timestamp: M:SS, MM:SS lub H:MM:SS. End każdego cue = start następnego (ostatni +4s).
+// Zwraca cues [{start,end,text}] albo null jeśli to nie ten format.
+function parseYouTubeTimestamps(text){
+  if(!text) return null;
+  const lines = text.replace(/\r\n/g,"\n").split("\n").map(l=>l.trim()).filter(l=>l);
+  const tsOnly = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/;            // "1:57" albo "1:02:03"
+  const tsInline = /^(\d{1,2}):(\d{2})(?::(\d{2}))?\s+(.+)$/;   // "1:57 tekst"
+  const toSec = (m)=> m[3]!==undefined
+    ? parseInt(m[1])*3600 + parseInt(m[2])*60 + parseInt(m[3])  // H:MM:SS
+    : parseInt(m[1])*60 + parseInt(m[2]);                        // M:SS
+  const cues = [];
+  for(let i=0; i<lines.length; i++){
+    let m = lines[i].match(tsInline);
+    if(m){ cues.push({start: toSec(m), text: m[4].trim()}); continue; }
+    m = lines[i].match(tsOnly);
+    if(m && i+1 < lines.length && !tsOnly.test(lines[i+1]) && !tsInline.test(lines[i+1])){
+      cues.push({start: toSec(m), text: lines[i+1]});
+      i++; // pomiń linię tekstu
+    }
+  }
+  if(cues.length < 2) return null; // za mało — to chyba nie transkrypcja YT
+  // Uzupełnij end = start następnego (ostatni: +4s)
+  for(let j=0; j<cues.length; j++){
+    cues[j].end = (j+1 < cues.length) ? cues[j+1].start : cues[j].start + 4;
+  }
+  return cues;
+}
+
 function formatTime(sec){
   if(!isFinite(sec)) return "0:00";
   const s = Math.floor(sec);
@@ -7909,6 +7939,10 @@ async function confirmDraftAndCreate(){
     if(isSrtFormat(draft)){
       cues = parseSrt(draft);
       console.log("[LinguaAgent] Draft SRT, "+(cues?cues.length:0)+" cues");
+    } else {
+      // Nie SRT — spróbuj formatu YouTube "Pokaż transkrypcję" (1:57 + tekst)
+      cues = parseYouTubeTimestamps(draft);
+      if(cues) console.log("[LinguaAgent] Draft YouTube-transcript, "+cues.length+" cues (karaoke ON)");
     }
     await processTranscriptToLesson(draft, videoId, cues);
     // On success processTranscriptToLesson sets lesson — clear draft
@@ -8139,10 +8173,10 @@ function renderFilmoteka(){
     // Edit-before-create panel (shown when there's a draft transcript)
     if(S.filmTranscriptDraft && !filmTranscriptLoading && !filmTranscriptProcessing && !filmTranscriptLesson){
       const draft = S.filmTranscriptDraft;
-      const isSrt = isSrtFormat(draft);
+      const hasTimestamps = isSrtFormat(draft) || !!parseYouTubeTimestamps(draft);
       main.appendChild(h("div",{class:"sec-label",style:"margin-top:18px"},"📝 Edytuj transkrypcję przed stworzeniem lekcji"));
       main.appendChild(h("div",{style:"font-size:12px;color:var(--text3);margin-bottom:12px;line-height:1.6"},
-        "Popraw co trzeba: ",h("strong",{},"wielkie litery na początku zdań")," (transkrypcje YT są lowercase), ",h("strong",{},"znaki interpunkcyjne"),", literówki, błędnie rozpoznane słowa. Jeśli wiesz że konkretne kwestie należą do konkretnej postaci — możesz dopisać przed kwestią imię np. „Ross:\" — Claude to wykorzysta. ",isSrt?h("span",{style:"color:var(--ok-text)"},"✓ Format SRT — będzie karaoke z sync."):h("span",{style:"color:var(--text3);font-style:italic"},"Plain text — bez sync z wideo (timestampy nie są wykryte).")
+        "Popraw co trzeba: ",h("strong",{},"wielkie litery na początku zdań")," (transkrypcje YT są lowercase), ",h("strong",{},"znaki interpunkcyjne"),", literówki, błędnie rozpoznane słowa. Jeśli wiesz że konkretne kwestie należą do konkretnej postaci — możesz dopisać przed kwestią imię np. „Ross:\" — Claude to wykorzysta. ",hasTimestamps?h("span",{style:"color:var(--ok-text)"},"✓ Wykryto timestampy (SRT lub YouTube) — będzie karaoke z sync."):h("span",{style:"color:var(--text3);font-style:italic"},"Plain text — bez sync z wideo (brak timestampów).")
       ));
       const ta=h("textarea",{
         style:"width:100%;min-height:340px;padding:14px;border:1px solid var(--border);background:var(--surface);font-family:"+(isSrt?"monospace":"'DM Sans',sans-serif")+";font-size:13px;line-height:1.6;border-radius:6px;resize:vertical;outline:none;color:var(--text);box-sizing:border-box;margin-bottom:10px",
@@ -8564,9 +8598,10 @@ function renderSongs(){
     if(S.filmTranscriptDraft && !filmTranscriptLoading && !filmTranscriptProcessing && !filmTranscriptLesson){
       const draft=S.filmTranscriptDraft;
       const isSrt=isSrtFormat(draft);
+      const hasTimestamps = isSrt || !!parseYouTubeTimestamps(draft);
       main.appendChild(h("div",{class:"sec-label",style:"margin-top:18px"},"📝 Edytuj transkrypcję przed stworzeniem lekcji"));
       main.appendChild(h("div",{style:"font-size:12px;color:var(--text3);margin-bottom:12px;line-height:1.6"},
-        "Popraw co trzeba: ",h("strong",{},"wielkie litery na początku linijek"),", ",h("strong",{},"znaki interpunkcyjne"),", literówki, błędnie rozpoznane słowa. ",isSrt?h("span",{style:"color:var(--ok-text)"},"✓ Format SRT — będzie karaoke z sync."):h("span",{style:"color:var(--text3);font-style:italic"},"Plain text — bez sync z wideo (timestampy nie są wykryte).")
+        "Popraw co trzeba: ",h("strong",{},"wielkie litery na początku linijek"),", ",h("strong",{},"znaki interpunkcyjne"),", literówki, błędnie rozpoznane słowa. ",hasTimestamps?h("span",{style:"color:var(--ok-text)"},"✓ Wykryto timestampy (SRT lub YouTube) — będzie karaoke z sync."):h("span",{style:"color:var(--text3);font-style:italic"},"Plain text — bez sync z wideo (brak timestampów).")
       ));
       const ta=h("textarea",{
         style:"width:100%;min-height:340px;padding:14px;border:1px solid var(--border);background:var(--surface);font-family:"+(isSrt?"monospace":"'DM Sans',sans-serif")+";font-size:13px;line-height:1.6;border-radius:6px;resize:vertical;outline:none;color:var(--text);box-sizing:border-box;margin-bottom:10px",
