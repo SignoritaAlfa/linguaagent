@@ -4434,7 +4434,9 @@ function showWordPopup(wordRaw, wordClean, lang, anchorEl){
     } else if(false){ // legacy branch placeholder for diff readability
     } else {
       const prompt = `Przetłumacz słowo z języka ${lang} na polski. Słowo: "${wordRaw}". Odpowiedz TYLKO czystym JSON bez markdown:\n{"word":"słowo w oryginale","ipa":"/wymowa IPA/","pl":"tłumaczenie polskie (możesz dać kilka znaczeń po przecinku)","example":"krótkie przykładowe zdanie w ${lang}"}`;
-      fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${S.geminiKey}`,{
+      // fetchWithRetry: timeout 120s + backoff na 429/503 (Gemini free tier bywa przeciążony).
+      // maxRetries=2 — popup jest mało krytyczny, user może kliknąć słowo ponownie.
+      fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${S.geminiKey}`,{
         method:"POST", headers:{"Content-Type":"application/json"},
         body:JSON.stringify({
           contents:[{parts:[{text:prompt}]}],
@@ -4446,7 +4448,7 @@ function showWordPopup(wordRaw, wordClean, lang, anchorEl){
             thinkingConfig:{thinkingBudget:0}
           }
         })
-      }).then(async r=>{
+      }, 2).then(async r=>{
         if(!r.ok){
           const errBody = await r.json().catch(()=>({}));
           const baseMsg = errBody?.error?.message || "sprawdź klucz/limit";
