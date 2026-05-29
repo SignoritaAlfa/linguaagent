@@ -8001,7 +8001,27 @@ function renderFilmoteka(){
     });
     const linkedIds = new Set(existingForClip.map(({lesson})=>lesson.id));
     if(existingForClip.length > 0 && !filmTranscriptLesson){
-      main.appendChild(h("div",{class:"sec-label",style:"margin-top:24px;color:var(--gold)"},"📚 Twoje lekcje z tego klipu ("+existingForClip.length+")"));
+      const headRow = h("div",{style:"display:flex;align-items:center;justify-content:space-between;margin-top:24px;gap:10px;flex-wrap:wrap"});
+      headRow.appendChild(h("div",{class:"sec-label",style:"margin:0;color:var(--gold)"},"📚 Twoje lekcje z tego klipu ("+existingForClip.length+")"));
+      // Odepnij wszystkie naraz — gdy user chce te lekcje osobno, nie pod tym klipem
+      headRow.appendChild(h("button",{class:"sbtn",style:"font-size:11px;padding:5px 12px",
+        title:"Odepnij wszystkie te lekcje od klipu (zostaną jako samodzielne, znikną stąd)",
+        onclick:()=>{
+          if(!confirm("Odepnij wszystkie "+existingForClip.length+" lekcji od tego klipu? Lekcje zostają (znajdziesz je w 'Moje lekcje'), tylko nie będą tu pokazywane.")) return;
+          const ml=Object.assign({},S.myLessons);
+          existingForClip.forEach(({lesson:les})=>{
+            const li=(ml[lang]||[]).findIndex(l=>l.id===les.id);
+            if(li<0) return;
+            const upd=Object.assign({},ml[lang][li]);
+            delete upd.clipId; delete upd.youtubeId;
+            ml[lang][li]=upd;
+          });
+          S.myLessons=ml;
+          safeSetItem("lingua_my_lessons",JSON.stringify(ml));
+          scheduleDriveSync();
+          render();
+        }},"⊘ Odepnij wszystkie"));
+      main.appendChild(headRow);
       existingForClip.forEach(({lesson:les, idx})=>{
         const row = h("div",{
           style:"display:flex;justify-content:space-between;align-items:center;padding:14px 16px;border:1px solid var(--gold);border-radius:6px;margin-bottom:8px;background:var(--surface);cursor:pointer;transition:all .15s",
