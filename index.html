@@ -7304,9 +7304,26 @@ function getLessonModelConfig(){
 async function fetchWithRetry(url, opts, maxRetries){
   maxRetries = (maxRetries == null) ? 3 : maxRetries;
   const RETRYABLE = [429, 500, 503, 529];
+  const TIMEOUT_MS = 120000; // 2 min na pojedynczą próbę — AI generowanie bywa długie, ale nie wisi w nieskończoność
   let res;
   for(let attempt=0; attempt<=maxRetries; attempt++){
-    res = await fetch(url, opts);
+    const ctrl = new AbortController();
+    const timer = setTimeout(()=>ctrl.abort(), TIMEOUT_MS);
+    try{
+      res = await fetch(url, Object.assign({}, opts, {signal: ctrl.signal}));
+    }catch(e){
+      clearTimeout(timer);
+      if(e.name === "AbortError"){
+        if(attempt < maxRetries){
+          console.warn(`[fetchWithRetry] timeout 120s, retry ${attempt+1}/${maxRetries}`);
+          if(typeof showRegenStatus==="function") showRegenStatus("⏳ AI nie odpowiada — ponawiam ("+(attempt+1)+"/"+maxRetries+")...", "info");
+          continue;
+        }
+        throw new Error("AI nie odpowiedziało w 2 minuty (możliwe przeciążenie). Spróbuj ponownie albo przełącz model w Ustawieniach.");
+      }
+      throw e; // inny błąd sieci — oddaj wyżej
+    }
+    clearTimeout(timer);
     if(res.ok) { if(attempt>0 && typeof showRegenStatus==="function") document.querySelectorAll('.regen-status-banner').forEach(el=>el.remove()); return res; }
     if(RETRYABLE.includes(res.status) && attempt < maxRetries){
       const wait = Math.min(2000 * Math.pow(2, attempt), 15000); // 2s, 4s, 8s
@@ -7881,7 +7898,10 @@ async function confirmDraftAndCreate(){
   if(_ccfg.provider === "gemini" && !S.geminiKey){set({filmTranscriptError:"Wpisz klucz Gemini w Ustawieniach (albo zmień model na Claude)"});return;}
   if(_ccfg.provider === "anthropic" && !S.claudeKey){set({filmTranscriptError:"Wpisz klucz Claude (Anthropic) w Ustawieniach (albo zmień model na Gemini)"});return;}
   const videoId = S.filmTranscriptDraftVideoId || S.filmYtId || null;
-  set({filmTranscriptLoading:true,filmTranscriptError:""});
+  // filmTranscriptProcessing (NIE filmTranscriptLoading) — bo to przetwarzanie
+  // WKLEJONEGO tekstu przez AI, NIE pobieranie z YouTube. Loading pokazuje mylący
+  // komunikat "Pobieranie transkrypcji z YouTube..." dla tekstu który user sam wkleił.
+  set({filmTranscriptProcessing:true,filmTranscriptLoading:false,filmTranscriptError:""});
   try{
     let cues = null;
     if(isSrtFormat(draft)){
