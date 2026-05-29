@@ -5339,6 +5339,15 @@ function renderLesson(){
       const addBtn = h("button",{class:"sbtn",style:"font-size:11px;padding:6px 12px"},"+ Dodaj link YouTube");
       addBtn.onclick = editVideoUrl;
       ytWrap.appendChild(addBtn);
+      // Regeneracja z zapisanego tekstu — NIE wymaga youtubeId. Jeśli rawText ma
+      // timestampy YouTube (1:57), regeneracja włączy karaoke.
+      if((lesson.rawText||"").trim().length > 100){
+        const regenBtn = h("button",{class:"sbtn",style:"font-size:11px;padding:6px 12px;border-color:var(--gold);color:var(--gold)",
+          title:"Wygeneruj dialog na nowo z zapisanego tekstu lekcji. Jeśli tekst ma timestampy (1:57) — włączy karaoke."},
+          "🔄 Wygeneruj ponownie z zapisanego tekstu");
+        regenBtn.onclick = ()=>regenerateLessonDialog(lesson, lang);
+        ytWrap.appendChild(regenBtn);
+      }
       main.appendChild(ytWrap);
     }
   }
