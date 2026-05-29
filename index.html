@@ -5247,6 +5247,15 @@ function renderAddDialogPanel(lesson, lang){
 
 function renderLesson(){
   const{lesson,lang,mode,playing,playingLine}=S;
+  // Ostatnia obrona przed białym ekranem: jeśli lesson brakuje któregoś pola
+  // (AI zwrócił niekompletny JSON), domknij defaultami zamiast crashować render
+  if(lesson){
+    if(!Array.isArray(lesson.dialog)) lesson.dialog = [];
+    if(!Array.isArray(lesson.vocab)) lesson.vocab = [];
+    if(!Array.isArray(lesson.phrases)) lesson.phrases = [];
+    if(!Array.isArray(lesson.fill)) lesson.fill = [];
+    if(!Array.isArray(lesson.grammar)) lesson.grammar = [];
+  }
   const w=h("div",{});
   w.appendChild(renderTopNav());
   w.appendChild(h("div",{class:"lang-hero"},
@@ -7746,6 +7755,12 @@ ${trimmedTranscript}`;
   console.log("[LinguaAgent] AI response ("+getLessonModelConfig().label+"): "+rawText.length+" chars");
   const lesson = parseLessonJson(rawText);
   if(!lesson.dialog || lesson.dialog.length===0) throw new Error("Claude nie zwrócił dialogu — spróbuj ponownie z krótszą sceną");
+  // Gardy — gwarantujemy że tablice istnieją, inaczej renderLesson crashuje
+  // przy lesson.vocab.filter / lesson.phrases.forEach → biały ekran po zapisie
+  lesson.vocab = Array.isArray(lesson.vocab) ? lesson.vocab : [];
+  lesson.phrases = Array.isArray(lesson.phrases) ? lesson.phrases : [];
+  lesson.fill = Array.isArray(lesson.fill) ? lesson.fill : [];
+  lesson.grammar = Array.isArray(lesson.grammar) ? lesson.grammar : [];
   // Cache the raw lesson (without id/youtubeId — those are call-specific)
   setCachedLesson(transcript, S.lang, lesson);
   lesson.id="film_"+Date.now(); lesson.type="dialog"; lesson.rawText=transcript;
