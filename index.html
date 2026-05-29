@@ -8018,17 +8018,12 @@ function renderFilmoteka(){
     const cTitleN = normalize(cTitle);
     const cEpisodeN = normalize(cEpisode);
     const sTitleN = normalize(sTitle);
+    // TYLKO jawne powiązania: clipId lub youtubeId. Bez zgadywania po tytule —
+    // tytuły lekcji różnią się od YT, a title-match (a) mylił (false positives),
+    // (b) sprawiał że ⊘ nie odpinał (po usunięciu youtubeId lekcja wracała po tytule).
     const existingForClip = (S.myLessons[lang]||[]).map((les,idx)=>({lesson:les, idx})).filter(({lesson})=>{
       if(lesson.clipId && lesson.clipId === filmClipId) return true;
       if(filmYtId && lesson.youtubeId === filmYtId) return true;
-      const tN = normalize(lesson.title);
-      if(sTitle && cTitleN.length>2){
-        if(lesson.seriesTitle === sTitle && tN.includes(cTitleN)) return true;
-        if(tN.includes(sTitleN) && tN.includes(cTitleN)) return true;
-      }
-      // Also try clip.episode as a match target (e.g. "WHAT IF JOEY HIRED CHANDLER" in episode field)
-      if(cEpisodeN.length>4 && cEpisodeN !== cTitleN && tN.includes(cEpisodeN)) return true;
-      if(cTitleN.length>4 && tN.includes(cTitleN)) return true;
       return false;
     });
     const linkedIds = new Set(existingForClip.map(({lesson})=>lesson.id));
@@ -8469,12 +8464,10 @@ function renderSongs(){
     const normalize=(s)=>(s||"").toLowerCase().replace(/[^a-z0-9ąćęłńóśźż\s]/g,"").replace(/\s+/g," ").trim();
     const cTitleN=normalize(cTitle);
     const sTitleN=normalize(sTitle);
+    // TYLKO jawne powiązania (clipId/youtubeId) — bez zgadywania po tytule
     const existingForClip=(S.myLessons[lang]||[]).map((les,idx)=>({lesson:les, idx})).filter(({lesson})=>{
       if(lesson.clipId && lesson.clipId===filmClipId) return true;
       if(filmYtId && lesson.youtubeId===filmYtId) return true;
-      const tN=normalize(lesson.title);
-      if(sTitle && sTitleN.length>2 && tN.includes(sTitleN)) return true;
-      if(cTitleN.length>4 && tN.includes(cTitleN)) return true;
       return false;
     });
     const linkedIds=new Set(existingForClip.map(({lesson})=>lesson.id));
