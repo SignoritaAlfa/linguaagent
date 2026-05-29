@@ -7592,7 +7592,8 @@ async function regenerateLessonDialog(lesson, lang, opts){
   if(!forceFetch && haveSaved){
     transcript = savedRaw;
     if(isSrtFormat(transcript)) cues = parseSrt(transcript);
-    sourceLabel = "zapisany tekst lekcji" + (cues ? " (SRT, "+cues.length+" cues)" : " ("+savedRaw.length+" znaków)");
+    else cues = parseYouTubeTimestamps(transcript); // też format YT (1:57) → karaoke
+    sourceLabel = "zapisany tekst lekcji" + (cues ? " ("+cues.length+" cues — karaoke)" : " ("+savedRaw.length+" znaków)");
   } else {
     if(!videoId){
       alert("Lekcja nie ma zapisanego tekstu ani linku YouTube — nic do regeneracji"); return;
@@ -7621,6 +7622,7 @@ async function regenerateLessonDialog(lesson, lang, opts){
       } else if(S.rapidKey){
         transcript = await fetchYouTubeTranscript(videoId);
         if(transcript && isSrtFormat(transcript)) cues = parseSrt(transcript);
+        else if(transcript) cues = parseYouTubeTimestamps(transcript);
       } else {
         throw new Error("Skonfiguruj Worker albo klucz RapidAPI w Ustawieniach");
       }
