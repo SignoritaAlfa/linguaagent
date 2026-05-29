@@ -7721,7 +7721,19 @@ async function fetchViaWorker(videoId){
   const langMap = {EN:"en", FR:"fr", IT:"it", NO:"no"};
   const lang = langMap[S.lang] || "en";
   const url = `${base}/?id=${encodeURIComponent(videoId)}&lang=${lang}`;
-  const res = await fetch(url);
+  // Timeout 45s — bez tego fetch wisi w nieskończoność gdy Worker nie odpowiada
+  // (cold start Cloudflare / YouTube blokuje / stara wersja Workera)
+  const ctrl = new AbortController();
+  const timer = setTimeout(()=>ctrl.abort(), 45000);
+  let res;
+  try{
+    res = await fetch(url, {signal: ctrl.signal});
+  }catch(e){
+    if(e.name === "AbortError") throw new Error("Worker nie odpowiedział w 45s — może być uśpiony (cold start) albo niewdrożony. Spróbuj jeszcze raz, albo użyj ręcznego wklejenia transkrypcji (sekcja niżej).");
+    throw new Error("Nie można połączyć z Workerem: "+e.message+". Sprawdź URL w Ustawieniach albo wklej transkrypcję ręcznie.");
+  }finally{
+    clearTimeout(timer);
+  }
   if(!res.ok){
     const body = await res.json().catch(()=>({}));
     throw new Error(body.error || ("Worker HTTP "+res.status));
