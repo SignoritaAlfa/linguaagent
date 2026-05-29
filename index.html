@@ -7484,6 +7484,25 @@ function clearLessonCache(){
   localStorage.removeItem(LESSON_CACHE_KEY);
 }
 
+// JEDNO źródło schematu JSON lekcji dla ścieżek transkrypt/wideo (buildLessonFromTranscript,
+// processTranscriptToLesson, processYouTubeViaGemini). Wcześniej każda miała własny literał
+// i rozjeżdżały się polami. opts.timestamps → dialog z start/end; titleHint/topicHint → meta.
+// (processUpload ma celowo bogatszy schemat: fillSource + rawText + grammar.exercises.)
+function lessonJsonSchema(opts){
+  opts = opts || {};
+  const titleHint = opts.titleHint || "tytuł sceny";
+  const topicHint = opts.topicHint || "temat po polsku";
+  const dlg = opts.timestamps
+    ? '{"s":"imię","l":"tekst","t":"tłumaczenie PL","start":1.23,"end":4.56}'
+    : '{"s":"imię","l":"tekst","t":"tłumaczenie PL"}';
+  return '{"title":"'+titleHint+'","level":"A2","topic":"'+topicHint+'",'+
+    '"dialog":['+dlg+'],'+
+    '"vocab":[{"w":"słowo","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie","exT":"tłumaczenie"}],'+
+    '"phrases":[{"w":"zwrot","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie","exT":"tłumaczenie"}],'+
+    '"fill":[{"s":"zdanie z ___","a":"odp","h":"wskazówka","cat":"text"},{"s":"gramatyczne z ___","a":"odp","h":"wskazówka","cat":"grammar"}],'+
+    '"grammar":[{"rule":"zasada","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie PL"}]}';
+}
+
 // Build a lesson object from a transcript without writing to state — used by
 // regenerate-in-place flow. Returns the parsed lesson without setting filmTranscriptLesson.
 async function buildLessonFromTranscript(transcript, videoId, cues, lang, opts){
@@ -7521,10 +7540,10 @@ DODATKOWE SEKCJE:
   if(cues && cues.length>0){
     const limit = Math.min(cues.length, 1500);
     const formatted = cues.slice(0,limit).map(c=>`[${c.start.toFixed(2)}-${c.end.toFixed(2)}] ${c.text}`).join("\n");
-    PROMPT = `Masz transkrypcję z timestampami w języku ${langNames[lang||S.lang]||"angielski"}. Każda linia: [start-end] tekst (sekundy).\n\nZADANIE:\n1. POŁĄCZ kolejne linie tej samej osoby w jedną kwestię. Zachowaj start pierwszej i end ostatniej.\n2. JEŚLI linia zawiera wypowiedzi DWÓCH+ postaci, ROZDZIEL.\n3. POPRAW INTERPUNKCJĘ I KAPITALIZACJĘ (transkrypcje YT są lowercase).\n4. Rozpoznaj kto mówi UWAŻNIE — Friends: Monica/Chandler/Ross/Joey/Rachel/Phoebe; inne seriale podobnie. Dla nieznanych Speaker1, Speaker2.\n5. Każda kwestia ma "start" i "end" (sekundy float) — KRYTYCZNE dla sync z wideo.\n6. Przetłumacz dialog na polski naturalnie (pole "t").\n7. ${targetLangInstr}.${COMMON_SECTIONS}\n\nOdpowiedz TYLKO czystym JSON bez markdown:\n{"title":"tytuł sceny po ${targetLangLabel}","level":"A2","topic":"temat językowy po ${targetLangLabel}","dialog":[{"s":"imię","l":"tekst","t":"tłumaczenie PL","start":1.23,"end":4.56}],"vocab":[{"w":"słowo","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie","exT":"tłumaczenie"}],"phrases":[{"w":"zwrot","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie","exT":"tłumaczenie"}],"fill":[{"s":"zdanie z ___","a":"odp","h":"wskazówka","cat":"text"}],"grammar":[{"rule":"zasada","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie PL"}]}\n\nTRANSKRYPCJA Z TIMESTAMPAMI:\n${formatted}`;
+    PROMPT = `Masz transkrypcję z timestampami w języku ${langNames[lang||S.lang]||"angielski"}. Każda linia: [start-end] tekst (sekundy).\n\nZADANIE:\n1. POŁĄCZ kolejne linie tej samej osoby w jedną kwestię. Zachowaj start pierwszej i end ostatniej.\n2. JEŚLI linia zawiera wypowiedzi DWÓCH+ postaci, ROZDZIEL.\n3. POPRAW INTERPUNKCJĘ I KAPITALIZACJĘ (transkrypcje YT są lowercase).\n4. Rozpoznaj kto mówi UWAŻNIE — Friends: Monica/Chandler/Ross/Joey/Rachel/Phoebe; inne seriale podobnie. Dla nieznanych Speaker1, Speaker2.\n5. Każda kwestia ma "start" i "end" (sekundy float) — KRYTYCZNE dla sync z wideo.\n6. Przetłumacz dialog na polski naturalnie (pole "t").\n7. ${targetLangInstr}.${COMMON_SECTIONS}\n\nOdpowiedz TYLKO czystym JSON bez markdown:\n${lessonJsonSchema({timestamps:true, titleHint:"tytuł sceny po "+targetLangLabel, topicHint:"temat językowy po "+targetLangLabel})}\n\nTRANSKRYPCJA Z TIMESTAMPAMI:\n${formatted}`;
   } else {
     const trim=transcript.slice(0,40000);
-    PROMPT=`Masz surową transkrypcję w języku ${langNames[lang||S.lang]||"angielski"}. Przerób na lekcję językową.\n\nZASADY: Weź każde zdanie DOSŁOWNIE, NIE skracaj. POPRAW interpunkcję/kapitalizację. Rozpoznaj kto mówi. ${targetLangInstr}.${COMMON_SECTIONS}\n\nOdpowiedz TYLKO czystym JSON bez markdown:\n{"title":"tytuł sceny po ${targetLangLabel}","level":"A2","topic":"temat językowy po ${targetLangLabel}","dialog":[{"s":"imię","l":"tekst","t":"tłumaczenie PL"}],"vocab":[{"w":"słowo","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie","exT":"tłumaczenie"}],"phrases":[{"w":"zwrot","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie","exT":"tłumaczenie"}],"fill":[{"s":"zdanie z ___","a":"odp","h":"wskazówka","cat":"text"}],"grammar":[{"rule":"zasada","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie PL"}]}\n\nTRANSKRYPCJA:\n${trim}`;
+    PROMPT=`Masz surową transkrypcję w języku ${langNames[lang||S.lang]||"angielski"}. Przerób na lekcję językową.\n\nZASADY: Weź każde zdanie DOSŁOWNIE, NIE skracaj. POPRAW interpunkcję/kapitalizację. Rozpoznaj kto mówi. ${targetLangInstr}.${COMMON_SECTIONS}\n\nOdpowiedz TYLKO czystym JSON bez markdown:\n${lessonJsonSchema({timestamps:false, titleHint:"tytuł sceny po "+targetLangLabel, topicHint:"temat językowy po "+targetLangLabel})}\n\nTRANSKRYPCJA:\n${trim}`;
   }
   const rawText = await callLessonModel(PROMPT);
   const newLesson = parseLessonJson(rawText);
@@ -7711,7 +7730,7 @@ ${COMMON_SECTIONS}
 WAŻNE — pole "title": krótki tytuł sceny (max 5 słów) W JĘZYKU ORYGINAŁU (${langNames[S.lang]||"oryginalnym"}), z zachowaniem akcentów (é à ç ø). NIE tłumacz na polski. NIE kopiuj tej instrukcji — wymyśl tytuł na podstawie treści dialogu.
 
 Odpowiedz TYLKO czystym JSON bez markdown:
-{"title":"tytuł sceny","level":"A2","topic":"temat po polsku","dialog":[{"s":"imię","l":"dokładny tekst","t":"tłumaczenie polskie","start":1.23,"end":4.56}],"vocab":[{"w":"pojedyncze słowo","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie z dialogu","exT":"tłumaczenie"}],"phrases":[{"w":"zwrot wielowyrazowy","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie z dialogu","exT":"tłumaczenie"}],"fill":[{"s":"zdanie z ___","a":"odpowiedź","h":"wskazówka PL","cat":"text"},{"s":"gramatyczne z ___","a":"odpowiedź","h":"wskazówka","cat":"grammar"}],"grammar":[{"rule":"zasada","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie PL"}]}
+${lessonJsonSchema({timestamps:true})}
 
 TRANSKRYPCJA Z TIMESTAMPAMI:
 ${formatted}`;
@@ -7727,7 +7746,7 @@ ${COMMON_SECTIONS}
 WAŻNE — pole "title": krótki tytuł sceny (max 5 słów) W JĘZYKU ORYGINAŁU (${langNames[S.lang]||"oryginalnym"}), z zachowaniem akcentów (é à ç ø). NIE tłumacz na polski. NIE kopiuj tej instrukcji — wymyśl tytuł na podstawie treści dialogu.
 
 Odpowiedz TYLKO czystym JSON bez markdown:
-{"title":"tytuł sceny","level":"A2","topic":"temat po polsku","dialog":[{"s":"imię postaci","l":"dokładny tekst z transkrypcji","t":"tłumaczenie polskie"}],"vocab":[{"w":"pojedyncze słowo","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie z dialogu","exT":"tłumaczenie"}],"phrases":[{"w":"zwrot wielowyrazowy","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie z dialogu","exT":"tłumaczenie"}],"fill":[{"s":"zdanie z ___","a":"odpowiedź","h":"wskazówka PL","cat":"text"},{"s":"gramatyczne z ___","a":"odpowiedź","h":"wskazówka","cat":"grammar"}],"grammar":[{"rule":"zasada","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie PL"}]}
+${lessonJsonSchema({timestamps:false})}
 
 TRANSKRYPCJA:
 ${trimmedTranscript}`;
@@ -7829,7 +7848,7 @@ DODATKOWE SEKCJE:
 - grammar: minimum 4 zasady gramatyczne
 
 Odpowiedz TYLKO czystym JSON bez markdown:
-{"title":"tytuł po ${targetLangLabel}","level":"A2","topic":"temat po ${targetLangLabel}","dialog":[{"s":"imię","l":"tekst","t":"tłumaczenie PL","start":1.23,"end":4.56}],"vocab":[{"w":"słowo","tr":"tłumaczenie PL","ipa":"IPA","pl":"wymowa PL","ex":"zdanie","exT":"tłumaczenie"}],"phrases":[{"w":"zwrot","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie","exT":"tłumaczenie"}],"fill":[{"s":"zdanie z ___","a":"odp","h":"wskazówka","cat":"text"}],"grammar":[{"rule":"zasada","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie PL"}]}`;
+${lessonJsonSchema({timestamps:true, titleHint:"tytuł po "+targetLangLabel, topicHint:"temat po "+targetLangLabel})}`;
 
   const cfg = getLessonModelConfig();
   // Wymuszamy Gemini niezależnie od wybranego modelu (tylko Gemini obsługuje YT URL).
