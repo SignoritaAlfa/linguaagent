@@ -7731,8 +7731,10 @@ ZADANIE:
 6. Przetłumacz każdą kwestię na polski naturalnie (nie dosłownie).
 ${COMMON_SECTIONS}
 
+WAŻNE — pole "title": krótki tytuł sceny (max 5 słów) W JĘZYKU ORYGINAŁU (${langNames[S.lang]||"oryginalnym"}), z zachowaniem akcentów (é à ç ø). NIE tłumacz na polski. NIE kopiuj tej instrukcji — wymyśl tytuł na podstawie treści dialogu.
+
 Odpowiedz TYLKO czystym JSON bez markdown:
-{"title":"krótki tytuł sceny W JĘZYKU ORYGINAŁU (${langNames[S.lang]}) — zachowaj oryginalną pisownię i akcenty (é à ç ø itd.), NIE tłumacz na polski","level":"A2","topic":"temat po polsku","dialog":[{"s":"imię","l":"dokładny tekst","t":"tłumaczenie polskie","start":1.23,"end":4.56}],"vocab":[{"w":"pojedyncze słowo","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie z dialogu","exT":"tłumaczenie"}],"phrases":[{"w":"zwrot wielowyrazowy","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie z dialogu","exT":"tłumaczenie"}],"fill":[{"s":"zdanie z ___","a":"odpowiedź","h":"wskazówka PL","cat":"text"},{"s":"gramatyczne z ___","a":"odpowiedź","h":"wskazówka","cat":"grammar"}],"grammar":[{"rule":"zasada","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie PL"}]}
+{"title":"tytuł sceny","level":"A2","topic":"temat po polsku","dialog":[{"s":"imię","l":"dokładny tekst","t":"tłumaczenie polskie","start":1.23,"end":4.56}],"vocab":[{"w":"pojedyncze słowo","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie z dialogu","exT":"tłumaczenie"}],"phrases":[{"w":"zwrot wielowyrazowy","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie z dialogu","exT":"tłumaczenie"}],"fill":[{"s":"zdanie z ___","a":"odpowiedź","h":"wskazówka PL","cat":"text"},{"s":"gramatyczne z ___","a":"odpowiedź","h":"wskazówka","cat":"grammar"}],"grammar":[{"rule":"zasada","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie PL"}]}
 
 TRANSKRYPCJA Z TIMESTAMPAMI:
 ${formatted}`;
@@ -7745,8 +7747,10 @@ NAJWAŻNIEJSZA ZASADA: Weź KAŻDE zdanie z transkrypcji DOSŁOWNIE. NIE zmienia
 POSTACIE: Zidentyfikuj kto mówi na podstawie kontekstu. Dla znanych seriali (np. Friends: Monica, Chandler, Ross, Joey, Rachel, Phoebe) użyj prawdziwych imion. Dla nieznanych użyj Speaker1, Speaker2. Kobiety i mężczyźni muszą być poprawnie rozpoznani.
 ${COMMON_SECTIONS}
 
+WAŻNE — pole "title": krótki tytuł sceny (max 5 słów) W JĘZYKU ORYGINAŁU (${langNames[S.lang]||"oryginalnym"}), z zachowaniem akcentów (é à ç ø). NIE tłumacz na polski. NIE kopiuj tej instrukcji — wymyśl tytuł na podstawie treści dialogu.
+
 Odpowiedz TYLKO czystym JSON bez markdown:
-{"title":"krótki tytuł sceny W JĘZYKU ORYGINAŁU (${langNames[S.lang]}) — zachowaj oryginalną pisownię i akcenty (é à ç ø itd.), NIE tłumacz na polski","level":"A2","topic":"temat po polsku","dialog":[{"s":"imię postaci","l":"dokładny tekst z transkrypcji","t":"tłumaczenie polskie"}],"vocab":[{"w":"pojedyncze słowo","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie z dialogu","exT":"tłumaczenie"}],"phrases":[{"w":"zwrot wielowyrazowy","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie z dialogu","exT":"tłumaczenie"}],"fill":[{"s":"zdanie z ___","a":"odpowiedź","h":"wskazówka PL","cat":"text"},{"s":"gramatyczne z ___","a":"odpowiedź","h":"wskazówka","cat":"grammar"}],"grammar":[{"rule":"zasada","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie PL"}]}
+{"title":"tytuł sceny","level":"A2","topic":"temat po polsku","dialog":[{"s":"imię postaci","l":"dokładny tekst z transkrypcji","t":"tłumaczenie polskie"}],"vocab":[{"w":"pojedyncze słowo","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie z dialogu","exT":"tłumaczenie"}],"phrases":[{"w":"zwrot wielowyrazowy","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie z dialogu","exT":"tłumaczenie"}],"fill":[{"s":"zdanie z ___","a":"odpowiedź","h":"wskazówka PL","cat":"text"},{"s":"gramatyczne z ___","a":"odpowiedź","h":"wskazówka","cat":"grammar"}],"grammar":[{"rule":"zasada","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie PL"}]}
 
 TRANSKRYPCJA:
 ${trimmedTranscript}`;
@@ -8251,12 +8255,15 @@ function renderFilmoteka(){
     else if(filmTranscriptLesson){
       main.appendChild(h("div",{class:"msg-ok",style:"margin-bottom:12px"},"✓ Gotowe! Lekcja \""+filmTranscriptLesson.title+"\" jest gotowa"));
       main.appendChild(h("button",{class:"primary",onclick:()=>{
+        try{
         const _sl=filmTranscriptLesson;
+        // Guards — bez nich crash przy AI zwracającym dziwne pole title (obiekt/undefined)
+        if(typeof _sl.title !== "string" || !_sl.title.trim()) _sl.title = clip?.title || "Lekcja z klipu";
         _sl.source="video";
         _sl.seriesTitle=series?.title||"";
         _sl.clipId=filmClipId;
         _sl.clipTitle=clip?.title||"";
-        if(series?.title&&_sl.title&&!_sl.title.startsWith(series.title)) _sl.title=series.title+" — "+_sl.title;
+        if(series?.title && typeof _sl.title==="string" && !_sl.title.startsWith(series.title)) _sl.title=series.title+" — "+_sl.title;
         // Auto-populate custom clip metadata from AI-generated lesson if fields are empty
         const userFilmEntry = ((S.myFilms[lang])||[]).find(f=>f.id===filmSeries);
         if(userFilmEntry && userFilmEntry.clips){
@@ -8284,6 +8291,10 @@ function renderFilmoteka(){
           }
         }
         saveMyLesson(lang,_sl);set({filmClipId:null,filmYtInput:"",filmYtId:"",filmTranscriptError:"",filmTranscriptLesson:null,filmTranscriptText:"",filmManualPaste:"",filmTranscriptDraft:"",filmTranscriptDraftVideoId:null,screen:"lesson",lesson:_sl,mode:"dialog",lessonTab:"dialog",playing:false,playingLine:-1});
+        }catch(e){
+          console.error("[SaveLesson] crash:", e);
+          alert("Nie udało się zapisać lekcji: "+(e.message||e)+"\n\nLekcja może mieć niekompletne dane od AI. Spróbuj ponownie albo wklej krótszy fragment.");
+        }
       }},"+ Dodaj do Moich Lekcji"));
       main.appendChild(h("button",{style:"background:none;border:none;color:var(--text3);cursor:pointer;font-size:12px;margin-left:16px",onclick:()=>set({filmTranscriptLesson:null,filmYtInput:"",filmYtId:"",filmTranscriptText:""})},"← Spróbuj inny klip"));
     }
@@ -8675,13 +8686,20 @@ function renderSongs(){
     else if(filmTranscriptLesson){
       main.appendChild(h("div",{class:"msg-ok",style:"margin-bottom:12px"},"✓ Gotowe! Lekcja \""+filmTranscriptLesson.title+"\" jest gotowa"));
       main.appendChild(h("button",{class:"primary",onclick:()=>{
+        try{
         const _sl=filmTranscriptLesson;
+        // Guards — bez nich crash przy AI zwracającym dziwne pole title (obiekt/undefined)
+        if(typeof _sl.title !== "string" || !_sl.title.trim()) _sl.title = clip?.title || "Lekcja z klipu";
         _sl.source="video";
         _sl.seriesTitle=series?.title||"";
         _sl.clipId=filmClipId;
         _sl.clipTitle=clip?.title||"";
-        if(series?.title&&_sl.title&&!_sl.title.startsWith(series.title)) _sl.title=series.title+" — "+_sl.title;
+        if(series?.title && typeof _sl.title==="string" && !_sl.title.startsWith(series.title)) _sl.title=series.title+" — "+_sl.title;
         saveMyLesson(lang,_sl);set({filmClipId:null,filmYtInput:"",filmYtId:"",filmTranscriptError:"",filmTranscriptLesson:null,filmTranscriptText:"",filmManualPaste:"",filmTranscriptDraft:"",filmTranscriptDraftVideoId:null,screen:"lesson",lesson:_sl,mode:"dialog",lessonTab:"dialog",playing:false,playingLine:-1});
+        }catch(e){
+          console.error("[SaveLesson] crash:", e);
+          alert("Nie udało się zapisać lekcji: "+(e.message||e)+"\n\nLekcja może mieć niekompletne dane od AI. Spróbuj ponownie albo wklej krótszy fragment.");
+        }
       }},"+ Dodaj do Moich Lekcji"));
       main.appendChild(h("button",{style:"background:none;border:none;color:var(--text3);cursor:pointer;font-size:12px;margin-left:16px",onclick:()=>set({filmTranscriptLesson:null,filmYtInput:"",filmYtId:"",filmTranscriptText:""})},"← Spróbuj inną piosenkę"));
     }
