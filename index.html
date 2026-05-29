@@ -9259,20 +9259,42 @@ function render(){
   const stillKaraoke = S.screen==="lesson" && S.lessonTab==="dialog" && S.lesson && S.lesson.youtubeId && S.lesson.dialog && typeof (S.lesson.dialog[0]||{}).start === "number";
   if(!stillKaraoke && _ytPlayer) destroyYtPlayer();
   const root=document.getElementById("root");
-  root.innerHTML="";
   const{screen}=S;
-  if(screen==="home")root.appendChild(renderHome());
-  else if(screen==="lang")root.appendChild(renderLang());
-  else if(screen==="lesson")root.appendChild(renderLesson());
-  else if(screen==="practice")root.appendChild(renderPractice());
-  else if(screen==="results")root.appendChild(renderResults());
-  else if(screen==="settings")root.appendChild(renderSettings());
-  else if(screen==="audiomgr")root.appendChild(renderAudioMgr());
-  else if(screen==="filmoteka")root.appendChild(renderFilmoteka());
-  else if(screen==="songs")root.appendChild(renderSongs());
-  else if(screen==="mywords")root.appendChild(renderMyWords());
-  else if(screen==="myphrases")root.appendChild(renderMyPhrases());
-  else if(screen==="translate")root.appendChild(renderTranslate());
+  // Buduj nowy widok ZANIM wyczyścimy root. Gdyby render* rzucił wyjątek,
+  // root zostaje nietknięty (poprzedni ekran), a nie pusty (biały ekran).
+  let node;
+  try{
+    if(screen==="home")node=renderHome();
+    else if(screen==="lang")node=renderLang();
+    else if(screen==="lesson")node=renderLesson();
+    else if(screen==="practice")node=renderPractice();
+    else if(screen==="results")node=renderResults();
+    else if(screen==="settings")node=renderSettings();
+    else if(screen==="audiomgr")node=renderAudioMgr();
+    else if(screen==="filmoteka")node=renderFilmoteka();
+    else if(screen==="songs")node=renderSongs();
+    else if(screen==="mywords")node=renderMyWords();
+    else if(screen==="myphrases")node=renderMyPhrases();
+    else if(screen==="translate")node=renderTranslate();
+  }catch(e){
+    console.error("[render] crash na ekranie '"+screen+"':", e);
+    // Zamiast białego ekranu — pokaż czytelny błąd z możliwością powrotu.
+    const err=document.createElement("div");
+    err.style.cssText="max-width:680px;margin:60px auto;padding:24px;font-family:'DM Sans',sans-serif;line-height:1.6";
+    err.innerHTML='<div style="font-size:32px;margin-bottom:12px">⚠️</div>'+
+      '<div style="font-size:18px;font-weight:600;margin-bottom:8px">Coś poszło nie tak przy renderowaniu ekranu „'+screen+'"</div>'+
+      '<div style="font-size:13px;color:#888;margin-bottom:16px">Dane lekcji/ekranu mogą być niekompletne. To nie kasuje Twoich zapisanych danych.</div>'+
+      '<pre style="font-size:11px;background:#1a1a1a;color:#ff9;padding:12px;border-radius:6px;overflow:auto;white-space:pre-wrap">'+
+        ((e&&e.message)||String(e))+'\n\n'+((e&&e.stack)||"").split("\n").slice(0,6).join("\n")+'</pre>';
+    const back=document.createElement("button");
+    back.textContent="← Wróć do strony głównej";
+    back.style.cssText="margin-top:16px;padding:10px 18px;cursor:pointer;border:1px solid #888;background:none;color:inherit;border-radius:4px";
+    back.onclick=()=>set({screen:"home"});
+    err.appendChild(back);
+    node=err;
+  }
+  root.innerHTML="";
+  if(node)root.appendChild(node);
 }
 
 window.speechSynthesis.onvoiceschanged=()=>{};
