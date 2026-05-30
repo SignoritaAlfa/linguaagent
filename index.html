@@ -1968,8 +1968,8 @@ function buildSyncPayload(){
     filmClipUrls: S.filmClipUrls,
     workerUrl: S.workerUrl || "",
     srs: S.srs,
-    wordStatus: JSON.parse(localStorage.getItem("lingua_word_status")||"{}"),
-    phraseStatus: JSON.parse(localStorage.getItem("lingua_phrase_status")||"{}"),
+    wordStatus: safeParseLS("lingua_word_status", {}),
+    phraseStatus: safeParseLS("lingua_phrase_status", {}),
     claudeKey: S.claudeKey || "",
     geminiKey: S.geminiKey || "",
     rapidKey: S.rapidKey || "",
@@ -2517,6 +2517,19 @@ function getLocalStorageUsageKB(){
     total += (k.length + v.length) * 2;
   }
   return Math.round(total/1024);
+}
+
+// Bezpieczny odczyt+parse z localStorage — uszkodzony/obcięty JSON nie wywraca wołającego
+// (np. buildSyncPayload przy synchronizacji z Drive). Zwraca fallback zamiast rzucać.
+function safeParseLS(key, fallback){
+  try{
+    const raw = localStorage.getItem(key);
+    if(raw == null) return fallback;
+    return JSON.parse(raw);
+  }catch(e){
+    console.warn("[LinguaAgent] uszkodzony JSON w localStorage '"+key+"' — używam wartości domyślnej");
+    return fallback;
+  }
 }
 
 function safeSetItem(key, value){
@@ -3749,68 +3762,6 @@ async function playDialogWithAudio(dialog, lang, lessonId){
     if(firstIsFemale && la.female) playAudio(la.female);
     else if(la.male) playAudio(la.male);
     return;
-  }
-}
-
-async function processFilm(){
-  set({filmProcessing:true, filmError:""});
-  const lang = S.filmLang;
-  const langNames = {EN:"angielskim",FR:"francuskim",IT:"włoskim",NO:"norweskim"};
-  const langName = langNames[lang];
-  const file = S.filmFile;
-  const isVideo = file.type.startsWith("video/");
-  const PROMPT = `Jesteś ekspertem od nauki języków. Przeanalizuj ten fragment ${isVideo?"wideo":"audio"} w języku ${langName} i stwórz z niego kompletną lekcję językową.
-Transkrybuj DOKŁADNIE wszystkie wypowiedzi które słyszysz. Zidentyfikuj mówców (użyj imion jeśli je znasz, lub Osoba1/Osoba2).
-Pole "rawText": pełna dosłowna transkrypcja całego nagrania w języku oryginału, w kolejności wypowiedzi, bez tłumaczeń i komentarzy. Każda wypowiedź mówcy = osobna linia (użyj \n między wypowiedziami). Nie sklejaj wszystkiego w jeden ciąg. Włącz każde zdanie które słyszysz.
-
-Odpowiedz TYLKO czystym JSON (bez markdown, bez komentarzy):
-{"title":"tytuł sceny np. Friends S01E01 - scena w kawiarni","level":"A2","topic":"temat lekcji po polsku","rawText":"pełna dosłowna transkrypcja nagrania","dialog":[{"s":"imię/nazwa postaci","l":"dokładny tekst w języku obcym","t":"naturalne tłumaczenie po polsku"}],"vocab":[{"w":"ważny zwrot z sceny","tr":"tłumaczenie","ipa":"wymowa IPA","pl":"wymowa dla Polaków","ex":"zdanie z fragmentu","exT":"tłumaczenie"}],"fill":[{"s":"zdanie z ___ luką","a":"brakujące słowo","h":"wskazówka po polsku","cat":"text"},{"s":"gramatyczne z ___","a":"odpowiedź","h":"wskazówka","cat":"grammar"}],"grammar":[{"rule":"zasada gramatyczna widoczna w scenie","ex":"przykład z fragmentu","exT":"tłumaczenie","note":"wyjaśnienie po polsku"}]}`;
-
-  try{
-    // Convert file to base64
-    const b64 = (await fileToDataUrl(file)).split(",")[1];
-    const mediaType = file.type || (isVideo ? "video/mp4" : "audio/mpeg");
-
-    const parts = [
-      {inline_data:{mime_type:mediaType, data:b64}},
-      {text:PROMPT}
-    ];
-
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${S.geminiKey}`,{
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({contents:[{parts}]})
-    });
-    if(!res.ok){
-      const err = await res.json().catch(()=>({}));
-      throw new Error((err.error?.message)||"API "+res.status);
-    }
-    const data = await res.json();
-    const text = data.candidates[0].content.parts[0].text;
-    const clean = text.replace(/```json|```/g,"").trim();
-    const json = JSON.parse(clean);
-    const lessonId = "film_"+Date.now();
-    json.id = lessonId;
-    json.type = "dialog";
-    json.fromFilm = true;
-    json.source = "video";
-    json.hasVideo = isVideo;
-
-    // Save video to IndexedDB if it's a video file
-    if(isVideo){
-      const videoKey = "video_"+lessonId;
-      await saveVideo(videoKey, file);
-      const lv = Object.assign({}, S.lessonVideos);
-      lv[lessonId] = videoKey;
-      safeSetItem("lingua_lesson_videos", JSON.stringify(lv));
-      set({lessonVideos:lv});
-    }
-
-    saveMyLesson(lang, json);
-    set({filmProcessing:false, filmFile:null, filmUploadStep:3});
-  } catch(e){
-    console.error("processFilm error:", e);
-    set({filmProcessing:false, filmError:"Błąd: "+e.message});
   }
 }
 
@@ -9339,6 +9290,20 @@ setTimeout(render,50);
 setTimeout(()=>driveSilentReconnect(0),800);
 // Ostrzeżenie o localStorage quota — odpalamy po renderze, żeby banner się pokazał na żywej stronie
 setTimeout(checkStorageQuota, 1500);
+
+// Siatka na "ciche" błędy w tle: odrzucone Promisy z handlerów AI bez .catch (oraz inne
+// globalne wyjątki async). Nie blokuje — loguje i, jeśli to nie zwykłe przerwanie (Abort),
+// pokazuje krótki baner zamiast po cichu nic nie zrobić.
+window.addEventListener("unhandledrejection", (ev)=>{
+  const r = ev.reason;
+  const msg = (r && (r.message || (r.toString && r.toString()))) || String(r);
+  if(/AbortError|aborted|The user aborted/i.test(msg)) return;
+  console.error("[unhandledrejection]", r);
+  if(typeof showRegenStatus === "function"){
+    showRegenStatus("⚠️ Błąd w tle: "+String(msg).slice(0,160), "error");
+    setTimeout(()=>document.querySelectorAll('.regen-status-banner').forEach(el=>el.remove()), 7000);
+  }
+});
 
 </script>
 </body>
