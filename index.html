@@ -4229,40 +4229,27 @@ function renderLang(){
     }
   });
   function renderLessonRow(lesson,idx){
-    const row=h("div",{class:"my-lesson-row"});
-    const info=h("div",{
-      class:"my-lesson-info",
-      style:"cursor:pointer;transition:opacity .15s",
-      title:"Otwórz lekcję",
-      onclick:()=>set({screen:"lesson",lesson,mode:"dialog",lessonTab:"dialog",playing:false,playingLine:-1})
-    });
-    info.onmouseover=()=>{info.style.opacity="0.85";};
-    info.onmouseout=()=>{info.style.opacity="1";};
-    const titleRow = h("div",{style:"display:flex;align-items:baseline;gap:8px"});
-    titleRow.appendChild(h("div",{class:"my-lesson-title"},lesson.title||"Bez tytułu"));
-    const renameBtn = h("button",{
-      style:"background:none;border:1px solid transparent;cursor:pointer;font-size:11px;color:var(--text3);padding:2px 6px;border-radius:4px;transition:all .15s",
-      title:"Zmień nazwę lekcji",
-      onclick:(e)=>{e.stopPropagation();renameLesson(lang, idx);}
-    },"✏");
+    const row=h("div",{style:"border-bottom:1px solid var(--border);padding:10px 4px"});
+    // Kompaktowy nagłówek — klik rozwija pasek akcji (oszczędność miejsca przy wielu lekcjach)
+    const header=h("div",{style:"display:flex;align-items:center;gap:10px;cursor:pointer"});
+    const chevron=h("div",{style:"font-size:10px;color:var(--text3);width:12px;flex-shrink:0"},"▶");
+    header.appendChild(chevron);
+    header.appendChild(h("div",{class:"my-lesson-title",style:"flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"},lesson.title||"Bez tytułu"));
+    if(lesson.level) header.appendChild(h("span",{style:"font-size:10px;letter-spacing:.04em;color:var(--text2);background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:1px 8px;flex-shrink:0"},lesson.level));
+    header.appendChild(h("div",{style:"font-size:11px;color:var(--text3);flex-shrink:0;white-space:nowrap"},(lesson.vocab||[]).length+" słówek · "+(lesson.dialog||[]).length+" linii"));
+    const renameBtn=h("button",{style:"background:none;border:1px solid transparent;cursor:pointer;font-size:11px;color:var(--text3);padding:2px 6px;border-radius:4px;flex-shrink:0",title:"Zmień nazwę lekcji",onclick:(e)=>{e.stopPropagation();renameLesson(lang, idx);}},"✏");
     renameBtn.onmouseover=()=>{renameBtn.style.borderColor="var(--gold)";renameBtn.style.color="var(--gold)";};
     renameBtn.onmouseout=()=>{renameBtn.style.borderColor="transparent";renameBtn.style.color="var(--text3)";};
-    titleRow.appendChild(renameBtn);
-    info.appendChild(titleRow);
-    info.appendChild(h("div",{class:"my-lesson-meta"},(lesson.level||"")+" · "+(lesson.vocab||[]).length+" słówek · "+(lesson.dialog||[]).length+" linii"));
-    row.appendChild(info);
-    const acts=h("div",{class:"my-lesson-actions"});
-    acts.appendChild(h("button",{class:"sbtn",onclick:()=>set({screen:"lesson",lesson,mode:"dialog",playing:false,playingLine:-1})},"Dialog"));
-    acts.appendChild(h("button",{class:"sbtn",onclick:()=>{
-      if(lesson.vocab&&lesson.vocab.length>0) startPractice(lesson,"flashcard");
-      else alert("Brak słówek w tej lekcji");
-    }},"Fiszki"));
-    acts.appendChild(h("button",{class:"sbtn",onclick:()=>{
-      if(lesson.fill&&lesson.fill.length>0) startPractice(lesson,"fill");
-      else alert("Brak ćwiczeń w tej lekcji");
-    }},"Ćwiczenia"));
-    acts.appendChild(h("button",{class:"sbtn",onclick:()=>startQuiz(lesson)},"Quiz"));
-    acts.appendChild(h("button",{class:"sbtn",onclick:()=>startBuild(lesson)},"Buduj"));
+    header.appendChild(renameBtn);
+    row.appendChild(header);
+    // Pasek akcji — ukryty do kliknięcia, małe ikonki z tooltipami (title)
+    const acts=h("div",{style:"display:none;align-items:center;gap:6px;flex-wrap:wrap;margin-top:10px;padding-left:22px"});
+    const iconBtn=(icon,label,onclick,extra)=>h("button",{class:"sbtn",style:"padding:6px 11px;font-size:15px;line-height:1"+(extra||""),title:label,onclick},icon);
+    acts.appendChild(iconBtn("💬","Otwórz lekcję / Dialog",()=>set({screen:"lesson",lesson,mode:"dialog",lessonTab:"dialog",playing:false,playingLine:-1})));
+    acts.appendChild(iconBtn("🃏","Fiszki",()=>{ if(lesson.vocab&&lesson.vocab.length>0) startPractice(lesson,"flashcard"); else alert("Brak słówek w tej lekcji"); }));
+    acts.appendChild(iconBtn("✏️","Ćwiczenia",()=>{ if(lesson.fill&&lesson.fill.length>0) startPractice(lesson,"fill"); else alert("Brak ćwiczeń w tej lekcji"); }));
+    acts.appendChild(iconBtn("❓","Quiz",()=>startQuiz(lesson)));
+    acts.appendChild(iconBtn("🧩","Buduj zdania",()=>startBuild(lesson)));
     // Folder selector
     const folderSel=h("select",{
       style:"padding:6px 10px;border:1px solid var(--border);background:var(--surface);font-size:11px;color:var(--text2);cursor:pointer;border-radius:2px;font-family:inherit",
@@ -4281,8 +4268,10 @@ function renderLang(){
       folderSel.appendChild(opt);
     });
     acts.appendChild(folderSel);
-    acts.appendChild(h("button",{class:"sbtn",style:"border-color:var(--red);color:var(--red)",onclick:()=>{if(confirm("Usunąć?"))deleteMyLesson(lang,idx);}},"✕"));
+    acts.appendChild(iconBtn("🗑","Usuń lekcję",()=>{ if(confirm("Usunąć tę lekcję?")) deleteMyLesson(lang,idx); },";border-color:var(--red);color:var(--red)"));
     row.appendChild(acts);
+    // Klik w nagłówek rozwija/zwija pasek akcji
+    header.onclick=()=>{ const open = acts.style.display !== "none"; acts.style.display = open ? "none" : "flex"; chevron.textContent = open ? "▶" : "▼"; };
     return row;
   }
   function renderSectionHead(folderKey, icon, label, count, actions){
