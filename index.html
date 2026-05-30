@@ -2749,11 +2749,15 @@ async function autoFillClipFromUrl(seriesTitle, langCode){
   set({addClipAutoFilling:true});
   try{
     const meta = await fetchClipMetadataSuggestion(url, seriesTitle, langCode);
+    // AI bywa, że zwraca topic/desc jako TABLICĘ (np. ["Humour","Conflit"]). Pola formularza
+    // i handler "Zapisz klip" robią .trim() → na tablicy to TypeError → przycisk "nic nie robi".
+    // Sprowadzamy każde pole do stringa (tablicę sklejamy przecinkami).
+    const _s = v => Array.isArray(v) ? v.join(", ") : (v == null ? "" : String(v));
     set({
-      addClipTitle: meta.title || S.addClipTitle,
-      addClipEpisode: meta.episode || S.addClipEpisode,
-      addClipDesc: meta.desc || S.addClipDesc,
-      addClipTopic: meta.topic || S.addClipTopic,
+      addClipTitle: _s(meta.title) || S.addClipTitle,
+      addClipEpisode: _s(meta.episode) || S.addClipEpisode,
+      addClipDesc: _s(meta.desc) || S.addClipDesc,
+      addClipTopic: _s(meta.topic) || S.addClipTopic,
       addClipAutoFilling: false
     });
   }catch(e){
@@ -8354,15 +8358,19 @@ function renderFilmoteka(){
       acw.appendChild(acEp);acw.appendChild(acTi);acw.appendChild(acDe);acw.appendChild(acTo);
       acw.appendChild(h("div",{style:"display:flex;gap:8px"},
         h("button",{class:"primary",style:"font-size:12px;padding:8px 16px",onclick:()=>{
-          if(!(S.addClipTitle||"").trim()){
+          // Każde pole sprowadź do stringa — AI/auto-fill mogło wstawić tablicę,
+          // a .trim() na tablicy rzuca TypeError (przycisk wtedy "nic nie robi").
+          const _s = v => Array.isArray(v) ? v.join(", ") : (v == null ? "" : String(v));
+          const clipTitle = _s(S.addClipTitle).trim();
+          if(!clipTitle){
             alert("Wpisz tytuł klipu — to pole wymagane (np. „Kłótnia przy stole\").");
             return;
           }
           const newClipId = "clip_"+Date.now();
           // BUG FIX: chwytaj URL PRZED addClipToMyFilm — funkcja resetuje S.addClipUrl
           // w środku przez set(), więc warunek if(S.addClipUrl) potem zawsze fail.
-          const urlToSave = (S.addClipUrl||"").trim();
-          addClipToMyFilm(lang,series.id,{id:newClipId,episode:S.addClipEpisode||"Clip",title:S.addClipTitle.trim(),level:series.level||"A2",topic:(S.addClipTopic||"").trim(),desc:(S.addClipDesc||"").trim(),ytSearch:series.title+" "+S.addClipTitle.trim()});
+          const urlToSave = _s(S.addClipUrl).trim();
+          addClipToMyFilm(lang,series.id,{id:newClipId,episode:_s(S.addClipEpisode)||"Clip",title:clipTitle,level:series.level||"A2",topic:_s(S.addClipTopic).trim(),desc:_s(S.addClipDesc).trim(),ytSearch:series.title+" "+clipTitle});
           if(urlToSave) saveFilmClipUrl(newClipId, urlToSave);
         }},"Zapisz klip"),
         h("button",{class:"sbtn",style:"font-size:12px;padding:8px 16px",onclick:()=>set({showAddClip:false})},"Anuluj")
