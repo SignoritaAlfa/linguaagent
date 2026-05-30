@@ -4303,7 +4303,10 @@ function renderLang(){
   function renderFolderHead(folderName, count){
     const renameBtn = h("button",{class:"sbtn",style:"padding:4px 10px;font-size:11px",onclick:(e)=>{e.stopPropagation();renameFolder(lang,folderName);}},"✏ Zmień nazwę");
     const deleteBtn = h("button",{class:"sbtn",style:"padding:4px 10px;font-size:11px;border-color:var(--red);color:var(--red)",onclick:(e)=>{e.stopPropagation();deleteFolder(lang,folderName);}},"✕ Usuń folder");
-    return renderSectionHead("folder:"+folderName, "📁", folderName, count, [renameBtn, deleteBtn]);
+    // Granatowa ikona folderu — emoji 📁 ignoruje CSS color, więc używamy SVG.
+    const folderIcon = h("span",{style:"display:inline-flex;align-items:center"});
+    folderIcon.innerHTML = '<svg width="17" height="17" viewBox="0 0 24 24" fill="#1e3a8a" aria-hidden="true"><path d="M10 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V8c0-1.1-.9-2-2-2h-8l-2-2z"/></svg>';
+    return renderSectionHead("folder:"+folderName, folderIcon, folderName, count, [renameBtn, deleteBtn]);
   }
   // Render foldery wg scope: any → top, video → sekcja video, text → sekcja text
   function renderFolderBlock(f){
