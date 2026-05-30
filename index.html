@@ -613,15 +613,6 @@ async function loadSourceFile(lessonId){
     r.onerror = e=>rej(e.target.error);
   });
 }
-async function saveVideo(key,blob){
-  const db=await openDB();
-  return new Promise((res,rej)=>{
-    const tx=db.transaction(STORE,"readwrite");
-    tx.objectStore(STORE).put(blob,key);
-    tx.oncomplete=()=>res();
-    tx.onerror=e=>rej(e.target.error);
-  });
-}
 async function loadVideo(key){
   const db=await openDB();
   return new Promise((res,rej)=>{
@@ -3154,9 +3145,9 @@ function renderAIGenerateButton(lesson, lang, type){
         const cb = document.createElement("input"); cb.type="checkbox"; cb.style.cssText="width:16px;height:16px;accent-color:var(--gold);cursor:pointer;margin-top:4px";
         cb.onchange = ()=>{ if(cb.checked) selected.add(i); else selected.delete(i); };
         const left = document.createElement("div");
-        left.innerHTML = `<div style="font-weight:500;font-size:14px">${item.w}</div><div style="font-family:monospace;font-size:11px;color:var(--text3)">${item.ipa||""}</div>`;
+        left.innerHTML = `<div style="font-weight:500;font-size:14px">${item.w||""}</div><div style="font-family:monospace;font-size:11px;color:var(--text3)">${item.ipa||""}</div>`;
         const right = document.createElement("div");
-        right.innerHTML = `<div style="color:var(--gold);font-size:13px">${item.tr}</div><div style="font-size:11px;color:var(--text3);font-style:italic">${item.ex||""}</div>`;
+        right.innerHTML = `<div style="color:var(--gold);font-size:13px">${item.tr||""}</div><div style="font-size:11px;color:var(--text3);font-style:italic">${item.ex||""}</div>`;
         const addOne = document.createElement("button");
         addOne.textContent = "+";
         addOne.style.cssText = "background:none;border:1px solid var(--gold);color:var(--gold);border-radius:4px;width:30px;height:28px;cursor:pointer;font-size:14px";
@@ -6104,9 +6095,9 @@ function renderLesson(){
             };
             cbCol.appendChild(checkbox);
             const left=document.createElement("div");
-            left.innerHTML=`<div style="font-weight:500;color:var(--text);font-size:14px">${item.w}</div><div style="font-family:monospace;font-size:11px;color:var(--text3)">${item.ipa||""}</div><div style="font-size:11px;color:var(--text3)">${item.pl||""}</div>`;
+            left.innerHTML=`<div style="font-weight:500;color:var(--text);font-size:14px">${item.w||""}</div><div style="font-family:monospace;font-size:11px;color:var(--text3)">${item.ipa||""}</div><div style="font-size:11px;color:var(--text3)">${item.pl||""}</div>`;
             const right=document.createElement("div");
-            right.innerHTML=`<div style="color:var(--gold);font-size:13px">${item.tr}</div><div style="font-size:12px;color:var(--text3);font-style:italic;margin-top:2px">${item.ex||""}</div>`;
+            right.innerHTML=`<div style="color:var(--gold);font-size:13px">${item.tr||""}</div><div style="font-size:12px;color:var(--text3);font-style:italic;margin-top:2px">${item.ex||""}</div>`;
             const addBtn=document.createElement("button");
             addBtn.textContent="+";
             addBtn.title = type==="phrases" ? "Dodaj do zwrotów lekcji" : "Dodaj do fiszek lekcji";
