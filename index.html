@@ -2702,6 +2702,32 @@ function moveLessonToFolder(lang, lessonIdx, folderName){
   scheduleDriveSync();
 }
 
+// Zmiana kolejności lekcji (▲/▼) w obrębie jej sekcji/folderu — zamienia z najbliższym
+// sąsiadem należącym do tej samej grupy (folder / „z filmów" / „z tekstów"), żeby ruch
+// był intuicyjny zgodnie z tym, co user widzi. dir=-1 w górę, dir=+1 w dół.
+function moveLessonOrder(lang, idx, dir){
+  const arr = (S.myLessons[lang]||[]);
+  if(!arr[idx]) return;
+  const folders = getFolders(lang);
+  const groupKey = (l)=>{
+    if(l.folder && folders.some(f=>f.name===l.folder)) return "folder:"+l.folder;
+    return isVideoLesson(l) ? "video" : "text";
+  };
+  const myKey = groupKey(arr[idx]);
+  let target = -1;
+  if(dir < 0){ for(let i=idx-1;i>=0;i--){ if(groupKey(arr[i])===myKey){ target=i; break; } } }
+  else { for(let i=idx+1;i<arr.length;i++){ if(groupKey(arr[i])===myKey){ target=i; break; } } }
+  if(target < 0) return; // już na skraju swojej grupy
+  const ml = Object.assign({}, S.myLessons);
+  const a = (ml[lang]||[]).slice();
+  const tmp = a[idx]; a[idx] = a[target]; a[target] = tmp;
+  ml[lang] = a;
+  S.myLessons = ml;
+  safeSetItem("lingua_my_lessons", JSON.stringify(ml));
+  scheduleDriveSync();
+  render();
+}
+
 function saveMyFilm(lang, film){
   const mf=Object.assign({},S.myFilms);
   if(!mf[lang]) mf[lang]=[];
@@ -4299,6 +4325,9 @@ function renderLang(){
     info.appendChild(h("div",{class:"my-lesson-meta"},(lesson.level||"")+" · "+(lesson.vocab||[]).length+" słówek · "+(lesson.dialog||[]).length+" linii"));
     row.appendChild(info);
     const acts=h("div",{class:"my-lesson-actions"});
+    // Zmiana kolejności w obrębie sekcji/folderu
+    acts.appendChild(h("button",{class:"sbtn",style:"padding:6px 9px",title:"Przesuń wyżej",onclick:(e)=>{e.stopPropagation();moveLessonOrder(lang, idx, -1);}},"▲"));
+    acts.appendChild(h("button",{class:"sbtn",style:"padding:6px 9px",title:"Przesuń niżej",onclick:(e)=>{e.stopPropagation();moveLessonOrder(lang, idx, 1);}},"▼"));
     acts.appendChild(h("button",{class:"sbtn",onclick:()=>set({screen:"lesson",lesson,mode:"dialog",playing:false,playingLine:-1})},"Dialog"));
     acts.appendChild(h("button",{class:"sbtn",onclick:()=>{
       if(lesson.vocab&&lesson.vocab.length>0) startPractice(lesson,"flashcard");
