@@ -3814,9 +3814,35 @@ Odpowiedz TYLKO czystym JSON (bez markdown, bez komentarzy):
   }
 }
 
+// Sanityzacja danych lekcji od AI. Pola, na których robimy .split/.trim/.toLowerCase/.replace
+// (dialog l/s/t, fill s/a/h, vocab/phrases w/tr/...) MUSZĄ być stringami — AI bywa zwraca je
+// jako obiekt/tablicę/liczbę → TypeError. renderLesson miał gwardy tylko na dialog; tryby
+// ćwiczeń (fill/build/quiz) szły na surowych danych i crashowały. Jedno wspólne miejsce.
+function normalizeLessonData(lesson){
+  if(!lesson || typeof lesson!=="object") return lesson;
+  const s = v => Array.isArray(v) ? v.join(" ") : (v==null ? "" : (typeof v==="string"?v:String(v)));
+  if(!Array.isArray(lesson.dialog)) lesson.dialog=[];
+  lesson.dialog = lesson.dialog
+    .map(d => (typeof d==="string") ? {l:d} : (d&&typeof d==="object"?d:{}))
+    .map(d => { const n=Object.assign({},d); n.l=s(d.l); n.s=s(d.s); n.t=s(d.t); return n; })
+    .filter(d => d.l||d.s||d.t);
+  if(!Array.isArray(lesson.fill)) lesson.fill=[];
+  lesson.fill = lesson.fill
+    .filter(f => f && typeof f==="object")
+    .map(f => { const n=Object.assign({},f); n.s=s(f.s); n.a=s(f.a); n.h=s(f.h); n.cat=s(f.cat)||"text"; return n; });
+  ["vocab","phrases"].forEach(k=>{
+    if(!Array.isArray(lesson[k])) lesson[k]=[];
+    lesson[k]=lesson[k].filter(x=>x&&typeof x==="object").map(x=>{ const n=Object.assign({},x);
+      n.w=s(x.w); n.tr=s(x.tr); n.ipa=s(x.ipa); n.pl=s(x.pl); n.ex=s(x.ex); n.exT=s(x.exT); return n; });
+  });
+  if(!Array.isArray(lesson.grammar)) lesson.grammar=[];
+  return lesson;
+}
+
 function startPractice(lesson,mode,origin){
   // mode: "flashcard" | "fill" | "writing" | "dictation"
   // origin: "lesson" | "mywords" | "myphrases" — dokąd wracać przy "← Wstecz"
+  normalizeLessonData(lesson);
   let cards;
   if(mode==="fill") cards = lesson.fill;
   else cards = lesson.vocab; // flashcard, writing, dictation
@@ -4042,9 +4068,17 @@ function h(tag,props,...ch){
     else el.setAttribute(k,v);
   }
   for(const c of ch){
-    if(c==null)continue;
-    if(typeof c==="string")el.appendChild(document.createTextNode(c));
-    else el.appendChild(c);
+    if(c==null||c===false)continue;
+    if(typeof c==="string"||typeof c==="number"||typeof c==="boolean"){
+      el.appendChild(document.createTextNode(String(c)));
+    } else if(c instanceof Node){
+      el.appendChild(c);
+    } else {
+      // Nie-Node (np. tablica, obiekt, liczba zwrócona przez pomyłkę) — zamiast crashować
+      // cały render (appendChild rzuca "parameter 1 is not of type Node"), wstaw tekstem.
+      // To było źródło ekranu błędu w renderSongs (song.year jako liczba).
+      try{ el.appendChild(document.createTextNode(String(c))); }catch(_){}
+    }
   }
   return el;
 }
@@ -5230,27 +5264,9 @@ function renderLesson(){
   const{lesson,lang,mode,playing,playingLine}=S;
   // Ostatnia obrona przed białym ekranem: jeśli lesson brakuje któregoś pola
   // (AI zwrócił niekompletny JSON), domknij defaultami zamiast crashować render
-  if(lesson){
-    if(!Array.isArray(lesson.dialog)) lesson.dialog = [];
-    if(!Array.isArray(lesson.vocab)) lesson.vocab = [];
-    if(!Array.isArray(lesson.phrases)) lesson.phrases = [];
-    if(!Array.isArray(lesson.fill)) lesson.fill = [];
-    if(!Array.isArray(lesson.grammar)) lesson.grammar = [];
-    // Każda kwestia dialogu MUSI mieć string l/s/t — oba renderery robią line.l.split()
-    // i speak(line.l). Gdy AI zwróci kwestię bez "l" (albo l jako obiekt/liczba),
-    // .split rzuca TypeError → biały ekran. Normalizujemy w jednym miejscu i usuwamy
-    // kwestie zupełnie puste. (To była przyczyna crashu "Dodaj do Moich Lekcji" — Le Prénom.)
-    const _toStr = v => (typeof v === "string") ? v : (v == null ? "" : String(v));
-    lesson.dialog = lesson.dialog
-      .map(d => {
-        if(typeof d === "string") d = { l: d };
-        if(!d || typeof d !== "object") d = {};
-        const n = Object.assign({}, d);
-        n.l = _toStr(d.l); n.s = _toStr(d.s); n.t = _toStr(d.t);
-        return n;
-      })
-      .filter(d => d.l || d.s || d.t);
-  }
+  // Sanityzacja danych lekcji od AI (dialog/fill/vocab/phrases → stringi). Jedno wspólne
+  // miejsce — ta sama funkcja chroni też tryby ćwiczeń (startPractice/startBuild/startQuiz).
+  if(lesson) normalizeLessonData(lesson);
   const w=h("div",{});
   w.appendChild(renderTopNav());
   w.appendChild(h("div",{class:"lang-hero"},
@@ -8818,6 +8834,7 @@ function getDueWords(lang){
 
 // ── B4: QUIZ ────────────────────────────────────────────────────────────────
 function startQuiz(lesson){
+  normalizeLessonData(lesson);
   if(!lesson.vocab||lesson.vocab.length<4){alert("Potrzeba minimum 4 słówek do quizu");return;}
   const cards=lesson.vocab.map((v,i)=>{
     const others=lesson.vocab.filter((_,j)=>j!==i);
@@ -8833,6 +8850,7 @@ function startQuiz(lesson){
 
 // ── B5: SENTENCE BUILDER ────────────────────────────────────────────────────
 function startBuild(lesson){
+  normalizeLessonData(lesson);
   if(!lesson.dialog||lesson.dialog.length<3){alert("Za mało dialogu do układania zdań");return;}
   const cards=lesson.dialog.filter(d=>d.l.split(/\s+/).length>=4&&d.l.split(/\s+/).length<=15).slice(0,10).map(d=>{
     const words=d.l.replace(/[.,!?;:]/g,"").split(/\s+/).filter(Boolean);
