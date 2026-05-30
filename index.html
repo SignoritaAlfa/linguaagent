@@ -3048,16 +3048,15 @@ ${candidates.map((c,i)=>`${i+1}. "${c.w}" (PL: ${c.tr})`).join("\n")}`;
 function renderAIGenerateButton(lesson, lang, type){
   if(!S.claudeKey && !S.geminiKey) return null;
   const wrap = document.createElement("div");
-  wrap.style.cssText = "margin-bottom:20px";
+  wrap.style.cssText = "margin-bottom:0";
   const btn = document.createElement("button");
   btn.className = "sbtn";
-  btn.style.cssText = "border-color:var(--gold);color:var(--gold);padding:12px 18px;text-align:left;line-height:1.5;width:100%;max-width:760px;display:block";
-  const baseLabel = type==="vocab"
-    ? "📝 <strong>Generuj więcej słówek z lekcji (AI)</strong><br><span style='font-size:11px;color:var(--text2);font-weight:normal'>Wyciągnij słówka z dialogu/tekstu — dodaj wybrane</span>"
-    : "💬 <strong>Generuj więcej zwrotów z lekcji (AI)</strong><br><span style='font-size:11px;color:var(--text2);font-weight:normal'>Wyciągnij idiomy i wyrażenia — dodaj wybrane</span>";
+  btn.style.cssText = "border-color:var(--gold);color:var(--gold);padding:8px 14px;font-size:12px";
+  btn.title = type==="vocab" ? "Wyciągnij więcej słówek z dialogu/tekstu lekcji — dodaj wybrane" : "Wyciągnij idiomy i wyrażenia z lekcji — dodaj wybrane";
+  const baseLabel = type==="vocab" ? "📝 Generuj więcej słówek (AI)" : "💬 Generuj więcej zwrotów (AI)";
   btn.innerHTML = baseLabel;
   const resultDiv = document.createElement("div");
-  resultDiv.style.cssText = "display:none;margin-top:14px";
+  resultDiv.style.cssText = "display:none;margin-top:14px;max-width:760px";
   btn.onclick = async ()=>{
     btn.innerHTML = type==="vocab" ? "⏳ Generuję słówka…" : "⏳ Generuję zwroty…";
     btn.disabled = true;
@@ -4813,8 +4812,8 @@ function openEditEntryForm(lesson, arrayKey, lang, idx){
 
 function renderAddEntryForm(lesson, arrayKey, lang){
   const label = arrayKey==="phrases" ? "zwrot" : "słówko";
-  const wrap = h("div",{style:"max-width:760px;margin-bottom:20px"});
-  const formBox = h("div",{style:"display:none;margin-top:14px;padding:18px;border:1px solid var(--gold);border-radius:8px;background:var(--surface)"});
+  const wrap = h("div",{style:"max-width:760px;margin-bottom:0"});
+  const formBox = h("div",{style:"display:none;margin-top:14px;padding:18px;border:1px solid var(--gold);border-radius:8px;background:var(--surface);width:520px;max-width:88vw;box-sizing:border-box"});
   const toggleBtn = h("button",{class:"sbtn",style:"border-color:var(--gold);color:var(--gold)"},"+ Dodaj "+label+" ręcznie");
   const mkInp = (ph, marginBottom) => h("input",{type:"text",placeholder:ph,class:"key-inp",style:"margin-bottom:"+marginBottom});
   const wInp = mkInp(arrayKey==="phrases" ? "Zwrot lub wyrażenie (obcojęzyczne)" : "Słowo (obcojęzyczne)", "8px");
@@ -5588,24 +5587,25 @@ function renderLesson(){
   if(S.lessonTab==="vocab"){
     const isOwn = (S.myLessons[lang]||[]).some(l=>l.id===lesson.id);
     const vw = h("div",{});
-    if(isOwn) vw.appendChild(renderAddEntryForm(lesson,"vocab",lang));
-    // Generator AI — działa dla każdej lekcji (rawText lub dialog jako źródło)
+    // Kompaktowy pasek akcji nad listą: ręczne dodanie + generowanie AI + poprawa rodzajników
+    // — w jednej linii zamiast trzech wielkich boksów (oszczędność miejsca).
+    const toolbar = h("div",{style:"display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start;margin-bottom:18px;max-width:760px"});
+    if(isOwn) toolbar.appendChild(renderAddEntryForm(lesson,"vocab",lang));
     const genV = renderAIGenerateButton(lesson, lang, "vocab");
-    if(genV) vw.appendChild(genV);
-    // Popraw rodzajniki AI (FR/IT/NO) — tylko dla Twoich lekcji + gdy klucz AI dostępny
+    if(genV) toolbar.appendChild(genV);
     if(isOwn && (lang==="FR" || lang==="IT" || lang==="NO") && (S.geminiKey || S.claudeKey)){
-      const v = lesson.vocab || [];
-      const needsFix = v.filter(it => vocabItemNeedsFix(it, lang)).length;
+      const v0 = lesson.vocab || [];
+      const needsFix = v0.filter(it => vocabItemNeedsFix(it, lang)).length;
       if(needsFix > 0){
-        const fixBtn = h("button",{
+        toolbar.appendChild(h("button",{
           class:"sbtn",
-          style:"margin-bottom:14px;border-color:var(--gold);color:var(--gold);padding:10px 16px;display:block;max-width:760px",
-          title:"AI dopisze rodzajniki do rzeczowników i zamieni czasowniki na bezokolicznik",
+          style:"border-color:var(--gold);color:var(--gold);padding:8px 14px;font-size:12px",
+          title:"AI dopisze rodzajniki do rzeczowników i zamieni czasowniki na bezokolicznik ("+needsFix+" słówek bez rodzajnika)",
           onclick:()=>fixVocabArticles(lesson, lang)
-        },"🔧 Popraw rodzajniki AI ("+needsFix+" słówek bez rodzajnika)");
-        vw.appendChild(fixBtn);
+        },"🔧 Popraw rodzajniki ("+needsFix+")"));
       }
     }
+    if(toolbar.children.length) vw.appendChild(toolbar);
     const v = lesson.vocab||[];
     if(v.length>0){
       const head=h("div",{style:"display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;max-width:760px;gap:10px;flex-wrap:wrap"});
@@ -5651,10 +5651,12 @@ function renderLesson(){
     const isOwn = (S.myLessons[lang]||[]).some(l=>l.id===lesson.id);
     const phrases = lesson.phrases || [];
     const pw = h("div",{});
-    if(isOwn) pw.appendChild(renderAddEntryForm(lesson,"phrases",lang));
-    // Generator AI — działa dla każdej lekcji
+    // Kompaktowy pasek akcji (ręczne dodanie + generowanie AI) w jednej linii
+    const ptoolbar = h("div",{style:"display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start;margin-bottom:18px;max-width:760px"});
+    if(isOwn) ptoolbar.appendChild(renderAddEntryForm(lesson,"phrases",lang));
     const genP = renderAIGenerateButton(lesson, lang, "phrases");
-    if(genP) pw.appendChild(genP);
+    if(genP) ptoolbar.appendChild(genP);
+    if(ptoolbar.children.length) pw.appendChild(ptoolbar);
     if(phrases.length===0){
       const empty=h("div",{style:"max-width:600px;margin:20px auto;padding:40px 20px;text-align:center;border:1px dashed var(--border);border-radius:8px"});
       empty.appendChild(h("div",{style:"font-size:36px;opacity:.4;margin-bottom:12px"},"💬"));
