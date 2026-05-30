@@ -3045,6 +3045,53 @@ ${candidates.map((c,i)=>`${i+1}. "${c.w}" (PL: ${c.tr})`).join("\n")}`;
 // Source text: rawText jeśli jest, inaczej fallback do dialogu lekcji.
 // Używane w zakładkach Słówka, Zwroty, Tekst — żeby user widziała przycisk
 // niezależnie od tego gdzie jest.
+// Generuje POGŁĘBIONĄ gramatykę z materiału lekcji: pełne wyjaśnienia po polsku,
+// tabele odmian (czasowniki nieregularne, czasy, deklinacje), opis konstrukcji + ćwiczenia.
+// Zastępuje lesson.grammar bogatszą wersją i zapisuje (dla Twoich lekcji).
+async function generateRichGrammar(lesson, lang){
+  if(!S.claudeKey && !S.geminiKey){ alert("Najpierw wpisz klucz AI (Gemini lub Claude) w Ustawieniach."); return; }
+  const langName = {EN:"angielskim",FR:"francuskim",IT:"włoskim",NO:"norweskim"}[lang]||"docelowym";
+  const fromRaw = lesson.rawText ? (typeof rawTextToPlain==="function" ? rawTextToPlain(lesson.rawText) : String(lesson.rawText)) : "";
+  const fromDialog = (lesson.dialog||[]).map(d=>(d.s?d.s+": ":"")+d.l).join("\n");
+  const currentText = ((fromRaw && fromRaw.length > 50) ? fromRaw : fromDialog).slice(0, 12000);
+  if(!currentText || currentText.length < 30){ alert("Ta lekcja nie ma materiału tekstowego do analizy gramatyki."); return; }
+  const PROMPT = `Jesteś cierpliwym nauczycielem języka ${langName}. Przeanalizuj poniższy materiał i WYJAŚNIJ zagadnienia gramatyczne, które się w nim pojawiają — tak, żeby uczeń je zrozumiał, a nie tylko zobaczył przykład.
+
+Dla KAŻDEGO istotnego zagadnienia (nowy czas, konstrukcja, czasownik nieregularny, rodzajniki, zaimki, tryb, przyimki itd.) podaj:
+- "rule": nazwa zagadnienia po polsku (np. "Passé composé z être", "Czasownik nieregularny aller").
+- "explanation": PEŁNE wyjaśnienie po polsku, 3-6 zdań: kiedy się tego używa, jak się tworzy, na co uważać, czym różni się od podobnych. Tłumacz jak nauczyciel, nie skrótowo.
+- "table": jeśli zagadnienie ma odmianę/koniugację/deklinację (czasownik nieregularny, czas, zaimki) — podaj tabelę {"title":"...","headers":["...",...],"rows":[["...",...],...]}. Jeśli tabela nie ma sensu, daj null.
+- "ex": przykład z materiału w oryginale, "exT": tłumaczenie po polsku.
+- "note": pułapka/wskazówka (opcjonalnie).
+- "exercises": 2-3 ćwiczenia z luką do tej zasady: [{"s":"zdanie z ___","a":"odpowiedź","h":"wskazówka PL"}].
+
+Skup się na tym, co NOWE lub trudne (nieregularne odmiany, nowe czasy, konstrukcje). Minimum 3, maksimum 6 zagadnień. Pisz po polsku (oprócz przykładów i form w tabelach).
+
+Odpowiedz TYLKO czystym JSON bez markdown:
+{"grammar":[{"rule":"...","explanation":"...","table":{"title":"...","headers":["osoba","forma"],"rows":[["je","vais"]]},"ex":"...","exT":"...","note":"...","exercises":[{"s":"zdanie z ___","a":"odp","h":"wskazówka"}]}]}
+
+MATERIAŁ:
+${currentText}`;
+  const banner = (typeof showRegenStatus==="function") ? showRegenStatus("⏳ Rozwijam gramatykę (AI) — wyjaśnienia + tabele odmian. To potrwa 20-40s.","info") : null;
+  try{
+    const rawText = await callLessonModel(PROMPT);
+    const parsed = (typeof parseLessonJson==="function") ? parseLessonJson(rawText) : JSON.parse((rawText.match(/\{[\s\S]*\}/)||["{}"])[0]);
+    const g = Array.isArray(parsed.grammar) ? parsed.grammar.filter(x=>x && x.rule) : [];
+    if(!g.length) throw new Error("AI nie zwróciło zagadnień — spróbuj ponownie albo na innym modelu");
+    lesson.grammar = g;
+    const ml = Object.assign({}, S.myLessons);
+    const li = (ml[lang]||[]).findIndex(l=>l.id===lesson.id);
+    if(li>=0){ ml[lang][li].grammar = g; S.myLessons = ml; safeSetItem("lingua_my_lessons", JSON.stringify(ml)); scheduleDriveSync(); }
+    if(typeof showRegenStatus==="function") showRegenStatus("✓ Gotowe — "+g.length+" zagadnień z wyjaśnieniami i tabelami","success");
+    setTimeout(()=>document.querySelectorAll('.regen-status-banner').forEach(el=>el.remove()), 4000);
+    render();
+  }catch(e){
+    console.error("[generateRichGrammar]", e);
+    if(typeof showRegenStatus==="function"){ showRegenStatus("Błąd: "+(e.message||e),"error"); setTimeout(()=>document.querySelectorAll('.regen-status-banner').forEach(el=>el.remove()), 6000); }
+    else alert("Błąd: "+(e.message||e));
+  }
+}
+
 function renderAIGenerateButton(lesson, lang, type){
   if(!S.claudeKey && !S.geminiKey) return null;
   const wrap = document.createElement("div");
@@ -5709,12 +5756,40 @@ function renderLesson(){
 
   if(S.lessonTab==="grammar"){
     const gw=h("div",{class:"grammar-wrap"});
-    gw.appendChild(h("div",{class:"sec-label",style:"margin-bottom:20px"},"Gramatyka lekcji"));
+    gw.appendChild(h("div",{class:"sec-label",style:"margin-bottom:14px"},"Gramatyka lekcji"));
+    // Generator pogłębionej gramatyki (wyjaśnienia + tabele odmian) — działa na bieżącej lekcji
+    if(S.claudeKey || S.geminiKey){
+      const hasGrammar = (lesson.grammar||[]).length > 0;
+      const grBtn = h("button",{class:"sbtn",style:"margin-bottom:20px;border-color:var(--gold);color:var(--gold);padding:8px 14px;font-size:12px",
+        title:"AI przeanalizuje materiał lekcji i wyjaśni zagadnienia: pełne opisy, tabele odmian czasowników nieregularnych, nowe czasy i konstrukcje + ćwiczenia"},
+        hasGrammar ? "📖 Rozwiń gramatykę (AI) — pełne wyjaśnienia + odmiany" : "📖 Wygeneruj gramatykę (AI) — wyjaśnienia + odmiany");
+      grBtn.onclick = ()=>{ grBtn.disabled = true; grBtn.textContent = "⏳ Generuję…"; generateRichGrammar(lesson, lang); };
+      gw.appendChild(grBtn);
+      if(hasGrammar) gw.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin:-10px 0 18px 0;line-height:1.5"},"Tip: jeśli zasady są zbyt skrótowe, kliknij powyżej — AI doda wyjaśnienia i tabele odmian."));
+    }
     lesson.grammar.forEach((g, gi)=>{
       const blk=h("div",{class:"grammar-block"});
       blk.appendChild(h("div",{class:"grammar-rule"},g.rule));
-      blk.appendChild(h("div",{class:"grammar-ex"},g.ex));
-      blk.appendChild(h("div",{class:"grammar-extr"},g.exT));
+      // Pełne wyjaśnienie (nowość: AI tłumaczy zagadnienie, nie tylko pokazuje przykład)
+      if(g.explanation) blk.appendChild(h("div",{style:"font-size:14px;color:var(--text);line-height:1.65;margin:8px 0 12px 0;white-space:pre-wrap"},g.explanation));
+      // Tabela odmiany/koniugacji/deklinacji (czasowniki nieregularne, czasy, zaimki)
+      if(g.table && Array.isArray(g.table.rows) && g.table.rows.length){
+        const t = g.table;
+        const tWrap = h("div",{style:"margin:10px 0 14px 0;overflow-x:auto"});
+        if(t.title) tWrap.appendChild(h("div",{style:"font-size:12px;font-weight:600;color:var(--gold);margin-bottom:6px"},t.title));
+        const tbl = document.createElement("table");
+        tbl.style.cssText = "border-collapse:collapse;font-size:13px;min-width:220px";
+        if(Array.isArray(t.headers) && t.headers.length){
+          const trh = document.createElement("tr");
+          t.headers.forEach(htxt=>{ const th=document.createElement("th"); th.textContent=String(htxt); th.style.cssText="text-align:left;padding:5px 16px 5px 0;border-bottom:2px solid var(--border);color:var(--text2);font-weight:600"; trh.appendChild(th); });
+          tbl.appendChild(trh);
+        }
+        t.rows.forEach(r=>{ const tr=document.createElement("tr"); (Array.isArray(r)?r:[r]).forEach((cell,ci)=>{ const td=document.createElement("td"); td.textContent=String(cell==null?"":cell); td.style.cssText="padding:4px 16px 4px 0;border-bottom:1px solid var(--border);"+(ci===0?"color:var(--text3)":"color:var(--text)"); tr.appendChild(td); }); tbl.appendChild(tr); });
+        tWrap.appendChild(tbl);
+        blk.appendChild(tWrap);
+      }
+      if(g.ex) blk.appendChild(h("div",{class:"grammar-ex"},g.ex));
+      if(g.exT) blk.appendChild(h("div",{class:"grammar-extr"},g.exT));
       if(g.note) blk.appendChild(h("div",{class:"grammar-note"},g.note));
       // Ćwiczenia do tej konkretnej zasady (nowość: AI generuje per-rule + dorzuca oryginalne grammar z materiału)
       const exs = (g.exercises || []).filter(e => e && e.s && e.a);
@@ -7513,7 +7588,7 @@ function lessonJsonSchema(opts){
     '"vocab":[{"w":"słowo","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie","exT":"tłumaczenie"}],'+
     '"phrases":[{"w":"zwrot","tr":"tłumaczenie","ipa":"IPA","pl":"wymowa PL","ex":"zdanie","exT":"tłumaczenie"}],'+
     '"fill":[{"s":"zdanie z ___","a":"odp","h":"wskazówka","cat":"text"},{"s":"gramatyczne z ___","a":"odp","h":"wskazówka","cat":"grammar"}],'+
-    '"grammar":[{"rule":"zasada","ex":"przykład","exT":"tłumaczenie","note":"wyjaśnienie PL"}]}';
+    '"grammar":[{"rule":"zasada","explanation":"wyjaśnienie po polsku 2-3 zdania: kiedy i jak używać","ex":"przykład","exT":"tłumaczenie","note":"pułapka/wskazówka PL"}]}';
 }
 
 // Build a lesson object from a transcript without writing to state — used by
@@ -7548,7 +7623,7 @@ DODATKOWE SEKCJE:
   Dla czasowników podawaj formę bezokolicznikową (FR: parler; IT: parlare; EN: to talk; NO: å snakke). NIE odmienione formy z dialogu.
 - phrases: minimum 15 ZWROTÓW i WYRAŻEŃ z dialogu (idiomy, czasowniki frazowe, kolokacje, utarte zwroty).
 - fill: minimum 10 ćwiczeń uzupełniania luk — (1) cat:"text" z dialogu (min 5), (2) cat:"grammar" (min 5)
-- grammar: minimum 4 zasady gramatyczne widoczne w dialogu`;
+- grammar: minimum 4 zasady; KAŻDA z polem "explanation" (2-3 zdania wyjaśnienia po polsku: kiedy i jak używać), nie tylko przykład`;
   let PROMPT;
   if(cues && cues.length>0){
     const limit = Math.min(cues.length, 1500);
@@ -7724,7 +7799,7 @@ DODATKOWE SEKCJE:
   KRYTYCZNE: ${ARTICLE_RULE}
 - phrases: minimum 15 ZWROTÓW i WYRAŻEŃ z dialogu (idiomy, kolokwializmy, czasowniki frazowe typu "look up to", kolokacje typu "make sense", utarte zwroty typu "How come?", "You bet"). Wielowyrazowe konstrukcje godne osobnej nauki. Z IPA, tłumaczeniem PL i przykładem z dialogu.
 - fill: minimum 10 ćwiczeń uzupełniania luk — DWIE KATEGORIE: (1) cat:"text" — zdania z dialogu z brakującym słowem (min 5), (2) cat:"grammar" — ćwiczenia gramatyczne na zasady z dialogu (min 5)
-- grammar: minimum 4 zasady gramatyczne widoczne w dialogu`;
+- grammar: minimum 4 zasady; KAŻDA z polem "explanation" (2-3 zdania wyjaśnienia po polsku: kiedy i jak używać), nie tylko przykład`;
   let PROMPT;
   if(cues && cues.length>0){
     const limit = Math.min(cues.length, 1500);
@@ -7858,7 +7933,7 @@ DODATKOWE SEKCJE:
   KRYTYCZNE: ${ARTICLE_RULE}
 - phrases: minimum 15 ZWROTÓW i WYRAŻEŃ z dialogu (idiomy, czasowniki frazowe)
 - fill: minimum 10 ćwiczeń (cat:"text" min 5, cat:"grammar" min 5)
-- grammar: minimum 4 zasady gramatyczne
+- grammar: minimum 4 zasady; KAŻDA z polem "explanation" (2-3 zdania wyjaśnienia po polsku), nie tylko przykład
 
 Odpowiedz TYLKO czystym JSON bez markdown:
 ${lessonJsonSchema({timestamps:true, titleHint:"tytuł po "+targetLangLabel, topicHint:"temat po "+targetLangLabel})}`;
