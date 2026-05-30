@@ -2702,25 +2702,18 @@ function moveLessonToFolder(lang, lessonIdx, folderName){
   scheduleDriveSync();
 }
 
-// Zmiana kolejności lekcji (▲/▼) w obrębie jej sekcji/folderu — zamienia z najbliższym
-// sąsiadem należącym do tej samej grupy (folder / „z filmów" / „z tekstów"), żeby ruch
-// był intuicyjny zgodnie z tym, co user widzi. dir=-1 w górę, dir=+1 w dół.
-function moveLessonOrder(lang, idx, dir){
-  const arr = (S.myLessons[lang]||[]);
-  if(!arr[idx]) return;
-  const folders = getFolders(lang);
-  const groupKey = (l)=>{
-    if(l.folder && folders.some(f=>f.name===l.folder)) return "folder:"+l.folder;
-    return isVideoLesson(l) ? "video" : "text";
-  };
-  const myKey = groupKey(arr[idx]);
-  let target = -1;
-  if(dir < 0){ for(let i=idx-1;i>=0;i--){ if(groupKey(arr[i])===myKey){ target=i; break; } } }
-  else { for(let i=idx+1;i<arr.length;i++){ if(groupKey(arr[i])===myKey){ target=i; break; } } }
-  if(target < 0) return; // już na skraju swojej grupy
+// Zmiana kolejności lekcji przez przeciąganie (drag & drop). _dragLessonIdx trzyma indeks
+// przeciąganej lekcji między dragstart a drop. reorderLesson przenosi ją na pozycję docelową
+// w tablicy myLessons[lang] (splice-move) i zapisuje. Działa też wewnątrz folderów, bo
+// renderLessonRow (z obsługą drag) używany jest dla wszystkich lekcji.
+let _dragLessonIdx = null;
+function reorderLesson(lang, fromIdx, toIdx){
+  if(fromIdx==null || toIdx==null || fromIdx===toIdx) return;
   const ml = Object.assign({}, S.myLessons);
   const a = (ml[lang]||[]).slice();
-  const tmp = a[idx]; a[idx] = a[target]; a[target] = tmp;
+  if(fromIdx<0 || fromIdx>=a.length || toIdx<0 || toIdx>=a.length) return;
+  const moved = a.splice(fromIdx, 1)[0];
+  a.splice(toIdx, 0, moved);
   ml[lang] = a;
   S.myLessons = ml;
   safeSetItem("lingua_my_lessons", JSON.stringify(ml));
@@ -4303,6 +4296,14 @@ function renderLang(){
   });
   function renderLessonRow(lesson,idx){
     const row=h("div",{class:"my-lesson-row"});
+    // Drag & drop — przeciągnij wiersz, by zmienić kolejność (działa też wewnątrz folderów)
+    row.setAttribute("draggable","true");
+    row.style.cursor="grab";
+    row.ondragstart=(e)=>{ _dragLessonIdx=idx; row.style.opacity="0.4"; if(e.dataTransfer){ e.dataTransfer.effectAllowed="move"; try{e.dataTransfer.setData("text/plain",String(idx));}catch(_){ } } };
+    row.ondragend=()=>{ row.style.opacity=""; row.style.borderTop=""; };
+    row.ondragover=(e)=>{ if(_dragLessonIdx!=null && _dragLessonIdx!==idx){ e.preventDefault(); row.style.borderTop="2px solid var(--gold)"; } };
+    row.ondragleave=()=>{ row.style.borderTop=""; };
+    row.ondrop=(e)=>{ e.preventDefault(); row.style.borderTop=""; const from=_dragLessonIdx; _dragLessonIdx=null; if(from!=null && from!==idx) reorderLesson(lang, from, idx); };
     const info=h("div",{
       class:"my-lesson-info",
       style:"cursor:pointer;transition:opacity .15s",
@@ -4312,6 +4313,7 @@ function renderLang(){
     info.onmouseover=()=>{info.style.opacity="0.85";};
     info.onmouseout=()=>{info.style.opacity="1";};
     const titleRow = h("div",{style:"display:flex;align-items:baseline;gap:8px"});
+    titleRow.appendChild(h("span",{style:"color:var(--text3);cursor:grab;font-size:13px;user-select:none",title:"Przeciągnij, aby zmienić kolejność"},"⠿"));
     titleRow.appendChild(h("div",{class:"my-lesson-title"},lesson.title||"Bez tytułu"));
     const renameBtn = h("button",{
       style:"background:none;border:1px solid transparent;cursor:pointer;font-size:11px;color:var(--text3);padding:2px 6px;border-radius:4px;transition:all .15s",
@@ -4325,9 +4327,6 @@ function renderLang(){
     info.appendChild(h("div",{class:"my-lesson-meta"},(lesson.level||"")+" · "+(lesson.vocab||[]).length+" słówek · "+(lesson.dialog||[]).length+" linii"));
     row.appendChild(info);
     const acts=h("div",{class:"my-lesson-actions"});
-    // Zmiana kolejności w obrębie sekcji/folderu
-    acts.appendChild(h("button",{class:"sbtn",style:"padding:6px 9px",title:"Przesuń wyżej",onclick:(e)=>{e.stopPropagation();moveLessonOrder(lang, idx, -1);}},"▲"));
-    acts.appendChild(h("button",{class:"sbtn",style:"padding:6px 9px",title:"Przesuń niżej",onclick:(e)=>{e.stopPropagation();moveLessonOrder(lang, idx, 1);}},"▼"));
     acts.appendChild(h("button",{class:"sbtn",onclick:()=>set({screen:"lesson",lesson,mode:"dialog",playing:false,playingLine:-1})},"Dialog"));
     acts.appendChild(h("button",{class:"sbtn",onclick:()=>{
       if(lesson.vocab&&lesson.vocab.length>0) startPractice(lesson,"flashcard");
