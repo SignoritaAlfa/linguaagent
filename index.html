@@ -2473,11 +2473,15 @@ function highlightCurrentCue(){
   try{ t = _ytPlayer.getCurrentTime(); }catch(e){ return; }
   const cues = document.querySelectorAll(".film-cue");
   if(!cues.length) return;
-  let activeIdx = -1;
+  // Aktywna kwestia = ostatnia, której start <= bieżący czas (klasyczne karaoke).
+  // Odporne na błędny/odwrócony `end` od AI (wcześniej `t < end+0.3` tworzyło puste
+  // okno przy end<start → kwestia nigdy nie aktywna → podświetlanie "stawało w połowie")
+  // i na luki między kwestiami (utrzymuje podświetlenie do startu następnej).
+  let activeIdx = -1, bestStart = -Infinity;
   cues.forEach((cue,i)=>{
     const s = parseFloat(cue.dataset.start);
-    const e = parseFloat(cue.dataset.end);
-    if(t >= s && t < e + 0.3) activeIdx = i;
+    if(isNaN(s)) return;
+    if(s <= t + 0.05 && s > bestStart){ bestStart = s; activeIdx = i; }
   });
   if(activeIdx !== _ytLastActiveIdx){
     cues.forEach(c=>c.classList.remove("film-cue-active"));
@@ -2590,6 +2594,25 @@ function getFolders(lang){
 }
 function isVideoLesson(lesson){
   return !!(lesson && (lesson.source==="video" || lesson.youtubeId || lesson.fromFilm || (lesson.id||"").startsWith("film_")));
+}
+
+// Auto-folder dla lekcji z filmu/piosenki: rejestruje folder o nazwie serii (scope "video"),
+// jeśli jeszcze nie istnieje, żeby lekcje z danej serii grupowały się pod jej nazwą (jak
+// "Le Prénom"). Wcześniej handler "Dodaj do Moich Lekcji" nie ustawiał folderu, więc nowe
+// lekcje filmowe lądowały luzem. Zwraca nazwę folderu (do wpisania w lesson.folder).
+function ensureVideoFolder(lang, name){
+  name = (name||"").trim();
+  if(!name) return null;
+  const lf = Object.assign({}, S.lessonFolders);
+  const arr = (lf[lang]||[]).slice();
+  if(!arr.some(f => folderName(f) === name)){
+    arr.push({name, scope:"video"});
+    lf[lang] = arr;
+    S.lessonFolders = lf;
+    safeSetItem("lingua_lesson_folders", JSON.stringify(lf));
+    scheduleDriveSync();
+  }
+  return name;
 }
 
 function createFolder(lang, scope){
@@ -8243,6 +8266,9 @@ function renderFilmoteka(){
         if(typeof _sl.title !== "string" || !_sl.title.trim()) _sl.title = clip?.title || "Lekcja z klipu";
         _sl.source="video";
         _sl.seriesTitle=series?.title||"";
+        // Auto-przypisz lekcję do folderu serii (tworzy folder jeśli trzeba), żeby
+        // grupowała się pod nazwą serii zamiast lądować luzem w "Z filmów i YouTube".
+        if(series?.title && !_sl.folder) _sl.folder = ensureVideoFolder(lang, series.title);
         _sl.clipId=filmClipId;
         _sl.clipTitle=clip?.title||"";
         if(series?.title && typeof _sl.title==="string" && !_sl.title.startsWith(series.title)) _sl.title=series.title+" — "+_sl.title;
@@ -8678,6 +8704,9 @@ function renderSongs(){
         if(typeof _sl.title !== "string" || !_sl.title.trim()) _sl.title = clip?.title || "Lekcja z klipu";
         _sl.source="video";
         _sl.seriesTitle=series?.title||"";
+        // Auto-przypisz lekcję do folderu serii (tworzy folder jeśli trzeba), żeby
+        // grupowała się pod nazwą serii zamiast lądować luzem w "Z filmów i YouTube".
+        if(series?.title && !_sl.folder) _sl.folder = ensureVideoFolder(lang, series.title);
         _sl.clipId=filmClipId;
         _sl.clipTitle=clip?.title||"";
         if(series?.title && typeof _sl.title==="string" && !_sl.title.startsWith(series.title)) _sl.title=series.title+" — "+_sl.title;
