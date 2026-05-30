@@ -4145,7 +4145,7 @@ function renderLang(){
     cell.appendChild(h("div",{class:"lesson-topic"},lesson.topic));
     const strip=h("div",{class:"action-strip"});
     [{id:"dialog",icon:"💬",label:"Dialog",desc:"słuchaj"},{id:"flashcard",icon:"🃏",label:"Fiszki",desc:lesson.vocab.length+" słówek"},
-     {id:"fill",icon:"✏️",label:"Ćwiczenia",desc:lesson.fill.length+" zadań"},{id:"grammar",icon:"📐",label:"Gramatyka",desc:lesson.grammar.length+" zasad"}
+     {id:"fill",icon:"✏️",label:"Ćwiczenia",desc:lesson.fill.length+" zadań"},{id:"grammar",icon:"📖",label:"Gramatyka",desc:lesson.grammar.length+" zasad"}
     ].forEach(({id,icon,label,desc})=>{
       strip.appendChild(h("button",{class:"action-btn",onclick:()=>{
         if(id==="flashcard"||id==="fill") startPractice(lesson,id);
