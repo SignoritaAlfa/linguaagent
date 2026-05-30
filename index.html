@@ -5232,6 +5232,20 @@ function renderLesson(){
     if(!Array.isArray(lesson.phrases)) lesson.phrases = [];
     if(!Array.isArray(lesson.fill)) lesson.fill = [];
     if(!Array.isArray(lesson.grammar)) lesson.grammar = [];
+    // Każda kwestia dialogu MUSI mieć string l/s/t — oba renderery robią line.l.split()
+    // i speak(line.l). Gdy AI zwróci kwestię bez "l" (albo l jako obiekt/liczba),
+    // .split rzuca TypeError → biały ekran. Normalizujemy w jednym miejscu i usuwamy
+    // kwestie zupełnie puste. (To była przyczyna crashu "Dodaj do Moich Lekcji" — Le Prénom.)
+    const _toStr = v => (typeof v === "string") ? v : (v == null ? "" : String(v));
+    lesson.dialog = lesson.dialog
+      .map(d => {
+        if(typeof d === "string") d = { l: d };
+        if(!d || typeof d !== "object") d = {};
+        const n = Object.assign({}, d);
+        n.l = _toStr(d.l); n.s = _toStr(d.s); n.t = _toStr(d.t);
+        return n;
+      })
+      .filter(d => d.l || d.s || d.t);
   }
   const w=h("div",{});
   w.appendChild(renderTopNav());
