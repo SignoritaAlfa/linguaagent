@@ -189,7 +189,7 @@ body{
 
 /* ── LESSON VIEW ── */
 .lesson-header{margin-bottom:40px}
-.dialog-wrap{max-width:700px}
+.dialog-wrap{max-width:920px}
 .dialog-controls{
   display:flex;align-items:center;justify-content:space-between;
   margin-bottom:28px;padding-bottom:16px;border-bottom:1px solid var(--border);
@@ -227,7 +227,7 @@ body{
 .dline-tr{font-size:12px;color:var(--text3);font-style:italic}
 
 /* ── VOCAB ── */
-.vocab-wrap{max-width:700px;margin-top:52px}
+.vocab-wrap{max-width:920px;margin-top:52px}
 .vrow{
   display:grid;grid-template-columns:28px 1fr 1fr;gap:12px 24px;
   align-items:start;padding:14px 0;border-bottom:1px solid var(--border);
@@ -238,7 +238,7 @@ body{
 .v-ipa{font-family:monospace;font-size:11px;color:var(--text3);margin-top:2px}
 
 /* ── GRAMMAR ── */
-.grammar-wrap{max-width:700px}
+.grammar-wrap{max-width:920px}
 .grammar-block{padding:20px 0;border-bottom:1px solid var(--border)}
 .grammar-block:last-child{border-bottom:none}
 .grammar-rule{
@@ -542,7 +542,7 @@ body{
 .lesson-tab-btn.active{color:var(--gold);border-bottom-color:var(--gold)}
 
 /* ── VOCAB LIST ── */
-.vocab-list-wrap{max-width:700px}
+.vocab-list-wrap{max-width:920px}
 /* Filmoteka karaoke */
 .film-karaoke{display:grid;grid-template-columns:1fr 1fr;gap:24px;align-items:start;margin-bottom:32px}
 @media (max-width:900px){.film-karaoke{grid-template-columns:1fr}}
@@ -5578,7 +5578,7 @@ function renderLesson(){
     const vw = h("div",{});
     // Kompaktowy pasek akcji nad listą: ręczne dodanie + generowanie AI + poprawa rodzajników
     // — w jednej linii zamiast trzech wielkich boksów (oszczędność miejsca).
-    const toolbar = h("div",{style:"display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start;margin-bottom:18px;max-width:760px"});
+    const toolbar = h("div",{style:"display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start;margin-bottom:18px;max-width:920px"});
     if(isOwn) toolbar.appendChild(renderAddEntryForm(lesson,"vocab",lang));
     const genV = renderAIGenerateButton(lesson, lang, "vocab");
     if(genV) toolbar.appendChild(genV);
@@ -5597,7 +5597,7 @@ function renderLesson(){
     if(toolbar.children.length) vw.appendChild(toolbar);
     const v = lesson.vocab||[];
     if(v.length>0){
-      const head=h("div",{style:"display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;max-width:760px;gap:10px;flex-wrap:wrap"});
+      const head=h("div",{style:"display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;max-width:920px;gap:10px;flex-wrap:wrap"});
       head.appendChild(h("div",{class:"sec-label",style:"margin:0"},"Słownictwo ("+v.length+")"));
       const actBtnsV=h("div",{style:"display:flex;gap:8px;flex-wrap:wrap"});
       const playing = S.vocabPlaying && S.vocabPlayingList==="vocab";
@@ -5641,7 +5641,7 @@ function renderLesson(){
     const phrases = lesson.phrases || [];
     const pw = h("div",{});
     // Kompaktowy pasek akcji (ręczne dodanie + generowanie AI) w jednej linii
-    const ptoolbar = h("div",{style:"display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start;margin-bottom:18px;max-width:760px"});
+    const ptoolbar = h("div",{style:"display:flex;gap:8px;flex-wrap:wrap;align-items:flex-start;margin-bottom:18px;max-width:920px"});
     if(isOwn) ptoolbar.appendChild(renderAddEntryForm(lesson,"phrases",lang));
     const genP = renderAIGenerateButton(lesson, lang, "phrases");
     if(genP) ptoolbar.appendChild(genP);
@@ -5658,7 +5658,7 @@ function renderLesson(){
       }
       pw.appendChild(empty);
     } else {
-      const head=h("div",{style:"display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;max-width:760px;gap:10px;flex-wrap:wrap"});
+      const head=h("div",{style:"display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;max-width:920px;gap:10px;flex-wrap:wrap"});
       head.appendChild(h("div",{class:"sec-label",style:"margin:0"},"Zwroty i wyrażenia ("+phrases.length+")"));
       const actBtns=h("div",{style:"display:flex;gap:8px;flex-wrap:wrap"});
       const playingPh = S.vocabPlaying && S.vocabPlayingList==="phrases";
