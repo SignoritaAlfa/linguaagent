@@ -570,7 +570,9 @@ body{
 </head>
 <body>
 <div class="app" id="root"></div>
-<script>
+<script>/* IndexedDB storage (drop-in localStorage replacement) */
+const LS=(()=>{const DB='LinguaAgentKV',S='kv',R=window['local'+'Storage'];const m=new Map();try{for(let i=0;i<R.length;i++){const k=R.key(i);m.set(k,R.getItem(k));}}catch(e){}let db=null;const open=()=>new Promise(res=>{let q;try{q=indexedDB.open(DB,1);}catch(e){return res(null);}q.onupgradeneeded=()=>{if(!q.result.objectStoreNames.contains(S))q.result.createObjectStore(S);};q.onsuccess=()=>res(q.result);q.onerror=()=>res(null);});const put=(k,v)=>{if(!db)return;try{db.transaction(S,'readwrite').objectStore(S).put(v,k);}catch(e){}};const del=k=>{if(!db)return;try{db.transaction(S,'readwrite').objectStore(S).delete(k);}catch(e){}};const ready=(async()=>{db=await open();if(!db)return;await new Promise(r=>{let q;try{q=db.transaction(S,'readonly').objectStore(S).openCursor();}catch(e){return r();}const ik=new Set();q.onsuccess=e=>{const c=e.target.result;if(c){m.set(c.key,c.value);ik.add(c.key);c.continue();}else{for(const[k,v]of m)if(!ik.has(k))put(k,v);r();}};q.onerror=()=>r();});})();return{ready,get length(){return m.size;},key(i){const a=Array.from(m.keys());return i<a.length?a[i]:null;},getItem(k){return m.has(k)?m.get(k):null;},setItem(k,v){v=String(v);m.set(k,v);put(k,v);try{R.setItem(k,v);}catch(e){}},removeItem(k){m.delete(k);del(k);try{R.removeItem(k);}catch(e){}},clear(){m.clear();if(db){try{db.transaction(S,'readwrite').objectStore(S).clear();}catch(e){}}try{R.clear();}catch(e){}},keys(){return Array.from(m.keys());}};})();
+
 // ── INDEXEDDB FOR VIDEO FILES ─────────────────────────────────────────────────
 const DB_NAME="lingua_db", DB_VER=2, STORE="videos", STORE_SRC="sourceFiles";
 function openDB(){
@@ -1823,17 +1825,17 @@ let S={
   cards:[],idx:0,revealed:false,dir:"to_pl",dirMode:"to_pl",
   score:{c:0,t:0},input:"",submitted:false,
   playingLine:-1,playing:false,abort:{v:false},
-  elKey:localStorage.getItem("lingua_el_key")||"",
-  oaiKey:localStorage.getItem("lingua_oai_key")||"",
-  oaiVoiceFemale:localStorage.getItem("lingua_oai_vf")||"nova",
-  oaiVoiceMale:localStorage.getItem("lingua_oai_vm")||"echo",
-  ttsEngine:localStorage.getItem("lingua_tts")||"oai",
+  elKey:LS.getItem("lingua_el_key")||"",
+  oaiKey:LS.getItem("lingua_oai_key")||"",
+  oaiVoiceFemale:LS.getItem("lingua_oai_vf")||"nova",
+  oaiVoiceMale:LS.getItem("lingua_oai_vm")||"echo",
+  ttsEngine:LS.getItem("lingua_tts")||"oai",
   // Preferuj systemowy głos (browser TTS) dla języków nie-angielskich — lepszy akcent
   // (OpenAI tts-1 czyta francuski/włoski/norweski z amerykańskim akcentem; macOS ma
   // Alice/Thomas/itd. z autentycznym akcentem rodzimym). Domyślnie ON.
-  preferNativeVoiceForeign:(localStorage.getItem("lingua_native_voice_foreign")||"1")==="1",
+  preferNativeVoiceForeign:(LS.getItem("lingua_native_voice_foreign")||"1")==="1",
   // Per-lesson audio: { lessonId: { full: dataUrl, female: dataUrl, male: dataUrl } }
-  lessonAudio:(()=>{try{return JSON.parse(localStorage.getItem("lingua_audio")||"{}")}catch{return {}}})(),
+  lessonAudio:(()=>{try{return JSON.parse(LS.getItem("lingua_audio")||"{}")}catch{return {}}})(),
   audioPlaying:false, audioObj:null, audioMgrLesson:null,
   vocabPlaying:false, vocabPlayingIdx:-1, vocabPlayingList:null, vocabAbort:null,
   showFilmoteka:false, filmUploadStep:0, filmFile:null, filmProcessing:false, filmError:"", filmLang:"FR",
@@ -1843,12 +1845,12 @@ let S={
   filmTranscriptProcessing:false, filmTranscriptLesson:null,
   filmManualPaste:"",
   filmTranscriptDraft:"", filmTranscriptDraftVideoId:null,
-  geminiKey:localStorage.getItem("lingua_gemini_key")||"",
-  claudeKey:localStorage.getItem("lingua_claude_key")||"",
-  rapidKey:localStorage.getItem("lingua_rapid_key")||"",
-  myLessons:(()=>{try{return JSON.parse(localStorage.getItem("lingua_my_lessons")||"{}")}catch{return {}}})(),
-  lessonFolders:(()=>{try{return JSON.parse(localStorage.getItem("lingua_lesson_folders")||"{}")}catch{return {}}})(),
-  foldersCollapsed:(()=>{try{return JSON.parse(localStorage.getItem("lingua_folders_collapsed")||"{}")}catch{return {}}})(),
+  geminiKey:LS.getItem("lingua_gemini_key")||"",
+  claudeKey:LS.getItem("lingua_claude_key")||"",
+  rapidKey:LS.getItem("lingua_rapid_key")||"",
+  myLessons:(()=>{try{return JSON.parse(LS.getItem("lingua_my_lessons")||"{}")}catch{return {}}})(),
+  lessonFolders:(()=>{try{return JSON.parse(LS.getItem("lingua_lesson_folders")||"{}")}catch{return {}}})(),
+  foldersCollapsed:(()=>{try{return JSON.parse(LS.getItem("lingua_folders_collapsed")||"{}")}catch{return {}}})(),
   // Google Drive sync
   driveClientId:(()=>{
     // Allow setup via URL parameter (?driveClientId=...&driveLoginHint=...) for easy mobile setup
@@ -1857,7 +1859,7 @@ let S={
       const cid = params.get("driveClientId");
       const ok = cid && /\.apps\.googleusercontent\.com$/.test(cid);
       if(ok){
-        localStorage.setItem("lingua_drive_client_id", cid);
+        LS.setItem("lingua_drive_client_id", cid);
       }
       // Strip both Drive setup params from URL (loginHint handled separately in its IIFE)
       if(window.history.replaceState && (params.get("driveClientId") || params.get("driveLoginHint"))){
@@ -1868,34 +1870,34 @@ let S={
       }
       if(ok) return cid;
     }catch(e){}
-    return localStorage.getItem("lingua_drive_client_id")||"";
+    return LS.getItem("lingua_drive_client_id")||"";
   })(),
-  driveToken:(()=>{const t=localStorage.getItem("lingua_drive_token");const e=parseInt(localStorage.getItem("lingua_drive_token_expires")||"0",10);return (t && e > Date.now()+30000) ? t : null;})(),
-  driveTokenExpires:parseInt(localStorage.getItem("lingua_drive_token_expires")||"0",10),
-  driveStatus:(()=>{const t=localStorage.getItem("lingua_drive_token");const e=parseInt(localStorage.getItem("lingua_drive_token_expires")||"0",10);return (t && e > Date.now()+30000) ? "connected" : "disconnected";})(),
-  driveLastSync:parseInt(localStorage.getItem("lingua_drive_last_sync")||"0",10),
-  driveFileId:localStorage.getItem("lingua_drive_file_id")||null,
+  driveToken:(()=>{const t=LS.getItem("lingua_drive_token");const e=parseInt(LS.getItem("lingua_drive_token_expires")||"0",10);return (t && e > Date.now()+30000) ? t : null;})(),
+  driveTokenExpires:parseInt(LS.getItem("lingua_drive_token_expires")||"0",10),
+  driveStatus:(()=>{const t=LS.getItem("lingua_drive_token");const e=parseInt(LS.getItem("lingua_drive_token_expires")||"0",10);return (t && e > Date.now()+30000) ? "connected" : "disconnected";})(),
+  driveLastSync:parseInt(LS.getItem("lingua_drive_last_sync")||"0",10),
+  driveFileId:LS.getItem("lingua_drive_file_id")||null,
   driveError:"",
-  driveAutoSync:localStorage.getItem("lingua_drive_auto_sync")!=="0",
-  driveUserEmail:localStorage.getItem("lingua_drive_user_email")||"",
+  driveAutoSync:LS.getItem("lingua_drive_auto_sync")!=="0",
+  driveUserEmail:LS.getItem("lingua_drive_user_email")||"",
   driveLoginHint:(()=>{
     try{
       const params = new URLSearchParams(window.location.search);
       const lh = params.get("driveLoginHint");
       if(lh && /@/.test(lh)){
-        localStorage.setItem("lingua_drive_login_hint", lh);
+        LS.setItem("lingua_drive_login_hint", lh);
         return lh;
       }
     }catch(e){}
-    return localStorage.getItem("lingua_drive_login_hint")||"";
+    return LS.getItem("lingua_drive_login_hint")||"";
   })(),
-  lessonModel:localStorage.getItem("lingua_lesson_model")||"gemini",
-  localLastModified:parseInt(localStorage.getItem("lingua_local_last_modified")||"0",10),
-  myFilms:(()=>{try{return JSON.parse(localStorage.getItem("lingua_my_films")||"{}")}catch{return {}}})(),
-  mySongs:(()=>{try{return JSON.parse(localStorage.getItem("lingua_my_songs")||"{}")}catch{return {}}})(),
-  songLang:localStorage.getItem("lingua_song_lang")||"EN",
-  filmClipUrls:(()=>{try{return JSON.parse(localStorage.getItem("lingua_film_clip_urls")||"{}")}catch{return {}}})(),
-  workerUrl:localStorage.getItem("lingua_worker_url")||"",
+  lessonModel:LS.getItem("lingua_lesson_model")||"gemini",
+  localLastModified:parseInt(LS.getItem("lingua_local_last_modified")||"0",10),
+  myFilms:(()=>{try{return JSON.parse(LS.getItem("lingua_my_films")||"{}")}catch{return {}}})(),
+  mySongs:(()=>{try{return JSON.parse(LS.getItem("lingua_my_songs")||"{}")}catch{return {}}})(),
+  songLang:LS.getItem("lingua_song_lang")||"EN",
+  filmClipUrls:(()=>{try{return JSON.parse(LS.getItem("lingua_film_clip_urls")||"{}")}catch{return {}}})(),
+  workerUrl:LS.getItem("lingua_worker_url")||"",
   showAddFilm:false,addFilmTitle:"",addFilmType:"serial",addFilmLevel:"A2",
   showAddClip:false,addClipTitle:"",addClipEpisode:"",addClipDesc:"",addClipTopic:"",addClipUrl:"",addClipAutoFilling:false,
   showUpload:false,uploadLang:"FR",uploadStep:0,uploadFile:null,uploadPreview:null,uploadProcessing:false,uploadError:"",
@@ -1904,12 +1906,12 @@ let S={
   // Dodawanie kolejnego dialogu do istniejącej lekcji (sekcje)
   showAddDialog:false, addDialogStep:0, addDialogFile:null, addDialogText:"", addDialogPreview:null, addDialogProcessing:false, addDialogError:"", addDialogSectionName:"",
   elKeyInput:"",elMsg:"",
-  voiceRate:parseFloat(localStorage.getItem("lingua_rate")||"1.0"),
+  voiceRate:parseFloat(LS.getItem("lingua_rate")||"1.0"),
   lessonTab:"dialog",
   vocabDir:"lang→pl",
-  srs:(()=>{try{return JSON.parse(localStorage.getItem("lingua_srs")||"{}")}catch{return {}}})(),
-  theme:localStorage.getItem("lingua_theme")||"light",
-  palette:localStorage.getItem("lingua_palette")||"green",
+  srs:(()=>{try{return JSON.parse(LS.getItem("lingua_srs")||"{}")}catch{return {}}})(),
+  theme:LS.getItem("lingua_theme")||"light",
+  palette:LS.getItem("lingua_palette")||"green",
   translateInput:"", translateResult:null, translateProcessing:false, translateError:"", translateAddTargetLesson:"", translateRecording:false
 };
 // ── GOOGLE DRIVE SYNC ────────────────────────────────────────────────────────
@@ -1935,9 +1937,9 @@ function initDriveTokenClient(){
       S.driveTokenExpires = Date.now() + (parseInt(resp.expires_in,10) || 3599) * 1000;
       S.driveStatus = "connected";
       S.driveError = "";
-      localStorage.setItem("lingua_drive_token", resp.access_token);
-      localStorage.setItem("lingua_drive_token_expires", String(S.driveTokenExpires));
-      localStorage.setItem("lingua_drive_was_connected","1");
+      LS.setItem("lingua_drive_token", resp.access_token);
+      LS.setItem("lingua_drive_token_expires", String(S.driveTokenExpires));
+      LS.setItem("lingua_drive_was_connected","1");
       render();
       await driveFindFile();
       await driveSync(true);
@@ -1976,24 +1978,24 @@ function buildSyncPayload(){
 function applyDriveData(remote){
   if(!remote || typeof remote!=="object") return;
   if(remote.myLessons){ S.myLessons=remote.myLessons; safeSetItem("lingua_my_lessons", JSON.stringify(S.myLessons)); }
-  if(remote.lessonFolders){ S.lessonFolders=remote.lessonFolders; localStorage.setItem("lingua_lesson_folders", JSON.stringify(S.lessonFolders)); }
-  if(remote.foldersCollapsed){ S.foldersCollapsed=remote.foldersCollapsed; localStorage.setItem("lingua_folders_collapsed", JSON.stringify(S.foldersCollapsed)); }
+  if(remote.lessonFolders){ S.lessonFolders=remote.lessonFolders; LS.setItem("lingua_lesson_folders", JSON.stringify(S.lessonFolders)); }
+  if(remote.foldersCollapsed){ S.foldersCollapsed=remote.foldersCollapsed; LS.setItem("lingua_folders_collapsed", JSON.stringify(S.foldersCollapsed)); }
   if(remote.myFilms){ S.myFilms=remote.myFilms; safeSetItem("lingua_my_films", JSON.stringify(S.myFilms)); }
   if(remote.mySongs){ S.mySongs=remote.mySongs; safeSetItem("lingua_my_songs", JSON.stringify(S.mySongs)); }
-  if(remote.filmClipUrls){ S.filmClipUrls=remote.filmClipUrls; localStorage.setItem("lingua_film_clip_urls", JSON.stringify(S.filmClipUrls)); }
-  if(typeof remote.workerUrl === "string"){ S.workerUrl=remote.workerUrl; if(remote.workerUrl) localStorage.setItem("lingua_worker_url", remote.workerUrl); else localStorage.removeItem("lingua_worker_url"); }
-  if(remote.srs){ S.srs=remote.srs; localStorage.setItem("lingua_srs", JSON.stringify(S.srs)); }
-  if(remote.wordStatus) localStorage.setItem("lingua_word_status", JSON.stringify(remote.wordStatus));
-  if(remote.phraseStatus) localStorage.setItem("lingua_phrase_status", JSON.stringify(remote.phraseStatus));
+  if(remote.filmClipUrls){ S.filmClipUrls=remote.filmClipUrls; LS.setItem("lingua_film_clip_urls", JSON.stringify(S.filmClipUrls)); }
+  if(typeof remote.workerUrl === "string"){ S.workerUrl=remote.workerUrl; if(remote.workerUrl) LS.setItem("lingua_worker_url", remote.workerUrl); else LS.removeItem("lingua_worker_url"); }
+  if(remote.srs){ S.srs=remote.srs; LS.setItem("lingua_srs", JSON.stringify(S.srs)); }
+  if(remote.wordStatus) LS.setItem("lingua_word_status", JSON.stringify(remote.wordStatus));
+  if(remote.phraseStatus) LS.setItem("lingua_phrase_status", JSON.stringify(remote.phraseStatus));
   if(remote.lessonAudio){ S.lessonAudio=remote.lessonAudio; safeSetItem("lingua_audio", JSON.stringify(S.lessonAudio)); }
   if(remote.lessonVideos){ S.lessonVideos=remote.lessonVideos; safeSetItem("lingua_lesson_videos", JSON.stringify(S.lessonVideos)); }
-  if(remote.claudeKey){ S.claudeKey=remote.claudeKey; localStorage.setItem("lingua_claude_key", remote.claudeKey); }
-  if(remote.geminiKey){ S.geminiKey=remote.geminiKey; localStorage.setItem("lingua_gemini_key", remote.geminiKey); }
-  if(remote.rapidKey){ S.rapidKey=remote.rapidKey; localStorage.setItem("lingua_rapid_key", remote.rapidKey); }
-  if(remote.oaiKey){ S.oaiKey=remote.oaiKey; localStorage.setItem("lingua_oai_key", remote.oaiKey); }
-  if(remote.elKey){ S.elKey=remote.elKey; localStorage.setItem("lingua_el_key", remote.elKey); }
-  if(remote.palette && PALETTES[remote.palette]){ S.palette=remote.palette; localStorage.setItem("lingua_palette", remote.palette); applyTheme(S.theme); }
-  if(remote.theme && (remote.theme==="dark"||remote.theme==="light")){ S.theme=remote.theme; localStorage.setItem("lingua_theme", remote.theme); applyTheme(remote.theme); }
+  if(remote.claudeKey){ S.claudeKey=remote.claudeKey; LS.setItem("lingua_claude_key", remote.claudeKey); }
+  if(remote.geminiKey){ S.geminiKey=remote.geminiKey; LS.setItem("lingua_gemini_key", remote.geminiKey); }
+  if(remote.rapidKey){ S.rapidKey=remote.rapidKey; LS.setItem("lingua_rapid_key", remote.rapidKey); }
+  if(remote.oaiKey){ S.oaiKey=remote.oaiKey; LS.setItem("lingua_oai_key", remote.oaiKey); }
+  if(remote.elKey){ S.elKey=remote.elKey; LS.setItem("lingua_el_key", remote.elKey); }
+  if(remote.palette && PALETTES[remote.palette]){ S.palette=remote.palette; LS.setItem("lingua_palette", remote.palette); applyTheme(S.theme); }
+  if(remote.theme && (remote.theme==="dark"||remote.theme==="light")){ S.theme=remote.theme; LS.setItem("lingua_theme", remote.theme); applyTheme(remote.theme); }
 }
 
 async function driveFindFile(){
@@ -2007,10 +2009,10 @@ async function driveFindFile(){
     const data = await res.json();
     if(data.files && data.files.length>0){
       S.driveFileId = data.files[0].id;
-      localStorage.setItem("lingua_drive_file_id", S.driveFileId);
+      LS.setItem("lingua_drive_file_id", S.driveFileId);
     } else {
       S.driveFileId = null;
-      localStorage.removeItem("lingua_drive_file_id");
+      LS.removeItem("lingua_drive_file_id");
     }
   }catch(e){
     console.error("[Drive] find failed:", e);
@@ -2060,11 +2062,11 @@ async function pushToDrive(){
     }
     const data = await res.json();
     S.driveFileId = data.id;
-    localStorage.setItem("lingua_drive_file_id", S.driveFileId);
+    LS.setItem("lingua_drive_file_id", S.driveFileId);
     S.driveLastSync = Date.now();
     S.localLastModified = S.driveLastSync;
-    localStorage.setItem("lingua_drive_last_sync", String(S.driveLastSync));
-    localStorage.setItem("lingua_local_last_modified", String(S.localLastModified));
+    LS.setItem("lingua_drive_last_sync", String(S.driveLastSync));
+    LS.setItem("lingua_local_last_modified", String(S.localLastModified));
     S.driveStatus = "connected";
     S.driveError = "";
     renderIfStatusVisible();
@@ -2123,8 +2125,8 @@ async function driveSync(_preferRemote){
     applyDriveData(remote);
     S.driveLastSync = remoteLast;
     S.localLastModified = remoteLast;
-    localStorage.setItem("lingua_drive_last_sync", String(S.driveLastSync));
-    localStorage.setItem("lingua_local_last_modified", String(S.localLastModified));
+    LS.setItem("lingua_drive_last_sync", String(S.driveLastSync));
+    LS.setItem("lingua_local_last_modified", String(S.localLastModified));
     S.driveStatus="connected"; renderIfStatusVisible();
   } else {
     // No remote file yet → push current local
@@ -2156,23 +2158,23 @@ function disconnectDrive(){
   S.driveTokenExpires = 0;
   S.driveStatus = "disconnected";
   S.driveError = "";
-  localStorage.removeItem("lingua_drive_was_connected");
-  localStorage.removeItem("lingua_drive_token");
-  localStorage.removeItem("lingua_drive_token_expires");
+  LS.removeItem("lingua_drive_was_connected");
+  LS.removeItem("lingua_drive_token");
+  LS.removeItem("lingua_drive_token_expires");
   render();
 }
 
 function driveInvalidateToken(){
   S.driveToken = null;
   S.driveTokenExpires = 0;
-  localStorage.removeItem("lingua_drive_token");
-  localStorage.removeItem("lingua_drive_token_expires");
+  LS.removeItem("lingua_drive_token");
+  LS.removeItem("lingua_drive_token_expires");
 }
 
 function driveSilentReconnect(retries){
   retries = retries||0;
   if(!S.driveClientId) return;
-  if(localStorage.getItem("lingua_drive_was_connected")!=="1") return;
+  if(LS.getItem("lingua_drive_was_connected")!=="1") return;
   // Skip if cached token is still valid
   if(S.driveToken && S.driveTokenExpires > Date.now() + 30000){
     console.log("[Drive] Cached token valid until", new Date(S.driveTokenExpires).toLocaleTimeString());
@@ -2193,7 +2195,7 @@ function driveSilentReconnect(retries){
 function scheduleDriveSync(){
   // Always bump local timestamp so future reconnect knows local has unsynced changes
   S.localLastModified = Date.now();
-  localStorage.setItem("lingua_local_last_modified", String(S.localLastModified));
+  LS.setItem("lingua_local_last_modified", String(S.localLastModified));
   if(!S.driveAutoSync || !S.driveToken) return;
   if(_driveSyncTimer) clearTimeout(_driveSyncTimer);
   _driveSyncTimer = setTimeout(()=>{ pushToDrive(); }, 3000);
@@ -2504,10 +2506,10 @@ function seekYtTo(seconds){
 // translations potrafią to zjeść. Te 3 funkcje: monitoring + ostrzeżenie + safe wrap.
 function getLocalStorageUsageKB(){
   let total = 0;
-  for(let i=0; i<localStorage.length; i++){
-    const k = localStorage.key(i);
+  for(let i=0; i<LS.length; i++){
+    const k = LS.key(i);
     if(!k) continue;
-    const v = localStorage.getItem(k) || "";
+    const v = LS.getItem(k) || "";
     // JS strings są UTF-16, ale localStorage liczy bajty w UTF-16 (2 bajty/znak)
     total += (k.length + v.length) * 2;
   }
@@ -2518,7 +2520,7 @@ function getLocalStorageUsageKB(){
 // (np. buildSyncPayload przy synchronizacji z Drive). Zwraca fallback zamiast rzucać.
 function safeParseLS(key, fallback){
   try{
-    const raw = localStorage.getItem(key);
+    const raw = LS.getItem(key);
     if(raw == null) return fallback;
     return JSON.parse(raw);
   }catch(e){
@@ -2529,7 +2531,7 @@ function safeParseLS(key, fallback){
 
 function safeSetItem(key, value){
   try{
-    localStorage.setItem(key, value);
+    LS.setItem(key, value);
     return true;
   }catch(e){
     const isQuota = e && (e.name === "QuotaExceededError" || e.code === 22 || /quota/i.test(e.message||""));
@@ -2543,7 +2545,7 @@ function safeSetItem(key, value){
         alert("Brakuje miejsca w localStorage ("+usedKB+" KB). Włącz sync z Drive lub usuń stare lekcje.");
       }
     } else {
-      console.warn("[LinguaAgent] localStorage.setItem failed for '"+key+"':", e);
+      console.warn("[LinguaAgent] LS.setItem failed for '"+key+"':", e);
     }
     return false;
   }
@@ -2615,7 +2617,7 @@ function createFolder(lang, scope){
   if(!lf[lang]) lf[lang]=[];
   if(lf[lang].some(f => folderName(f)===name)){alert("Folder \""+name+"\" już istnieje");return;}
   lf[lang]=lf[lang].concat([{name, scope}]);
-  localStorage.setItem("lingua_lesson_folders", JSON.stringify(lf));
+  LS.setItem("lingua_lesson_folders", JSON.stringify(lf));
   set({lessonFolders:lf});
   scheduleDriveSync();
 }
@@ -2634,7 +2636,7 @@ function renameFolder(lang, oldName){
   const ml = Object.assign({}, S.myLessons);
   if(ml[lang]) ml[lang] = ml[lang].map(l => l.folder===oldName ? Object.assign({},l,{folder:newName}) : l);
   safeSetItem("lingua_my_lessons", JSON.stringify(ml));
-  localStorage.setItem("lingua_lesson_folders", JSON.stringify(lf));
+  LS.setItem("lingua_lesson_folders", JSON.stringify(lf));
   set({lessonFolders:lf, myLessons:ml});
   scheduleDriveSync();
 }
@@ -2646,7 +2648,7 @@ function deleteFolder(lang, name){
   const ml = Object.assign({}, S.myLessons);
   if(ml[lang]) ml[lang] = ml[lang].map(l => l.folder===name ? Object.assign({},l,{folder:null}) : l);
   safeSetItem("lingua_my_lessons", JSON.stringify(ml));
-  localStorage.setItem("lingua_lesson_folders", JSON.stringify(lf));
+  LS.setItem("lingua_lesson_folders", JSON.stringify(lf));
   set({lessonFolders:lf, myLessons:ml});
   scheduleDriveSync();
 }
@@ -2656,7 +2658,7 @@ function toggleFolderCollapsed(lang, folderKey){
   fc[lang] = Object.assign({}, fc[lang]||{});
   fc[lang][folderKey] = !fc[lang][folderKey];
   S.foldersCollapsed = fc;
-  localStorage.setItem("lingua_folders_collapsed", JSON.stringify(fc));
+  LS.setItem("lingua_folders_collapsed", JSON.stringify(fc));
   scheduleDriveSync();
   render();
 }
@@ -2961,7 +2963,7 @@ function saveFilmClipUrl(clipId, url){
     delete map[clipId];
   }
   S.filmClipUrls = map;
-  localStorage.setItem("lingua_film_clip_urls", JSON.stringify(map));
+  LS.setItem("lingua_film_clip_urls", JSON.stringify(map));
   scheduleDriveSync();
 }
 
@@ -3943,7 +3945,7 @@ function getEnrichedVocabEntry(word, lang){
   if(!wordLower) return null;
   // 1. Cache z popup tłumaczeń (jeśli user kliknęła w dialogu wcześniej)
   try{
-    const cache = JSON.parse(localStorage.getItem("lingua_word_translations")||"{}");
+    const cache = JSON.parse(LS.getItem("lingua_word_translations")||"{}");
     const entry = cache[wordLower+"_"+lang];
     if(entry && entry.d && entry.d.pl){
       return {
@@ -4220,8 +4222,8 @@ function renderLang(){
   // ── Narzędzia nauki ──
   const toolsWrap=h("div",{style:"display:flex;gap:1px;background:var(--border);border:1px solid var(--border);margin-bottom:36px"});
   const dueCount=getDueWords(lang).length;
-  const ws=JSON.parse(localStorage.getItem("lingua_word_status")||"{}");
-  const ps=JSON.parse(localStorage.getItem("lingua_phrase_status")||"{}");
+  const ws=JSON.parse(LS.getItem("lingua_word_status")||"{}");
+  const ps=JSON.parse(LS.getItem("lingua_phrase_status")||"{}");
   const learningCount=Object.entries(ws).filter(([k,v])=>k.endsWith("_"+lang)&&v==="learning").length;
   const knownCount=Object.entries(ws).filter(([k,v])=>k.endsWith("_"+lang)&&v==="known").length;
   const phraseLearningCount=Object.entries(ps).filter(([k,v])=>k.endsWith("_"+lang)&&v==="learning").length;
@@ -4436,7 +4438,7 @@ function showWordPopup(wordRaw, wordClean, lang, anchorEl){
   popup.innerHTML = '<div style="color:var(--text3);font-size:13px">Ładowanie...</div>';
   document.body.appendChild(popup);
 
-  const wordStatus = JSON.parse(localStorage.getItem("lingua_word_status")||"{}");
+  const wordStatus = JSON.parse(LS.getItem("lingua_word_status")||"{}");
   const key = wordClean + "_" + lang;
 
   async function fillPopup(data){
@@ -4471,13 +4473,13 @@ function showWordPopup(wordRaw, wordClean, lang, anchorEl){
     // (Gemini free tier: ~10-20 zapytań/min)
     const POPUP_CACHE_KEY = "lingua_word_translations";
     const POPUP_CACHE_MAX = 2000; // ~500KB at ~250 bytes per entry
-    const loadCache = ()=>{ try{ return JSON.parse(localStorage.getItem(POPUP_CACHE_KEY)||"{}"); }catch{ return {}; } };
-    const saveCache = (c)=>{ try{ localStorage.setItem(POPUP_CACHE_KEY, JSON.stringify(c)); }catch(e){
+    const loadCache = ()=>{ try{ return JSON.parse(LS.getItem(POPUP_CACHE_KEY)||"{}"); }catch{ return {}; } };
+    const saveCache = (c)=>{ try{ LS.setItem(POPUP_CACHE_KEY, JSON.stringify(c)); }catch(e){
       // LRU evict if quota exceeded — drop ~25% oldest by access timestamp
       const entries = Object.entries(c).sort((a,b)=>(a[1].t||0)-(b[1].t||0));
       const toDrop = Math.max(1, Math.floor(entries.length/4));
       for(let i=0; i<toDrop; i++) delete c[entries[i][0]];
-      try{ localStorage.setItem(POPUP_CACHE_KEY, JSON.stringify(c)); }catch{}
+      try{ LS.setItem(POPUP_CACHE_KEY, JSON.stringify(c)); }catch{}
     }};
     const cacheKey = wordClean + "_" + lang;
     const cache = loadCache();
@@ -4557,9 +4559,9 @@ function showWordPopup(wordRaw, wordClean, lang, anchorEl){
 }
 
 function markWord(key, status, wordClean, lang){
-  const ws = JSON.parse(localStorage.getItem("lingua_word_status")||"{}");
+  const ws = JSON.parse(LS.getItem("lingua_word_status")||"{}");
   ws[key] = status;
-  localStorage.setItem("lingua_word_status", JSON.stringify(ws));
+  LS.setItem("lingua_word_status", JSON.stringify(ws));
   // Update all spans for this word
   document.querySelectorAll(".word-span").forEach(span=>{
     const spKey = (span.dataset.wordclean||"") + "_" + lang;
@@ -4587,7 +4589,7 @@ function renderVocabList(vocab, lang, onDelete, listType, onEdit, onMove){
   wrap.appendChild(dirRow);
 
   // Snapshot once for the whole list — per-row reads would be wasteful
-  const wordStatusForList = JSON.parse(localStorage.getItem("lingua_word_status")||"{}");
+  const wordStatusForList = JSON.parse(LS.getItem("lingua_word_status")||"{}");
 
   vocab.forEach((v, i)=>{
     const row = document.createElement("div");
@@ -4665,7 +4667,7 @@ function renderVocabList(vocab, lang, onDelete, listType, onEdit, onMove){
       const isPhraseBtn = listType === "phrases";
       const storageKey = isPhraseBtn ? "lingua_phrase_status" : "lingua_word_status";
       const targetLabel = isPhraseBtn ? "Moje zwroty" : "Moje słówka";
-      const liveStatus = JSON.parse(localStorage.getItem(storageKey)||"{}");
+      const liveStatus = JSON.parse(LS.getItem(storageKey)||"{}");
       const wsKey = (v.w||"").toLowerCase() + "_" + lang;
       const isLearning = liveStatus[wsKey] === "learning";
       const isKnown = liveStatus[wsKey] === "known";
@@ -4677,7 +4679,7 @@ function renderVocabList(vocab, lang, onDelete, listType, onEdit, onMove){
       learnBtn.style.cssText = isLearning ? activeStyle : (baseStyle + ";background:none;color:var(--text3)");
       learnBtn.onclick = (e)=>{
         e.stopPropagation();
-        const ws = JSON.parse(localStorage.getItem(storageKey)||"{}");
+        const ws = JSON.parse(LS.getItem(storageKey)||"{}");
         if(ws[wsKey] === "learning"){
           delete ws[wsKey];
           learnBtn.textContent = "📖";
@@ -4689,7 +4691,7 @@ function renderVocabList(vocab, lang, onDelete, listType, onEdit, onMove){
           learnBtn.title = "Usuń z "+targetLabel;
           learnBtn.style.cssText = activeStyle;
         }
-        localStorage.setItem(storageKey, JSON.stringify(ws));
+        LS.setItem(storageKey, JSON.stringify(ws));
         scheduleDriveSync();
       };
       row.appendChild(learnBtn);
@@ -5501,7 +5503,7 @@ function renderLesson(){
       // Linia dialogu — każde słowo klikalne (popup z tłumaczeniem + Uczę się)
       const lineDiv = document.createElement("div");
       lineDiv.className = "film-cue-l";
-      const wsKaraoke = JSON.parse(localStorage.getItem("lingua_word_status")||"{}");
+      const wsKaraoke = JSON.parse(LS.getItem("lingua_word_status")||"{}");
       line.l.split(/(\s+)/).forEach(token=>{
         if(/^\s+$/.test(token)){
           lineDiv.appendChild(document.createTextNode(token));
@@ -5550,7 +5552,7 @@ function renderLesson(){
     dc.appendChild(btnGroup);
     dw.appendChild(dc);
 
-    const wordStatus = JSON.parse(localStorage.getItem("lingua_word_status")||"{}");
+    const wordStatus = JSON.parse(LS.getItem("lingua_word_status")||"{}");
     // Renderer pojedynczej kwestii dialogu (zachowuje globalny lineIdx dla highlightu/seek)
     const renderDialogLine = (line, lineIdx)=>{
       const row=h("div",{class:"dline"+(playingLine===lineIdx?" active":""),id:"dline-"+lineIdx});
@@ -6843,7 +6845,7 @@ function renderSettings(){
   sw.appendChild(h("div",{class:"sec-label"},"Silnik głosowy"));
   const eg=h("div",{class:"eng-grid"});
   [["oai","OpenAI TTS","naturalne głosy"],["el","ElevenLabs","bardzo realistyczne"],["browser","Systemowy","darmowy"]].forEach(([eng,name,desc])=>{
-    const btn=h("button",{class:"eng-btn"+(ttsEngine===eng?" sel":""),onclick:()=>{localStorage.setItem("lingua_tts",eng);set({ttsEngine:eng});}});
+    const btn=h("button",{class:"eng-btn"+(ttsEngine===eng?" sel":""),onclick:()=>{LS.setItem("lingua_tts",eng);set({ttsEngine:eng});}});
     btn.appendChild(h("div",{class:"eng-name"},name));
     btn.appendChild(h("div",{class:"eng-desc"},desc));
     eg.appendChild(btn);
@@ -6856,7 +6858,7 @@ function renderSettings(){
   nvChk.checked = !!S.preferNativeVoiceForeign;
   nvChk.onchange = (e)=>{
     const v = e.target.checked;
-    localStorage.setItem("lingua_native_voice_foreign", v ? "1" : "0");
+    LS.setItem("lingua_native_voice_foreign", v ? "1" : "0");
     set({preferNativeVoiceForeign: v});
   };
   nvRow.appendChild(nvChk);
@@ -6870,7 +6872,7 @@ function renderSettings(){
     sw.appendChild(h("div",{class:"sec-label"},"Głos żeński — Aleksandra"));
     [["nova","Nova","miękki, ciepły, naturalny"],["shimmer","Shimmer","wyraźny, przyjazny"],["alloy","Alloy","neutralny, spokojny"]].forEach(([id,name,desc])=>{
       const sel=oaiVoiceFemale===id;
-      const row=h("div",{class:"voice-row"+(sel?" sel-row":""),onclick:()=>{localStorage.setItem("lingua_oai_vf",id);set({oaiVoiceFemale:id});}});
+      const row=h("div",{class:"voice-row"+(sel?" sel-row":""),onclick:()=>{LS.setItem("lingua_oai_vf",id);set({oaiVoiceFemale:id});}});
       const left=h("div",{style:"display:flex;align-items:center;gap:10px"});
       left.appendChild(h("div",{class:"voice-dot"}));
       left.appendChild(h("div",{},h("div",{class:"v-name"},name),h("div",{class:"v-desc"},desc)));
@@ -6886,7 +6888,7 @@ function renderSettings(){
     sw.appendChild(h("div",{class:"sec-label"},"Głos męski — rozmówca"));
     [["echo","Echo","naturalny, konwersacyjny"],["fable","Fable","ekspresyjny"],["onyx","Onyx","głęboki, pewny siebie"]].forEach(([id,name,desc])=>{
       const sel=oaiVoiceMale===id;
-      const row=h("div",{class:"voice-row"+(sel?" sel-row":""),onclick:()=>{localStorage.setItem("lingua_oai_vm",id);set({oaiVoiceMale:id});}});
+      const row=h("div",{class:"voice-row"+(sel?" sel-row":""),onclick:()=>{LS.setItem("lingua_oai_vm",id);set({oaiVoiceMale:id});}});
       const left=h("div",{style:"display:flex;align-items:center;gap:10px"});
       left.appendChild(h("div",{class:"voice-dot"}));
       left.appendChild(h("div",{},h("div",{class:"v-name"},name),h("div",{class:"v-desc"},desc)));
@@ -6905,8 +6907,8 @@ function renderSettings(){
     sw.appendChild(h("div",{style:"font-size:11px;color:var(--ink4);margin-bottom:8px"},"platform.openai.com → API keys → Create new secret key"));
     if(oaiKey) sw.appendChild(h("div",{class:"msg-ok"},"✓ OpenAI TTS aktywny"));
     const ob=h("div",{class:"row"});
-    ob.appendChild(h("button",{class:"primary",onclick:()=>{localStorage.setItem("lingua_oai_key",S.oaiKey.trim());set({oaiKey:S.oaiKey.trim()});scheduleDriveSync();}},"Zapisz klucz OpenAI"));
-    if(oaiKey) ob.appendChild(h("button",{class:"sbtn danger",onclick:()=>{localStorage.removeItem("lingua_oai_key");set({oaiKey:""});}},"Usuń"));
+    ob.appendChild(h("button",{class:"primary",onclick:()=>{LS.setItem("lingua_oai_key",S.oaiKey.trim());set({oaiKey:S.oaiKey.trim()});scheduleDriveSync();}},"Zapisz klucz OpenAI"));
+    if(oaiKey) ob.appendChild(h("button",{class:"sbtn danger",onclick:()=>{LS.removeItem("lingua_oai_key");set({oaiKey:""});}},"Usuń"));
     sw.appendChild(ob);
   }
 
@@ -6936,8 +6938,8 @@ function renderSettings(){
     if(elKey&&!elMsg) sw.appendChild(h("div",{class:"msg-ok"},"✓ ElevenLabs aktywny"));
     const eb=h("div",{class:"row"});
     eb.appendChild(h("button",{class:"sbtn",onclick:testElKey},"Testuj"));
-    eb.appendChild(h("button",{class:"primary",onclick:()=>{localStorage.setItem("lingua_el_key",S.elKeyInput.trim());set({elKey:S.elKeyInput.trim(),elMsg:"ok:Zapisano"});scheduleDriveSync();}},"Zapisz"));
-    if(elKey) eb.appendChild(h("button",{class:"sbtn danger",onclick:()=>{localStorage.removeItem("lingua_el_key");set({elKey:"",elKeyInput:"",elMsg:""});}},"Usuń"));
+    eb.appendChild(h("button",{class:"primary",onclick:()=>{LS.setItem("lingua_el_key",S.elKeyInput.trim());set({elKey:S.elKeyInput.trim(),elMsg:"ok:Zapisano"});scheduleDriveSync();}},"Zapisz"));
+    if(elKey) eb.appendChild(h("button",{class:"sbtn danger",onclick:()=>{LS.removeItem("lingua_el_key");set({elKey:"",elKeyInput:"",elMsg:""});}},"Usuń"));
     sw.appendChild(eb);
   }
 
@@ -6947,7 +6949,7 @@ function renderSettings(){
   const rr=h("div",{style:"display:flex;align-items:center;gap:16px;margin-bottom:24px"});
   const rv=h("span",{style:"font-size:12px;color:var(--ink3);min-width:110px"},rateLabel(voiceRate));
   const sl=h("input",{type:"range",min:"0.7",max:"1.4",step:"0.05",value:String(voiceRate),style:"flex:1",
-    oninput:(e)=>{const v=parseFloat(e.target.value);rv.textContent=rateLabel(v);set({voiceRate:v});localStorage.setItem("lingua_rate",String(v));}});
+    oninput:(e)=>{const v=parseFloat(e.target.value);rv.textContent=rateLabel(v);set({voiceRate:v});LS.setItem("lingua_rate",String(v));}});
   rr.appendChild(sl);rr.appendChild(rv);
   sw.appendChild(rr);
 
@@ -6960,8 +6962,8 @@ function renderSettings(){
   sw.appendChild(aki);
   if(geminiKey) sw.appendChild(h("div",{class:"msg-ok"},"✓ Gemini API aktywne"));
   const ab=h("div",{class:"row"});
-  ab.appendChild(h("button",{class:"primary",onclick:()=>{localStorage.setItem("lingua_gemini_key",S.geminiKey.trim());set({geminiKey:S.geminiKey.trim()});scheduleDriveSync();}},"Zapisz klucz Gemini"));
-  if(geminiKey) ab.appendChild(h("button",{class:"sbtn danger",onclick:()=>{localStorage.removeItem("lingua_gemini_key");set({geminiKey:""});}},"Usuń"));
+  ab.appendChild(h("button",{class:"primary",onclick:()=>{LS.setItem("lingua_gemini_key",S.geminiKey.trim());set({geminiKey:S.geminiKey.trim()});scheduleDriveSync();}},"Zapisz klucz Gemini"));
+  if(geminiKey) ab.appendChild(h("button",{class:"sbtn danger",onclick:()=>{LS.removeItem("lingua_gemini_key");set({geminiKey:""});}},"Usuń"));
   sw.appendChild(ab);
   sw.appendChild(h("div",{class:"sec-label",style:"margin-top:24px"},"Klucz RapidAPI — transkrypcje YouTube"));
   sw.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-bottom:8px;line-height:1.6"},"Klucz z rapidapi.com → wyszukaj 'YouTube Transcript' → subskrybuj darmowy plan."));
@@ -6969,8 +6971,8 @@ function renderSettings(){
   sw.appendChild(rki);
   if(rapidKey) sw.appendChild(h("div",{class:"msg-ok"},"✓ RapidAPI aktywne"));
   const rb=h("div",{class:"row"});
-  rb.appendChild(h("button",{class:"primary",onclick:()=>{localStorage.setItem("lingua_rapid_key",S.rapidKey.trim());set({rapidKey:S.rapidKey.trim()});scheduleDriveSync();}},"Zapisz klucz RapidAPI"));
-  if(rapidKey) rb.appendChild(h("button",{class:"sbtn danger",onclick:()=>{localStorage.removeItem("lingua_rapid_key");set({rapidKey:""});}},"Usuń"));
+  rb.appendChild(h("button",{class:"primary",onclick:()=>{LS.setItem("lingua_rapid_key",S.rapidKey.trim());set({rapidKey:S.rapidKey.trim()});scheduleDriveSync();}},"Zapisz klucz RapidAPI"));
+  if(rapidKey) rb.appendChild(h("button",{class:"sbtn danger",onclick:()=>{LS.removeItem("lingua_rapid_key");set({rapidKey:""});}},"Usuń"));
   sw.appendChild(rb);
   sw.appendChild(h("div",{class:"sec-label",style:"margin-top:24px"},"Klucz Anthropic (Claude) API — analiza PDF"));
   sw.appendChild(h("div",{style:"font-size:11px;color:var(--text3);margin-bottom:8px;line-height:1.6"},"Potrzebny do analizy PDF z podręczników. Pobierz klucz na console.anthropic.com → API Keys."));
@@ -6978,8 +6980,8 @@ function renderSettings(){
   sw.appendChild(cki);
   if(claudeKey) sw.appendChild(h("div",{class:"msg-ok"},"✓ Claude API aktywne"));
   const cb=h("div",{class:"row"});
-  cb.appendChild(h("button",{class:"primary",onclick:()=>{localStorage.setItem("lingua_claude_key",S.claudeKey.trim());set({claudeKey:S.claudeKey.trim()});scheduleDriveSync();}},"Zapisz klucz Claude"));
-  if(claudeKey) cb.appendChild(h("button",{class:"sbtn danger",onclick:()=>{localStorage.removeItem("lingua_claude_key");set({claudeKey:""});}},"Usuń"));
+  cb.appendChild(h("button",{class:"primary",onclick:()=>{LS.setItem("lingua_claude_key",S.claudeKey.trim());set({claudeKey:S.claudeKey.trim()});scheduleDriveSync();}},"Zapisz klucz Claude"));
+  if(claudeKey) cb.appendChild(h("button",{class:"sbtn danger",onclick:()=>{LS.removeItem("lingua_claude_key");set({claudeKey:""});}},"Usuń"));
   sw.appendChild(cb);
 
   // ── Worker do transkrypcji YouTube ──
@@ -6992,13 +6994,13 @@ function renderSettings(){
   const wuRow=h("div",{class:"row"});
   wuRow.appendChild(h("button",{class:"primary",onclick:()=>{
     const v=(wuInp.value||"").trim().replace(/\/+$/,"");
-    localStorage.setItem("lingua_worker_url",v);
+    LS.setItem("lingua_worker_url",v);
     S.workerUrl=v;
     scheduleDriveSync();
     render();
   }},"Zapisz URL Workera"));
   if(S.workerUrl) wuRow.appendChild(h("button",{class:"sbtn danger",onclick:()=>{
-    localStorage.removeItem("lingua_worker_url");
+    LS.removeItem("lingua_worker_url");
     S.workerUrl="";
     scheduleDriveSync();
     render();
@@ -7031,13 +7033,13 @@ function renderSettings(){
   const ciRow=h("div",{class:"row"});
   ciRow.appendChild(h("button",{class:"primary",onclick:()=>{
     const v=(ciInp.value||"").trim();
-    localStorage.setItem("lingua_drive_client_id",v);
+    LS.setItem("lingua_drive_client_id",v);
     S.driveClientId=v;
     _driveTokenClient=null;
     render();
   }},"Zapisz Client ID"));
   if(S.driveClientId) ciRow.appendChild(h("button",{class:"sbtn danger",onclick:()=>{
-    localStorage.removeItem("lingua_drive_client_id");
+    LS.removeItem("lingua_drive_client_id");
     S.driveClientId="";
     _driveTokenClient=null;
     disconnectDrive();
@@ -7052,12 +7054,12 @@ function renderSettings(){
   const lhRow = h("div",{class:"row"});
   lhRow.appendChild(h("button",{class:"primary",onclick:()=>{
     const v=(lhInp.value||"").trim();
-    localStorage.setItem("lingua_drive_login_hint",v);
+    LS.setItem("lingua_drive_login_hint",v);
     S.driveLoginHint=v;
     render();
   }},"Zapisz email"));
   if(S.driveLoginHint) lhRow.appendChild(h("button",{class:"sbtn danger",onclick:()=>{
-    localStorage.removeItem("lingua_drive_login_hint");
+    LS.removeItem("lingua_drive_login_hint");
     S.driveLoginHint="";
     render();
   }},"Usuń"));
@@ -7069,7 +7071,7 @@ function renderSettings(){
         ? h("button",{class:"sbtn danger",onclick:disconnectDrive},"Rozłącz Google Drive")
         : h("button",{class:"primary",onclick:connectDrive},dStatus==="connecting"?"⏳ Łączenie...":"🔗 Połącz z Google Drive"),
       (dStatus==="connected") ? h("button",{class:"sbtn",onclick:()=>driveSync(false)},"⟳ Synchronizuj teraz") : null,
-      (dStatus==="connected") ? h("button",{class:"sbtn",onclick:()=>{if(!confirm("Pobierz dane z chmury i NADPISZ lokalne? Lekcje i klucze które masz tutaj zostaną zastąpione tymi z Drive.")) return; pullFromDrive().then(r=>{if(r){applyDriveData(r);S.driveLastSync=r.lastModified||Date.now();S.localLastModified=S.driveLastSync;localStorage.setItem("lingua_drive_last_sync",String(S.driveLastSync));localStorage.setItem("lingua_local_last_modified",String(S.localLastModified));render();}});}},"⬇ Pobierz z chmury") : null,
+      (dStatus==="connected") ? h("button",{class:"sbtn",onclick:()=>{if(!confirm("Pobierz dane z chmury i NADPISZ lokalne? Lekcje i klucze które masz tutaj zostaną zastąpione tymi z Drive.")) return; pullFromDrive().then(r=>{if(r){applyDriveData(r);S.driveLastSync=r.lastModified||Date.now();S.localLastModified=S.driveLastSync;LS.setItem("lingua_drive_last_sync",String(S.driveLastSync));LS.setItem("lingua_local_last_modified",String(S.localLastModified));render();}});}},"⬇ Pobierz z chmury") : null,
       (dStatus==="connected") ? h("button",{class:"sbtn",onclick:pushToDrive},"⬆ Wyślij do chmury") : null
     ));
     const asRow=h("label",{style:"display:flex;align-items:center;gap:10px;margin-top:14px;cursor:pointer;font-size:12px;color:var(--text2)"});
@@ -7077,7 +7079,7 @@ function renderSettings(){
     cb.checked = S.driveAutoSync;
     cb.onchange = (e)=>{
       S.driveAutoSync = e.target.checked;
-      localStorage.setItem("lingua_drive_auto_sync", e.target.checked?"1":"0");
+      LS.setItem("lingua_drive_auto_sync", e.target.checked?"1":"0");
     };
     asRow.appendChild(cb);
     asRow.appendChild(document.createTextNode("Synchronizuj automatycznie po każdej zmianie (3s opóźnienia)"));
@@ -7141,7 +7143,7 @@ function renderSettings(){
       style:"text-align:left;padding:12px 16px;background:"+(active?"var(--gold-dim)":"var(--surface)")+";border:2px solid "+(active?"var(--gold)":"var(--border)")+";cursor:pointer;border-radius:6px;font-family:inherit;transition:all .15s",
       onclick:()=>{
         S.lessonModel = key;
-        localStorage.setItem("lingua_lesson_model", key);
+        LS.setItem("lingua_lesson_model", key);
         render();
       }
     });
@@ -7154,7 +7156,7 @@ function renderSettings(){
   // ── Cache lekcji ──
   sw.appendChild(h("hr",{class:"settings-divider"}));
   sw.appendChild(h("div",{style:"font-size:14px;font-weight:500;color:var(--text);margin-bottom:6px"},"💾 Cache lekcji"));
-  let cacheCount = 0; try{ cacheCount = Object.keys(JSON.parse(localStorage.getItem(LESSON_CACHE_KEY)||"{}")).length; }catch(e){}
+  let cacheCount = 0; try{ cacheCount = Object.keys(JSON.parse(LS.getItem(LESSON_CACHE_KEY)||"{}")).length; }catch(e){}
   sw.appendChild(h("div",{style:"font-size:12px;color:var(--text3);margin-bottom:12px;line-height:1.6"},
     "Cache zapamiętuje wyniki Claude'a dla każdego transkryptu. Drugie kliknięcie „Wygeneruj z zapisanego tekstu\" dla tej samej lekcji = ",
     h("strong",{},"$0 kosztu"),
@@ -7553,20 +7555,20 @@ function lessonCacheKey(transcript, lang){
 
 function getCachedLesson(transcript, lang){
   try{
-    const cache = JSON.parse(localStorage.getItem(LESSON_CACHE_KEY)||"{}");
+    const cache = JSON.parse(LS.getItem(LESSON_CACHE_KEY)||"{}");
     const k = lessonCacheKey(transcript, lang);
     const entry = cache[k];
     if(!entry) return null;
     // Refresh timestamp (LRU access)
     entry.lastAccess = Date.now();
-    localStorage.setItem(LESSON_CACHE_KEY, JSON.stringify(cache));
+    LS.setItem(LESSON_CACHE_KEY, JSON.stringify(cache));
     return entry.lesson || null;
   }catch(e){ return null; }
 }
 
 function setCachedLesson(transcript, lang, lesson){
   try{
-    let cache = JSON.parse(localStorage.getItem(LESSON_CACHE_KEY)||"{}");
+    let cache = JSON.parse(LS.getItem(LESSON_CACHE_KEY)||"{}");
     const k = lessonCacheKey(transcript, lang);
     // LRU eviction if over capacity
     const entries = Object.entries(cache);
@@ -7576,19 +7578,19 @@ function setCachedLesson(transcript, lang, lesson){
       for(let i=0; i<toRemove; i++) delete cache[entries[i][0]];
     }
     cache[k] = { lesson, timestamp: Date.now(), lastAccess: Date.now() };
-    localStorage.setItem(LESSON_CACHE_KEY, JSON.stringify(cache));
+    LS.setItem(LESSON_CACHE_KEY, JSON.stringify(cache));
     console.log("[LessonCache] saved, total entries:", Object.keys(cache).length);
   }catch(e){
     console.log("[LessonCache] save failed (likely quota):", e.message);
     // Try clearing and saving just this one
     try{
-      localStorage.setItem(LESSON_CACHE_KEY, JSON.stringify({[lessonCacheKey(transcript,lang)]:{lesson, timestamp:Date.now(), lastAccess:Date.now()}}));
+      LS.setItem(LESSON_CACHE_KEY, JSON.stringify({[lessonCacheKey(transcript,lang)]:{lesson, timestamp:Date.now(), lastAccess:Date.now()}}));
     }catch(e2){ console.log("[LessonCache] retry also failed"); }
   }
 }
 
 function clearLessonCache(){
-  localStorage.removeItem(LESSON_CACHE_KEY);
+  LS.removeItem(LESSON_CACHE_KEY);
 }
 
 // JEDNO źródło schematu JSON lekcji dla ścieżek transkrypt/wideo (buildLessonFromTranscript,
@@ -8860,7 +8862,7 @@ function renderSongs(){
   w.appendChild(renderTopNav());
   w.appendChild(h("div",{class:"lang-hero"},
     ...Object.entries(LANGS).map(([code,l])=>h("button",{class:"lang-tab"+(lang===code?" sel":""),
-      onclick:()=>{localStorage.setItem("lingua_song_lang",code);set({lang:code,songLang:code,filmSeries:null,filmClipId:null});}},
+      onclick:()=>{LS.setItem("lingua_song_lang",code);set({lang:code,songLang:code,filmSeries:null,filmClipId:null});}},
       h("span",{class:"lang-flag"},l.flag),h("span",{class:"lang-name"},l.name)))
   ));
   const main=h("div",{class:"main"});
@@ -8903,7 +8905,7 @@ function updateSrs(word,lang,correct){
   entry.next=d.toISOString().slice(0,10);
   entry.word=word;entry.lang=lang;
   srs[k]=entry;
-  localStorage.setItem("lingua_srs",JSON.stringify(srs));
+  LS.setItem("lingua_srs",JSON.stringify(srs));
   set({srs});
 }
 function getDueWords(lang){
@@ -9170,7 +9172,7 @@ function renderTranslate(){
 // cfg = {type:"words"|"phrases", storageKey, title, sub, addPlaceholder, origin, emptyHint}
 function renderMyVocab(cfg){
   const{lang}=S;
-  const ws=JSON.parse(localStorage.getItem(cfg.storageKey)||"{}");
+  const ws=JSON.parse(LS.getItem(cfg.storageKey)||"{}");
   const learning=[];const known=[];
   Object.entries(ws).forEach(([k,v])=>{
     if(!k.endsWith("_"+lang))return;
@@ -9232,10 +9234,10 @@ function renderMyVocab(cfg){
   const submit = ()=>{
     const word = (addInp.value||"").trim().toLowerCase();
     if(!word) return;
-    const ws2 = JSON.parse(localStorage.getItem(cfg.storageKey)||"{}");
+    const ws2 = JSON.parse(LS.getItem(cfg.storageKey)||"{}");
     if(ws2[word+"_"+lang] === "learning"){ alert("\""+word+"\" już jest na liście Uczę się"); return; }
     ws2[word+"_"+lang] = "learning";
-    localStorage.setItem(cfg.storageKey, JSON.stringify(ws2));
+    LS.setItem(cfg.storageKey, JSON.stringify(ws2));
     scheduleDriveSync();
     addInp.value = "";
     render();
@@ -9254,8 +9256,8 @@ function renderMyVocab(cfg){
       const row=h("div",{style:"display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)"});
       row.appendChild(h("div",{style:"font-size:14px;color:var(--text)"},word));
       const btns=h("div",{style:"display:flex;gap:6px"});
-      btns.appendChild(h("button",{class:"sbtn",style:"font-size:10px;padding:4px 10px",onclick:()=>{ws[word+"_"+lang]="known";localStorage.setItem(cfg.storageKey,JSON.stringify(ws));render();}},"Znam"));
-      btns.appendChild(h("button",{class:"sbtn",style:"font-size:10px;padding:4px 10px;color:var(--err-text);border-color:var(--err-text)",onclick:()=>{delete ws[word+"_"+lang];localStorage.setItem(cfg.storageKey,JSON.stringify(ws));render();}},"Usuń"));
+      btns.appendChild(h("button",{class:"sbtn",style:"font-size:10px;padding:4px 10px",onclick:()=>{ws[word+"_"+lang]="known";LS.setItem(cfg.storageKey,JSON.stringify(ws));render();}},"Znam"));
+      btns.appendChild(h("button",{class:"sbtn",style:"font-size:10px;padding:4px 10px;color:var(--err-text);border-color:var(--err-text)",onclick:()=>{delete ws[word+"_"+lang];LS.setItem(cfg.storageKey,JSON.stringify(ws));render();}},"Usuń"));
       row.appendChild(btns);list.appendChild(row);
     });
     main.appendChild(list);
@@ -9267,7 +9269,7 @@ function renderMyVocab(cfg){
       const row=h("div",{style:"display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)"});
       row.appendChild(h("div",{style:"font-size:14px;color:var(--text)"},word));
       const btns=h("div",{style:"display:flex;gap:6px"});
-      btns.appendChild(h("button",{class:"sbtn",style:"font-size:10px;padding:4px 10px",onclick:()=>{ws[word+"_"+lang]="learning";localStorage.setItem(cfg.storageKey,JSON.stringify(ws));render();}},"Ucz się"));
+      btns.appendChild(h("button",{class:"sbtn",style:"font-size:10px;padding:4px 10px",onclick:()=>{ws[word+"_"+lang]="learning";LS.setItem(cfg.storageKey,JSON.stringify(ws));render();}},"Ucz się"));
       row.appendChild(btns);list.appendChild(row);
     });
     main.appendChild(list);
@@ -9305,7 +9307,7 @@ function renderMyPhrases(){
 
 // ── B7: EKSPORT/IMPORT ─────────────────────────────────────────────────────
 function exportAllData(){
-  const data={myLessons:S.myLessons,lessonFolders:S.lessonFolders,myFilms:S.myFilms,wordStatus:JSON.parse(localStorage.getItem("lingua_word_status")||"{}"),srs:S.srs};
+  const data={myLessons:S.myLessons,lessonFolders:S.lessonFolders,myFilms:S.myFilms,wordStatus:JSON.parse(LS.getItem("lingua_word_status")||"{}"),srs:S.srs};
   const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
   const url=URL.createObjectURL(blob);
   const a=document.createElement("a");a.href=url;a.download="lingua_backup_"+new Date().toISOString().slice(0,10)+".json";a.click();
@@ -9317,10 +9319,10 @@ function importData(file){
     try{
       const data=JSON.parse(r.result);
       if(data.myLessons){const ml=Object.assign({},S.myLessons);Object.entries(data.myLessons).forEach(([lang,lessons])=>{if(!ml[lang])ml[lang]=[];ml[lang].push(...lessons);});safeSetItem("lingua_my_lessons",JSON.stringify(ml));S.myLessons=ml;}
-      if(data.lessonFolders){const lf=Object.assign({},S.lessonFolders);Object.entries(data.lessonFolders).forEach(([lang,folders])=>{if(!lf[lang])lf[lang]=[];folders.forEach(f=>{if(!lf[lang].includes(f))lf[lang].push(f);});});localStorage.setItem("lingua_lesson_folders",JSON.stringify(lf));S.lessonFolders=lf;}
+      if(data.lessonFolders){const lf=Object.assign({},S.lessonFolders);Object.entries(data.lessonFolders).forEach(([lang,folders])=>{if(!lf[lang])lf[lang]=[];folders.forEach(f=>{if(!lf[lang].includes(f))lf[lang].push(f);});});LS.setItem("lingua_lesson_folders",JSON.stringify(lf));S.lessonFolders=lf;}
       if(data.myFilms){const mf=Object.assign({},S.myFilms);Object.entries(data.myFilms).forEach(([lang,films])=>{if(!mf[lang])mf[lang]=[];mf[lang].push(...films);});safeSetItem("lingua_my_films",JSON.stringify(mf));S.myFilms=mf;}
-      if(data.wordStatus){const ws=JSON.parse(localStorage.getItem("lingua_word_status")||"{}");Object.assign(ws,data.wordStatus);localStorage.setItem("lingua_word_status",JSON.stringify(ws));}
-      if(data.srs){const srs=Object.assign({},S.srs,data.srs);localStorage.setItem("lingua_srs",JSON.stringify(srs));S.srs=srs;}
+      if(data.wordStatus){const ws=JSON.parse(LS.getItem("lingua_word_status")||"{}");Object.assign(ws,data.wordStatus);LS.setItem("lingua_word_status",JSON.stringify(ws));}
+      if(data.srs){const srs=Object.assign({},S.srs,data.srs);LS.setItem("lingua_srs",JSON.stringify(srs));S.srs=srs;}
       alert("Import zakończony! Zaimportowano dane.");render();
     }catch(e){alert("Błąd importu: "+e.message);}
   };
@@ -9358,13 +9360,13 @@ function applyTheme(theme){
   r.style.setProperty("--gold", accent.gold);
   r.style.setProperty("--gold2", accent.gold2);
   r.style.setProperty("--gold-dim", accent.goldDim);
-  localStorage.setItem("lingua_theme",theme);S.theme=theme;
+  LS.setItem("lingua_theme",theme);S.theme=theme;
 }
 
 function applyPalette(paletteId){
   if(!PALETTES[paletteId]) return;
   S.palette = paletteId;
-  localStorage.setItem("lingua_palette", paletteId);
+  LS.setItem("lingua_palette", paletteId);
   applyTheme(S.theme);
   scheduleDriveSync();
 }
