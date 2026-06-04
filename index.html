@@ -9436,5 +9436,47 @@ window.addEventListener("unhandledrejection", (ev)=>{
 });
 
 </script>
+
+<script>
+/* === Paczkowe tłumaczenie dialogu + mocniejszy cache (1 zapytanie/dialog, wpisy nie wygasają) === */
+(function(){
+  var FAR=4102444800000, CKEY='lingua_word_translations';
+  function store(){ return (typeof LS!=='undefined'&&LS&&LS.getItem)?LS:localStorage; }
+  function modelName(){ try{ var c=getLessonModelConfig(); if(c&&c.name) return c.name; }catch(e){} return 'gemini-2.5-flash'; }
+  async function batchTranslateDialog(lang){
+    var S=store(), cache; try{ cache=JSON.parse(S.getItem(CKEY)||'{}'); }catch(e){ cache={}; }
+    var words=[].slice.call(document.querySelectorAll('[data-wordclean]')).map(function(e){return (e.getAttribute('data-wordclean')||'').trim();}).filter(function(w){return w&&/^[a-zàèéìòùç']+$/i.test(w);});
+    words=words.filter(function(w,i){return words.indexOf(w)===i;});
+    var missing=words.filter(function(w){var e=cache[w.toLowerCase()+'_'+lang]; return !(e&&e.d);});
+    if(!missing.length) return;
+    var key=S.getItem('lingua_gemini_key'); if(!key) return;
+    var prompt='Jestes dwujezycznym slownikiem wlosko-polskim. Dla KAZDEGO podanego wloskiego slowa zwroc obiekt {"word":slowo,"ipa":transkrypcja IPA,"pl":polskie tlumaczenie,"example":krotkie zdanie po wlosku}. Zwroc WYLACZNIE tablice JSON, bez komentarzy. Slowa: '+JSON.stringify(missing);
+    var url='https://generativelanguage.googleapis.com/v1beta/models/'+modelName()+':generateContent?key='+key;
+    var body={contents:[{parts:[{text:prompt}]}],generationConfig:{responseMimeType:'application/json',temperature:0.2}};
+    var r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if(!r.ok) return;
+    var j=await r.json();
+    var txt=(((((j||{}).candidates||[])[0]||{}).content||{}).parts||[{}])[0].text||'[]';
+    var arr; try{ arr=JSON.parse(txt); }catch(e){ var m=txt.match(/\[[\s\S]*\]/); arr=m?JSON.parse(m[0]):[]; }
+    arr.forEach(function(o){ var w=((o&&o.word)||'').trim(); if(!w) return; cache[w.toLowerCase()+'_'+lang]={d:{word:w,ipa:(o.ipa||''),pl:(o.pl||''),example:(o.example||'')},t:FAR}; });
+    S.setItem(CKEY, JSON.stringify(cache));
+  }
+  window.batchTranslateDialog=batchTranslateDialog;
+  var batching=false;
+  function installWrap(){
+    if(typeof showWordPopup!=='function') return setTimeout(installWrap,200);
+    if(window.__swpBatchWrapped) return;
+    var orig=showWordPopup;
+    showWordPopup=async function(wordRaw,wordClean,lang,anchorEl){
+      try{ var S=store(), cache=JSON.parse(S.getItem(CKEY)||'{}'); var k=((wordClean||'').toLowerCase())+'_'+lang;
+        if(wordClean && !(cache[k]&&cache[k].d) && !batching){ batching=true; try{ await batchTranslateDialog(lang); }catch(e){} batching=false; }
+      }catch(e){}
+      return orig.call(this,wordRaw,wordClean,lang,anchorEl);
+    };
+    window.__swpBatchWrapped=true;
+  }
+  installWrap();
+})();
+</script>
 </body>
 </html>
