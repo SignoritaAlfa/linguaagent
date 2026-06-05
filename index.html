@@ -509,6 +509,12 @@ body{
   .page-title{font-size:26px}
   .dline{grid-template-columns:72px 1fr}
   .eng-grid{flex-direction:column}
+  /* 8 zakładek nie mieści się na wąskim ekranie — przewijamy poziomo (swipe) zamiast ściskać */
+  .lesson-tabs{overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch}
+  .lesson-tab-btn{flex:0 0 auto;white-space:nowrap;padding-left:10px;padding-right:10px}
+  /* nic nie wychodzi poza ekran w poziomie */
+  html,body{overflow-x:hidden}
+  .vocab-list-row{gap:6px 10px}
 }
 @media(max-width:700px){
   .topnav{padding:12px 16px}
@@ -645,6 +651,18 @@ const PALETTES = {
   gold:   { name:"Złoto klasyczne",emoji:"🟡", group:"extra",light:{gold:"#9a7b4f", gold2:"#7a6040", goldDim:"#f0e8d8"}, dark:{gold:"#c9a96e", gold2:"#e8c990", goldDim:"#3d2e18"} },
   rose:   { name:"Róż",           emoji:"🌸", group:"extra",light:{gold:"#be185d", gold2:"#9d174d", goldDim:"#fce7f3"}, dark:{gold:"#f472b6", gold2:"#f9a8d4", goldDim:"#831843"} }
 };
+// Czy działa rozpoznawanie mowy (STT)? iOS Safari w praktyce NIE wspiera Web Speech API
+// (API bywa obecne, ale nie działa), więc na iPhonie/iPadzie ukrywamy przyciski STT,
+// żeby nie myliły. Na desktopie Chrome/Edge — sprawdzamy realne wsparcie.
+const STT_SUPPORTED = (()=>{
+  try{
+    const ua = navigator.userAgent || "";
+    const isIOS = /iP(hone|ad|od)/.test(ua) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+    if(isIOS) return false;
+    return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+  }catch(e){ return false; }
+})();
+
 // Jedno źródło prawdy dla reguły rodzajników/bezokoliczników w promptach AI.
 // Wcześniej skopiowana w wielu miejscach z rozjazdem (część miała DE, część nie).
 const ARTICLE_RULE = 'rzeczowniki w językach z rodzajem (FR: le/la/un/une; IT: il/la/lo/un/una/uno; DE: der/die/das; NO: en/ei/et — bokmål) ZAWSZE z rodzajnikiem w polu "w" (np. "le chien", "la maison", "en bil"). Czasowniki w bezokoliczniku (parler, parlare, to talk, å snakke).';
@@ -5688,8 +5706,10 @@ function renderLesson(){
       actBtnsV.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:v}),"flashcard","lesson-vocab")},"🃏 Fiszki ze słówek"));
       actBtnsV.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:v}),"writing","lesson-vocab")},"✍️ Pisanie z PL"));
       actBtnsV.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:v}),"dictation","lesson-vocab")},"🎧 Dyktando"));
-      actBtnsV.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:v}),"read-aloud","lesson-vocab")},"🗣️ Czytaj na głos"));
-      actBtnsV.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:v}),"speak-foreign","lesson-vocab")},"🎤 Powiedz po "+LANG_ACC[lang]));
+      if(STT_SUPPORTED){
+        actBtnsV.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:v}),"read-aloud","lesson-vocab")},"🗣️ Czytaj na głos"));
+        actBtnsV.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:v}),"speak-foreign","lesson-vocab")},"🎤 Powiedz po "+LANG_ACC[lang]));
+      }
       head.appendChild(actBtnsV);
       vw.appendChild(head);
     }
@@ -5749,8 +5769,10 @@ function renderLesson(){
       actBtns.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:phrases}),"flashcard","lesson-phrases")},"🃏 Fiszki ze zwrotów"));
       actBtns.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:phrases}),"writing","lesson-phrases")},"✍️ Pisanie z PL"));
       actBtns.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:phrases}),"dictation","lesson-phrases")},"🎧 Dyktando"));
-      actBtns.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:phrases}),"read-aloud","lesson-phrases")},"🗣️ Czytaj na głos"));
-      actBtns.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:phrases}),"speak-foreign","lesson-phrases")},"🎤 Powiedz po "+LANG_ACC[lang]));
+      if(STT_SUPPORTED){
+        actBtns.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:phrases}),"read-aloud","lesson-phrases")},"🗣️ Czytaj na głos"));
+        actBtns.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(Object.assign({},lesson,{vocab:phrases}),"speak-foreign","lesson-phrases")},"🎤 Powiedz po "+LANG_ACC[lang]));
+      }
       head.appendChild(actBtns);
       pw.appendChild(head);
       const onDel = isOwn ? (idx)=>{
@@ -9073,8 +9095,7 @@ function renderTranslate(){
   inputWrap.appendChild(ta);
 
   const inputBtns = h("div",{style:"display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;align-items:center"});
-  const hasSpeechRec = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
-  if(hasSpeechRec){
+  if(STT_SUPPORTED){
     const micBtn = h("button",{class:S.translateRecording?"sbtn danger":"sbtn"},
       S.translateRecording?"⏹ Stop nagrywania":"🎤 Mów po polsku");
     micBtn.onclick = ()=>{ if(S.translateRecording) stopTranslateSpeech(); else startTranslateSpeech(); };
@@ -9217,8 +9238,10 @@ function renderMyVocab(cfg){
       const br = h("div",{style:"display:flex;gap:8px;flex-wrap:wrap"});
       br.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(fakeLesson,"flashcard",cfg.origin)},"🃏 Fiszki"));
       br.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(fakeLesson,"writing",cfg.origin)},"✍️ Pisanie z PL"));
-      br.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(fakeLesson,"read-aloud",cfg.origin)},"🗣️ Czytaj na głos"));
-      br.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(fakeLesson,"speak-foreign",cfg.origin)},"🎤 Powiedz po "+LANG_ACC[lang]));
+      if(STT_SUPPORTED){
+        br.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(fakeLesson,"read-aloud",cfg.origin)},"🗣️ Czytaj na głos"));
+        br.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(fakeLesson,"speak-foreign",cfg.origin)},"🎤 Powiedz po "+LANG_ACC[lang]));
+      }
       br.appendChild(h("button",{class:"sbtn",onclick:()=>startPractice(fakeLesson,"dictation",cfg.origin)},"🎧 Dyktando"));
       practiceBox.appendChild(br);
     } else {
