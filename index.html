@@ -6823,7 +6823,14 @@ function renderResults(){
   rw.appendChild(h("div",{class:"result-title"},score.c+" / "+score.t));
   rw.appendChild(h("div",{class:"result-sub"},pct>=.8?"Świetny wynik! Czas na kolejną lekcję.":"Powtórz jeszcze raz — repetition is key."));
   const btns=h("div",{class:"result-btns"});
-  btns.appendChild(h("button",{class:"result-btn primary",onclick:()=>startPractice(lesson,mode)},"Jeszcze raz"));
+  btns.appendChild(h("button",{class:"result-btn primary",onclick:()=>{
+    // Quiz i Buduj mają własne buildery kart (opcje / przemieszane słowa). startPractice
+    // robi tylko karty fiszkowe/fill — wołanie go z mode "quiz"/"build" dawało karty bez
+    // wymaganych pól → crash (card.options.forEach na undefined). Kierujemy wg trybu.
+    if(mode==="quiz") startQuiz(lesson);
+    else if(mode==="build") startBuild(lesson);
+    else startPractice(lesson,mode);
+  }},"Jeszcze raz"));
   btns.appendChild(h("button",{class:"result-btn",onclick:()=>set({screen:"lesson",mode:"dialog",playing:false,playingLine:-1})},"Dialog"));
   btns.appendChild(h("button",{class:"result-btn",onclick:()=>set({screen:"lang"})},"← Lekcje"));
   rw.appendChild(btns);
