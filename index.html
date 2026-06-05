@@ -2596,6 +2596,62 @@ function deleteMyLesson(lang, idx){
   scheduleDriveSync();
 }
 
+// Import a ready-made lesson from pasted JSON (generated outside the app, e.g. by
+// Claude in chat) — bypasses the Gemini/Claude API quota entirely. Reuses the same
+// parser + normalizer + persist path as the AI upload flow so the result is identical.
+function doImportLesson(){
+  const lang = S.importLang || S.lang;
+  const text = (S.importText || "").trim();
+  if(!text){ set({importError:"Wklej JSON lekcji do pola powyżej."}); return; }
+  let json;
+  try{
+    json = parseLessonJson(text);
+  }catch(e){
+    set({importError:"Nie udało się odczytać JSON: "+((e&&e.message)||e)}); return;
+  }
+  if(!json || typeof json!=="object"){ set({importError:"To nie jest poprawny obiekt lekcji."}); return; }
+  if((!json.dialog || json.dialog.length===0) && (!json.vocab || json.vocab.length===0)){
+    set({importError:"Lekcja musi zawierać przynajmniej dialog lub słówka (vocab)."}); return;
+  }
+  normalizeLessonData(json);
+  json.id = "my_"+Date.now();
+  json.type = "dialog";
+  json.source = "import";
+  if(typeof json.title!=="string" || !json.title.trim()) json.title = "Lekcja zaimportowana";
+  if(typeof json.level!=="string" || !json.level.trim()) json.level = "A2";
+  if(typeof json.topic!=="string") json.topic = "";
+  saveMyLesson(lang, json);
+  set({screen:"lang", lang, importText:"", importError:""});
+}
+
+function renderImportLesson(){
+  const lang = S.importLang || S.lang;
+  const w = h("div",{});
+  w.appendChild(renderTopNav());
+  const main = h("div",{class:"main"});
+  const wrap = h("div",{style:"max-width:920px;margin:0 auto"});
+  wrap.appendChild(h("button",{class:"add-btn",style:"margin-bottom:16px",onclick:()=>set({screen:"lang",lang})},"← Wróć"));
+  wrap.appendChild(h("div",{class:"page-title"},"Importuj lekcję ("+(LANGS[lang]?LANGS[lang].name:lang)+")"));
+  wrap.appendChild(h("div",{class:"page-sub"},"Wklej gotowy JSON lekcji. Bez zapytań do AI — nie zużywa limitu Gemini."));
+  const ta = h("textarea",{
+    style:"width:100%;min-height:320px;margin-top:14px;padding:14px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;line-height:1.5;border-radius:6px;resize:vertical",
+    placeholder:'{"title":"...","level":"A2","topic":"...","dialog":[...],"vocab":[...],"phrases":[...],"fill":[...],"grammar":[...]}',
+    oninput:(e)=>{ S.importText = e.target.value; }
+  });
+  ta.value = S.importText || "";
+  wrap.appendChild(ta);
+  if(S.importError){
+    wrap.appendChild(h("div",{style:"margin-top:12px;padding:12px;border:1px solid var(--red);color:var(--red);border-radius:6px;font-size:13px"},S.importError));
+  }
+  const btnRow = h("div",{style:"display:flex;gap:10px;margin-top:16px"});
+  btnRow.appendChild(h("button",{class:"add-btn",style:"background:var(--gold);color:#fff;border-color:var(--gold)",onclick:()=>doImportLesson()},"Dodaj lekcję"));
+  btnRow.appendChild(h("button",{class:"add-btn",onclick:()=>set({screen:"lang",lang})},"Anuluj"));
+  wrap.appendChild(btnRow);
+  main.appendChild(wrap);
+  w.appendChild(main);
+  return w;
+}
+
 // Folder helpers — wspierają stary format (string) i nowy ({name, scope:"any|video|text"})
 function folderName(f){ return typeof f==="string" ? f : (f && f.name) || ""; }
 function folderScope(f){ return (typeof f==="object" && f && f.scope) || "any"; }
@@ -4276,6 +4332,8 @@ function renderLang(){
     onclick:()=>set({screen:"songs",songLang:lang,filmSeries:null,filmClipId:null})},"🎵 Piosenki"));
   myBtns.appendChild(h("button",{class:"add-btn",
     onclick:()=>set({showUpload:true,uploadLang:lang,uploadStep:0,uploadFile:null,uploadPreview:null,uploadError:"",uploadProcessing:false})},"+ Wgraj tekst"));
+  myBtns.appendChild(h("button",{class:"add-btn",
+    onclick:()=>set({screen:"importlesson",importLang:lang,importText:"",importError:""})},"📥 Importuj JSON"));
   myBtns.appendChild(h("button",{class:"add-btn",
     onclick:()=>createFolder(lang)},"+ Folder"));
   myHead.appendChild(myBtns);
@@ -9423,6 +9481,7 @@ function render(){
     else if(screen==="settings")node=renderSettings();
     else if(screen==="audiomgr")node=renderAudioMgr();
     else if(screen==="filmoteka")node=renderFilmoteka();
+    else if(screen==="importlesson")node=renderImportLesson();
     else if(screen==="songs")node=renderSongs();
     else if(screen==="mywords")node=renderMyWords();
     else if(screen==="myphrases")node=renderMyPhrases();
