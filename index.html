@@ -5341,6 +5341,9 @@ function renderLesson(){
     tabsEl.appendChild(h("button",{class:"lesson-tab-btn"+(S.lessonTab===id?" active":""),
       onclick:()=>set({lessonTab:id})},label));
   });
+  // Quiz i Buduj w pasku zakładek (obok Ćwiczeń) — to akcje (uruchamiają tryb), nie widoki
+  tabsEl.appendChild(h("button",{class:"lesson-tab-btn",title:"Quiz wyboru ze słówek (min. 4 słówka)",onclick:()=>startQuiz(lesson)},"🎯 Quiz"));
+  tabsEl.appendChild(h("button",{class:"lesson-tab-btn",title:"Układanie zdań z dialogu (min. 3 kwestie)",onclick:()=>startBuild(lesson)},"🧩 Buduj"));
   main.appendChild(tabsEl);
 
   // Jeden rząd akcji lekcji: Quiz + Buduj zdania, a dla Twoich lekcji także akcje wideo
@@ -5371,10 +5374,8 @@ function renderLesson(){
       if(li>=0){ ml[lang][li].youtubeId = ytId; S.myLessons = ml; safeSetItem("lingua_my_lessons",JSON.stringify(ml)); scheduleDriveSync(); }
       render();
     };
-    // Jeden rząd akcji: Quiz, Buduj zdania + (dla Twoich lekcji) akcje wideo
+    // Pasek akcji wideo (dla Twoich lekcji). Quiz/Buduj są w pasku zakładek wyżej.
     const actBar = h("div",{style:"display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:18px"});
-    actBar.appendChild(h("button",{class:"sbtn",style:"font-size:12px;padding:7px 14px",title:"Quiz wyboru ze słówek lekcji (min. 4 słówka)",onclick:()=>startQuiz(lesson)},"🎯 Quiz"));
-    actBar.appendChild(h("button",{class:"sbtn",style:"font-size:12px;padding:7px 14px",title:"Układanie zdań z dialogu (min. 3 kwestie)",onclick:()=>startBuild(lesson)},"🧩 Buduj zdania"));
     if(isOwn && lesson.youtubeId){
       const b1 = h("button",{class:"sbtn",style:"font-size:12px;padding:7px 14px",title:"Wygeneruj dialog na nowo z zapisanego tekstu lekcji (jeśli go nie ma — pobierze z YouTube)"},"🔄 Wygeneruj z zapisanego tekstu");
       b1.onclick = ()=>regenerateLessonDialog(lesson, lang);
@@ -5393,7 +5394,7 @@ function renderLesson(){
         actBar.appendChild(regenBtn);
       }
     }
-    main.appendChild(actBar);
+    if(actBar.children.length) main.appendChild(actBar);
     // Box z linkiem do YouTube (sam odtwarzacz idzie niżej)
     if(lesson.youtubeId){
       const ytWrap=h("div",{style:"max-width:680px;margin-bottom:16px"});
