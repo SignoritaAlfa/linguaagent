@@ -2596,10 +2596,23 @@ function deleteMyLesson(lang, idx){
   scheduleDriveSync();
 }
 
+// Dekoduje base64 (data-URL lub czysty b64) do Bloba. Używane dla oryginału wbudowanego
+// w JSON (_srcB64) — pozwala dołączyć plik źródłowy bez ręcznego wybierania go w apce.
+function b64ToBlob(b64, type){
+  const clean = String(b64).includes(",") ? String(b64).split(",")[1] : String(b64);
+  const bin = atob(clean);
+  const len = bin.length;
+  const bytes = new Uint8Array(len);
+  for(let i=0;i<len;i++) bytes[i] = bin.charCodeAt(i);
+  return new Blob([bytes], {type: type || "application/octet-stream"});
+}
+
 // Import a ready-made lesson from pasted JSON (generated outside the app, e.g. by
 // Claude in chat) — bypasses the Gemini/Claude API quota entirely. Reuses the same
 // parser + normalizer + persist path as the AI upload flow so the result is identical.
-function doImportLesson(){
+// Opcjonalnie dołącza plik źródłowy: z pola wyboru (S.importFile) ALBO wbudowany w JSON
+// jako _srcB64/_srcName/_srcType. Jeśli JSON ma "folder", folder jest tworzony automatycznie.
+async function doImportLesson(){
   const lang = S.importLang || S.lang;
   const text = (S.importText || "").trim();
   if(!text){ set({importError:"Wklej JSON lekcji do pola powyżej."}); return; }
@@ -2613,6 +2626,9 @@ function doImportLesson(){
   if((!json.dialog || json.dialog.length===0) && (!json.vocab || json.vocab.length===0)){
     set({importError:"Lekcja musi zawierać przynajmniej dialog lub słówka (vocab)."}); return;
   }
+  // Wyjmij oryginał wbudowany w JSON ZANIM znormalizujemy/zapiszemy lekcję
+  const embeddedB64 = json._srcB64; const embeddedName = json._srcName; const embeddedType = json._srcType;
+  delete json._srcB64; delete json._srcName; delete json._srcType;
   normalizeLessonData(json);
   json.id = "my_"+Date.now();
   json.type = "dialog";
@@ -2620,8 +2636,31 @@ function doImportLesson(){
   if(typeof json.title!=="string" || !json.title.trim()) json.title = "Lekcja zaimportowana";
   if(typeof json.level!=="string" || !json.level.trim()) json.level = "A2";
   if(typeof json.topic!=="string") json.topic = "";
+  // Folder z JSON-a — utwórz, jeśli nie istnieje (scope text)
+  if(typeof json.folder==="string" && json.folder.trim()){
+    json.folder = ensureTextFolder(lang, json.folder.trim());
+  }
+  // Plik źródłowy: priorytet ma ręcznie wybrany plik, potem wbudowany w JSON
+  try{
+    let srcBlob=null, srcName="", srcType="";
+    if(S.importFile && S.importFile instanceof Blob){
+      srcBlob = S.importFile; srcName = S.importFile.name || "źródło"; srcType = S.importFile.type || "application/octet-stream";
+    } else if(embeddedB64){
+      srcBlob = b64ToBlob(embeddedB64, embeddedType); srcName = embeddedName || "źródło"; srcType = embeddedType || srcBlob.type;
+    }
+    if(srcBlob){
+      await saveSourceFile(json.id, {blob: srcBlob, name: srcName, type: srcType});
+      json.hasSourceFile = true;
+      json.sourceFileName = srcName;
+      json.sourceFileType = srcType;
+      json.sourceFileSize = srcBlob.size;
+    }
+  }catch(e){
+    console.warn("[Import] Nie udało się zapisać pliku źródłowego:", e.message);
+    // nie blokuj importu — oryginał to bonus
+  }
   saveMyLesson(lang, json);
-  set({screen:"lang", lang, importText:"", importError:""});
+  set({screen:"lang", lang, importText:"", importError:"", importFile:null});
 }
 
 function renderImportLesson(){
@@ -2640,6 +2679,19 @@ function renderImportLesson(){
   });
   ta.value = S.importText || "";
   wrap.appendChild(ta);
+  // Opcjonalny oryginał (PDF/DOCX/obraz) — zapisywany do lekcji jako plik źródłowy.
+  // Jeśli JSON zawiera wbudowany oryginał (_srcB64), to pole można pominąć.
+  const fileRow = h("div",{style:"margin-top:14px;display:flex;flex-direction:column;gap:6px"});
+  fileRow.appendChild(h("div",{style:"font-size:12px;color:var(--text3)"},"Oryginał (opcjonalnie) — PDF, DOCX lub zdjęcie. Pominąć, jeśli JSON ma wbudowany plik."));
+  const fileInput = h("input",{type:"file",accept:".pdf,.docx,.doc,.png,.jpg,.jpeg,.webp,image/*,application/pdf",
+    style:"font-size:13px;color:var(--text2)",
+    onchange:(e)=>{ S.importFile = (e.target.files && e.target.files[0]) || null; }
+  });
+  fileRow.appendChild(fileInput);
+  if(S.importFile && S.importFile.name){
+    fileRow.appendChild(h("div",{style:"font-size:12px;color:var(--gold)"},"Wybrano: "+S.importFile.name));
+  }
+  wrap.appendChild(fileRow);
   if(S.importError){
     wrap.appendChild(h("div",{style:"margin-top:12px;padding:12px;border:1px solid var(--red);color:var(--red);border-radius:6px;font-size:13px"},S.importError));
   }
@@ -2674,6 +2726,23 @@ function ensureVideoFolder(lang, name){
   const arr = (lf[lang]||[]).slice();
   if(!arr.some(f => folderName(f) === name)){
     arr.push({name, scope:"video"});
+    lf[lang] = arr;
+    S.lessonFolders = lf;
+    safeSetItem("lingua_lesson_folders", JSON.stringify(lf));
+    scheduleDriveSync();
+  }
+  return name;
+}
+
+// Auto-folder dla lekcji tekstowych (np. importowana seria) — analog ensureVideoFolder,
+// scope "text". Zwraca nazwę folderu do wpisania w lesson.folder.
+function ensureTextFolder(lang, name){
+  name = (name||"").trim();
+  if(!name) return null;
+  const lf = Object.assign({}, S.lessonFolders);
+  const arr = (lf[lang]||[]).slice();
+  if(!arr.some(f => folderName(f) === name)){
+    arr.push({name, scope:"text"});
     lf[lang] = arr;
     S.lessonFolders = lf;
     safeSetItem("lingua_lesson_folders", JSON.stringify(lf));
@@ -4333,7 +4402,7 @@ function renderLang(){
   myBtns.appendChild(h("button",{class:"add-btn",
     onclick:()=>set({showUpload:true,uploadLang:lang,uploadStep:0,uploadFile:null,uploadPreview:null,uploadError:"",uploadProcessing:false})},"+ Wgraj tekst"));
   myBtns.appendChild(h("button",{class:"add-btn",
-    onclick:()=>set({screen:"importlesson",importLang:lang,importText:"",importError:""})},"📥 Importuj JSON"));
+    onclick:()=>set({screen:"importlesson",importLang:lang,importText:"",importError:"",importFile:null})},"📥 Importuj JSON"));
   myBtns.appendChild(h("button",{class:"add-btn",
     onclick:()=>createFolder(lang)},"+ Folder"));
   myHead.appendChild(myBtns);
