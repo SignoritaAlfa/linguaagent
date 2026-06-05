@@ -5336,14 +5336,19 @@ function renderLesson(){
   _tabs.push(["grammar","Gramatyka"]);
   // Pokaż zakładkę Ćwiczenia ZAWSZE — żeby user mógł też dodać własne (z książki)
   if((lesson.fill && lesson.fill.length>0) || (lesson.customFill && lesson.customFill.length>0) || true) _tabs.push(["fill","Ćwiczenia"]);
-  if(lesson.rawText || lesson.hasSourceFile) _tabs.push(["tekst","Tekst"]);
+  // (Tekst dodajemy NA KOŃCU, po Quiz/Buduj — patrz niżej)
   _tabs.forEach(([id,label])=>{
     tabsEl.appendChild(h("button",{class:"lesson-tab-btn"+(S.lessonTab===id?" active":""),
       onclick:()=>set({lessonTab:id})},label));
   });
-  // Quiz i Buduj w pasku zakładek (obok Ćwiczeń) — to akcje (uruchamiają tryb), nie widoki
+  // Quiz i Buduj zaraz po Ćwiczeniach (akcje uruchamiające tryb, nie widoki)
   tabsEl.appendChild(h("button",{class:"lesson-tab-btn",title:"Quiz wyboru ze słówek (min. 4 słówka)",onclick:()=>startQuiz(lesson)},"🎯 Quiz"));
   tabsEl.appendChild(h("button",{class:"lesson-tab-btn",title:"Układanie zdań z dialogu (min. 3 kwestie)",onclick:()=>startBuild(lesson)},"🧩 Buduj"));
+  // Tekst na samym końcu
+  if(lesson.rawText || lesson.hasSourceFile){
+    tabsEl.appendChild(h("button",{class:"lesson-tab-btn"+(S.lessonTab==="tekst"?" active":""),
+      onclick:()=>set({lessonTab:"tekst"})},"Tekst"));
+  }
   main.appendChild(tabsEl);
 
   // Jeden rząd akcji lekcji: Quiz + Buduj zdania, a dla Twoich lekcji także akcje wideo
