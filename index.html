@@ -5343,16 +5343,8 @@ function renderLesson(){
   });
   main.appendChild(tabsEl);
 
-  // Szybkie uruchomienie trybów, które nie mają własnej zakładki (parytet z listą lekcji,
-  // gdzie są przyciski Quiz i Buduj). Quiz = ze słówek, Buduj = z dialogu; gardy w funkcjach.
-  {
-    const quickBar = h("div",{style:"display:flex;gap:8px;flex-wrap:wrap;margin:0 0 24px 0"});
-    quickBar.appendChild(h("button",{class:"sbtn",style:"font-size:12px;padding:7px 14px",title:"Quiz wyboru ze słówek lekcji (min. 4 słówka)",onclick:()=>startQuiz(lesson)},"🎯 Quiz"));
-    quickBar.appendChild(h("button",{class:"sbtn",style:"font-size:12px;padding:7px 14px",title:"Układanie zdań z dialogu (min. 3 kwestie)",onclick:()=>startBuild(lesson)},"🧩 Buduj zdania"));
-    main.appendChild(quickBar);
-  }
-
-  // YouTube player link + edit URL for own lessons
+  // Jeden rząd akcji lekcji: Quiz + Buduj zdania, a dla Twoich lekcji także akcje wideo
+  // (regeneracja dialogu / zmiana linku YouTube). Box z linkiem YouTube renderuje się pod spodem.
   {
     const isOwn = (S.myLessons[lang]||[]).some(l=>l.id===lesson.id);
     const editVideoUrl = ()=>{
@@ -5379,9 +5371,31 @@ function renderLesson(){
       if(li>=0){ ml[lang][li].youtubeId = ytId; S.myLessons = ml; safeSetItem("lingua_my_lessons",JSON.stringify(ml)); scheduleDriveSync(); }
       render();
     };
+    // Jeden rząd akcji: Quiz, Buduj zdania + (dla Twoich lekcji) akcje wideo
+    const actBar = h("div",{style:"display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:18px"});
+    actBar.appendChild(h("button",{class:"sbtn",style:"font-size:12px;padding:7px 14px",title:"Quiz wyboru ze słówek lekcji (min. 4 słówka)",onclick:()=>startQuiz(lesson)},"🎯 Quiz"));
+    actBar.appendChild(h("button",{class:"sbtn",style:"font-size:12px;padding:7px 14px",title:"Układanie zdań z dialogu (min. 3 kwestie)",onclick:()=>startBuild(lesson)},"🧩 Buduj zdania"));
+    if(isOwn && lesson.youtubeId){
+      const b1 = h("button",{class:"sbtn",style:"font-size:12px;padding:7px 14px",title:"Wygeneruj dialog na nowo z zapisanego tekstu lekcji (jeśli go nie ma — pobierze z YouTube)"},"🔄 Wygeneruj z zapisanego tekstu");
+      b1.onclick = ()=>regenerateLessonDialog(lesson, lang);
+      const b2 = h("button",{class:"sbtn",style:"font-size:12px;padding:7px 14px",title:"Pobierz świeży transkrypt z YouTube i wygeneruj (przydatne gdy zmieniłaś link wideo)"},"🌐 Pobierz z YouTube na nowo");
+      b2.onclick = ()=>regenerateLessonDialog(lesson, lang, {forceFetch:true});
+      const b3 = h("button",{class:"sbtn",style:"font-size:12px;padding:7px 14px"},"🔗 Zmień link wideo");
+      b3.onclick = editVideoUrl;
+      actBar.appendChild(b1); actBar.appendChild(b2); actBar.appendChild(b3);
+    } else if(isOwn){
+      const addBtn = h("button",{class:"sbtn",style:"font-size:12px;padding:7px 14px"},"+ Dodaj link YouTube");
+      addBtn.onclick = editVideoUrl;
+      actBar.appendChild(addBtn);
+      if((lesson.rawText||"").trim().length > 100){
+        const regenBtn = h("button",{class:"sbtn",style:"font-size:12px;padding:7px 14px;border-color:var(--gold);color:var(--gold)",title:"Wygeneruj dialog na nowo z zapisanego tekstu lekcji. Jeśli tekst ma timestampy (1:57) — włączy karaoke."},"🔄 Wygeneruj ponownie z zapisanego tekstu");
+        regenBtn.onclick = ()=>regenerateLessonDialog(lesson, lang);
+        actBar.appendChild(regenBtn);
+      }
+    }
+    main.appendChild(actBar);
+    // Box z linkiem do YouTube (sam odtwarzacz idzie niżej)
     if(lesson.youtubeId){
-      // Skromny link/info tylko jako pasek z edycją — sam odtwarzacz idzie niżej
-      // w widoku side-by-side (dla każdego stanu: z timestampami → karaoke, bez → tylko embed)
       const ytWrap=h("div",{style:"max-width:680px;margin-bottom:16px"});
       const ytLink=h("a",{href:"https://www.youtube.com/watch?v="+lesson.youtubeId,target:"_blank",
         style:"display:flex;align-items:center;gap:14px;padding:10px 16px;border:1px solid var(--border);background:var(--surface);text-decoration:none;transition:all .2s;cursor:pointer;font-size:12px"});
@@ -5392,36 +5406,9 @@ function renderLesson(){
       ytInfo.appendChild(h("div",{style:"font-size:12px;color:var(--text3)"},"Otwórz na YouTube w nowej karcie · ID: "+lesson.youtubeId));
       ytLink.appendChild(ytInfo);
       ytWrap.appendChild(ytLink);
-      if(isOwn){
-        const editRow = h("div",{style:"margin-top:6px;display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap"});
-        const regenSavedBtn = h("button",{class:"sbtn",style:"font-size:11px;padding:4px 10px",title:"Wygeneruj dialog na nowo z zapisanego tekstu lekcji (jeśli go nie ma — pobierze z YouTube)"},"🔄 Wygeneruj z zapisanego tekstu");
-        regenSavedBtn.onclick = ()=>regenerateLessonDialog(lesson, lang);
-        editRow.appendChild(regenSavedBtn);
-        const regenYtBtn = h("button",{class:"sbtn",style:"font-size:11px;padding:4px 10px",title:"Pobierz świeży transkrypt z YouTube i wygeneruj (przydatne gdy zmieniłaś link wideo)"},"🌐 Pobierz z YouTube na nowo");
-        regenYtBtn.onclick = ()=>regenerateLessonDialog(lesson, lang, {forceFetch:true});
-        editRow.appendChild(regenYtBtn);
-        const editBtn = h("button",{class:"sbtn",style:"font-size:11px;padding:4px 10px"},"🔗 Zmień link wideo");
-        editBtn.onclick = editVideoUrl;
-        editRow.appendChild(editBtn);
-        ytWrap.appendChild(editRow);
-      }
       main.appendChild(ytWrap);
     } else if(isOwn){
-      const ytWrap=h("div",{style:"max-width:680px;margin-bottom:24px;padding:12px 16px;border:1px dashed var(--border);border-radius:6px;background:var(--surface);display:flex;align-items:center;gap:12px;flex-wrap:wrap"});
-      ytWrap.appendChild(h("div",{style:"font-size:12px;color:var(--text3);flex:1"},"🔗 Ta lekcja nie ma linku YouTube. Dodaj go żeby otworzyć filmik bezpośrednio lub mieć karaoke z sync."));
-      const addBtn = h("button",{class:"sbtn",style:"font-size:11px;padding:6px 12px"},"+ Dodaj link YouTube");
-      addBtn.onclick = editVideoUrl;
-      ytWrap.appendChild(addBtn);
-      // Regeneracja z zapisanego tekstu — NIE wymaga youtubeId. Jeśli rawText ma
-      // timestampy YouTube (1:57), regeneracja włączy karaoke.
-      if((lesson.rawText||"").trim().length > 100){
-        const regenBtn = h("button",{class:"sbtn",style:"font-size:11px;padding:6px 12px;border-color:var(--gold);color:var(--gold)",
-          title:"Wygeneruj dialog na nowo z zapisanego tekstu lekcji. Jeśli tekst ma timestampy (1:57) — włączy karaoke."},
-          "🔄 Wygeneruj ponownie z zapisanego tekstu");
-        regenBtn.onclick = ()=>regenerateLessonDialog(lesson, lang);
-        ytWrap.appendChild(regenBtn);
-      }
-      main.appendChild(ytWrap);
+      main.appendChild(h("div",{style:"max-width:680px;margin-bottom:24px;padding:12px 16px;border:1px dashed var(--border);border-radius:6px;background:var(--surface);font-size:12px;color:var(--text3);line-height:1.5"},"🔗 Ta lekcja nie ma linku YouTube. Dodaj go (przycisk wyżej), żeby otworzyć filmik bezpośrednio lub mieć karaoke z sync."));
     }
   }
 
