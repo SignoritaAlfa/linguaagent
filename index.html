@@ -5987,6 +5987,7 @@ function renderLesson(){
       tw.appendChild(h("div",{style:"font-size:13px;color:var(--text3);margin-bottom:14px"},"Materiał był zdjęciem/skanem — bez tekstu źródłowego. Kliknij 'Pokaż oryginał' powyżej żeby zobaczyć plik."));
       tw.appendChild(h("div",{},"")); // placeholder
       main.appendChild(tw);
+      w.appendChild(main); // BUGFIX: bez tego wczesny return zwracał w BEZ main → pusta zakładka Tekst (lekcje z plikiem źródłowym, bez rawText)
       return w;
     }
 
