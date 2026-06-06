@@ -2612,54 +2612,70 @@ function b64ToBlob(b64, type){
 // parser + normalizer + persist path as the AI upload flow so the result is identical.
 // Opcjonalnie dołącza plik źródłowy: z pola wyboru (S.importFile) ALBO wbudowany w JSON
 // jako _srcB64/_srcName/_srcType. Jeśli JSON ma "folder", folder jest tworzony automatycznie.
-async function doImportLesson(){
-  const lang = S.importLang || S.lang;
-  const text = (S.importText || "").trim();
-  if(!text){ set({importError:"Wklej JSON lekcji do pola powyżej."}); return; }
-  let json;
-  try{
-    json = parseLessonJson(text);
-  }catch(e){
-    set({importError:"Nie udało się odczytać JSON: "+((e&&e.message)||e)}); return;
-  }
-  if(!json || typeof json!=="object"){ set({importError:"To nie jest poprawny obiekt lekcji."}); return; }
+// Przygotowuje jeden obiekt lekcji (normalizacja, id, folder, zapis pliku źródłowego do IDB).
+// NIE zapisuje do myLessons — zwraca {ok, json, error}. allowPickerFile: czy użyć S.importFile
+// (tylko przy imporcie pojedynczym; przy zbiorczym oryginały muszą być wbudowane w JSON).
+async function prepareImportedLesson(json, lang, id, allowPickerFile){
+  if(!json || typeof json!=="object" || Array.isArray(json)) return {ok:false, error:"To nie jest poprawny obiekt lekcji."};
   if((!json.dialog || json.dialog.length===0) && (!json.vocab || json.vocab.length===0)){
-    set({importError:"Lekcja musi zawierać przynajmniej dialog lub słówka (vocab)."}); return;
+    return {ok:false, error:"Lekcja „"+(json.title||"?")+"” musi mieć dialog lub słówka."};
   }
-  // Wyjmij oryginał wbudowany w JSON ZANIM znormalizujemy/zapiszemy lekcję
-  const embeddedB64 = json._srcB64; const embeddedName = json._srcName; const embeddedType = json._srcType;
+  const embeddedB64 = json._srcB64, embeddedName = json._srcName, embeddedType = json._srcType;
   delete json._srcB64; delete json._srcName; delete json._srcType;
   normalizeLessonData(json);
-  json.id = "my_"+Date.now();
+  json.id = id;
   json.type = "dialog";
   json.source = "import";
   if(typeof json.title!=="string" || !json.title.trim()) json.title = "Lekcja zaimportowana";
   if(typeof json.level!=="string" || !json.level.trim()) json.level = "A2";
   if(typeof json.topic!=="string") json.topic = "";
-  // Folder z JSON-a — utwórz, jeśli nie istnieje (scope text)
-  if(typeof json.folder==="string" && json.folder.trim()){
-    json.folder = ensureTextFolder(lang, json.folder.trim());
-  }
-  // Plik źródłowy: priorytet ma ręcznie wybrany plik, potem wbudowany w JSON
+  if(typeof json.folder==="string" && json.folder.trim()) json.folder = ensureTextFolder(lang, json.folder.trim());
   try{
     let srcBlob=null, srcName="", srcType="";
-    if(S.importFile && S.importFile instanceof Blob){
+    if(allowPickerFile && S.importFile && S.importFile instanceof Blob){
       srcBlob = S.importFile; srcName = S.importFile.name || "źródło"; srcType = S.importFile.type || "application/octet-stream";
     } else if(embeddedB64){
       srcBlob = b64ToBlob(embeddedB64, embeddedType); srcName = embeddedName || "źródło"; srcType = embeddedType || srcBlob.type;
     }
     if(srcBlob){
-      await saveSourceFile(json.id, {blob: srcBlob, name: srcName, type: srcType});
-      json.hasSourceFile = true;
-      json.sourceFileName = srcName;
-      json.sourceFileType = srcType;
-      json.sourceFileSize = srcBlob.size;
+      await saveSourceFile(id, {blob: srcBlob, name: srcName, type: srcType});
+      json.hasSourceFile = true; json.sourceFileName = srcName; json.sourceFileType = srcType; json.sourceFileSize = srcBlob.size;
     }
-  }catch(e){
-    console.warn("[Import] Nie udało się zapisać pliku źródłowego:", e.message);
-    // nie blokuj importu — oryginał to bonus
+  }catch(e){ console.warn("[Import] plik źródłowy:", e.message); }
+  return {ok:true, json};
+}
+
+async function doImportLesson(){
+  const lang = S.importLang || S.lang;
+  const text = (S.importText || "").trim();
+  if(!text){ set({importError:"Wklej JSON lekcji do pola powyżej."}); return; }
+  // Import ZBIORCZY — wykryj tablicę: [ {...}, {...} ]. Najpierw czysty JSON.parse.
+  let arr = null;
+  try{ const p = JSON.parse(text); if(Array.isArray(p)) arr = p; }catch(_){}
+  if(arr){
+    if(!arr.length){ set({importError:"Tablica jest pusta."}); return; }
+    set({importError:"⏳ Importuję "+arr.length+" lekcji… (poczekaj)"});
+    const ml = Object.assign({}, S.myLessons);
+    ml[lang] = (ml[lang] || []).slice();
+    let okN = 0, failN = 0; const errs = [];
+    for(let i=0; i<arr.length; i++){
+      const res = await prepareImportedLesson(arr[i], lang, "my_"+Date.now()+"_"+i, false);
+      if(res.ok){ ml[lang].push(res.json); okN++; }
+      else { failN++; if(errs.length<3) errs.push(res.error); }
+    }
+    safeSetItem("lingua_my_lessons", JSON.stringify(ml));
+    set({myLessons:ml, screen:"lang", lang, importText:"", importError:"", importFile:null});
+    scheduleDriveSync();
+    setTimeout(()=>alert("Zaimportowano "+okN+" lekcji"+(failN?(" · pominięto "+failN+(errs.length?": "+errs.join("; "):"")):"")), 50);
+    return;
   }
-  saveMyLesson(lang, json);
+  // Import POJEDYNCZY — tolerancyjny parser (radzi sobie z ```json itd.)
+  let json;
+  try{ json = parseLessonJson(text); }
+  catch(e){ set({importError:"Nie udało się odczytać JSON: "+((e&&e.message)||e)}); return; }
+  const res = await prepareImportedLesson(json, lang, "my_"+Date.now(), true);
+  if(!res.ok){ set({importError:res.error}); return; }
+  saveMyLesson(lang, res.json);
   set({screen:"lang", lang, importText:"", importError:"", importFile:null});
 }
 
@@ -2671,7 +2687,7 @@ function renderImportLesson(){
   const wrap = h("div",{style:"max-width:920px;margin:0 auto"});
   wrap.appendChild(h("button",{class:"add-btn",style:"margin-bottom:16px",onclick:()=>set({screen:"lang",lang})},"← Wróć"));
   wrap.appendChild(h("div",{class:"page-title"},"Importuj lekcję ("+(LANGS[lang]?LANGS[lang].name:lang)+")"));
-  wrap.appendChild(h("div",{class:"page-sub"},"Wklej gotowy JSON lekcji. Bez zapytań do AI — nie zużywa limitu Gemini."));
+  wrap.appendChild(h("div",{class:"page-sub"},"Wklej gotowy JSON lekcji — pojedynczą { … } albo wiele naraz jako tablicę [ { … }, { … } ]. Bez zapytań do AI."));
   const ta = h("textarea",{
     style:"width:100%;min-height:320px;margin-top:14px;padding:14px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;line-height:1.5;border-radius:6px;resize:vertical",
     placeholder:'{"title":"...","level":"A2","topic":"...","dialog":[...],"vocab":[...],"phrases":[...],"fill":[...],"grammar":[...]}',
