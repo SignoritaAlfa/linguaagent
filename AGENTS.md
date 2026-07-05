@@ -1,8 +1,8 @@
-# LinguaAgent — instrukcja dla agentów AI
+# LinguaAgent - instrukcja dla agentów AI
 
 ## Czym jest ten projekt
 
-LinguaAgent to aplikacja webowa do nauki języków obcych (angielski, francuski, włoski) zbudowana jako **jeden plik HTML** (`index.html`). Właścicielką projektu jest Aleksandra — osoba nietechniczna. Wszystkie wyjaśnienia po polsku, prostym językiem.
+LinguaAgent to aplikacja webowa do nauki języków obcych (angielski, francuski, włoski) zbudowana jako **jeden plik HTML** (`index.html`). Właścicielką projektu jest Aleksandra - osoba nietechniczna. Wszystkie wyjaśnienia po polsku, prostym językiem.
 
 **URL produkcyjny:** https://signoritaalfa.github.io/linguaagent  
 **Repo:** `SignoritaAlfa/linguaagent`, branch `main`, plik `index.html`  
@@ -14,11 +14,11 @@ LinguaAgent to aplikacja webowa do nauki języków obcych (angielski, francuski,
 
 ## Stack techniczny
 
-- **Jeden plik HTML** — HTML + CSS + JS w `index.html`. Zero frameworków, zero Node.js, zero bundlerów.
-- **Vanilla JavaScript** — czysty JS, bez React/Vue
-- **CSS Variables** — ciemny motyw
-- **IndexedDB** — pliki wideo lokalnie (`openDB`, `saveVideo`, `loadVideo`, `deleteVideo`)
-- **localStorage** — lekcje, ustawienia, klucze API, nagrania audio
+- **Jeden plik HTML** - HTML + CSS + JS w `index.html`. Zero frameworków, zero Node.js, zero bundlerów.
+- **Vanilla JavaScript** - czysty JS, bez React/Vue
+- **CSS Variables** - ciemny motyw
+- **IndexedDB** - pliki wideo lokalnie (`openDB`, `saveVideo`, `loadVideo`, `deleteVideo`)
+- **localStorage** - lekcje, ustawienia, klucze API, nagrania audio
 
 ---
 
@@ -34,23 +34,23 @@ LinguaAgent to aplikacja webowa do nauki języków obcych (angielski, francuski,
 **Nigdy nie hardkoduj kluczy API w pliku.**
 
 ### Modele Anthropic używane w projekcie
-- `claude-haiku-4-5-20251001` — szybkie zadania (analiza tekstu, tłumaczenia słów)
-- `claude-opus-4-7` — długie/trudne analizy (wideo, długie PDF-y)
-- `claude-sonnet-4-6` — zaawansowana analiza wideo (Filmoteka)
+- `claude-haiku-4-5-20251001` - szybkie zadania (analiza tekstu, tłumaczenia słów)
+- `claude-opus-4-7` - długie/trudne analizy (wideo, długie PDF-y)
+- `claude-sonnet-4-6` - zaawansowana analiza wideo (Filmoteka)
 
 ### ElevenLabs voice IDs
-- `EXAVITQu4vr4xnSDxMaL` — Sarah (głos żeński, EN)
-- `onwK4e9ZLuTAKqWW03F9` — Daniel (głos męski, EN/FR/IT)
+- `EXAVITQu4vr4xnSDxMaL` - Sarah (głos żeński, EN)
+- `onwK4e9ZLuTAKqWW03F9` - Daniel (głos męski, EN/FR/IT)
 - Model: `eleven_multilingual_v2`
 
 ### OpenAI TTS głosy
-- Żeński (Aleksandra): `S.oaiVoiceFemale` — domyślnie `nova`
-- Męski (rozmówca): `S.oaiVoiceMale` — domyślnie `echo`
+- Żeński (Aleksandra): `S.oaiVoiceFemale` - domyślnie `nova`
+- Męski (rozmówca): `S.oaiVoiceMale` - domyślnie `echo`
 - Dostępne: nova, shimmer, alloy (żeńskie) | echo, fable, onyx (męskie)
 
 ---
 
-## Architektura — ekrany (`S.screen`)
+## Architektura - ekrany (`S.screen`)
 
 | Ekran | Funkcja |
 |-------|---------|
@@ -82,8 +82,8 @@ S = {
   audioPlaying, audioObj, audioMgrLesson,
 
   // Dane trwałe (z localStorage)
-  lessonAudio,    // { lessonId: {full,female,male} } — base64 dataURL
-  lessonVideos,   // { lessonId: videoKey } — klucze IndexedDB
+  lessonAudio,    // { lessonId: {full,female,male} } - base64 dataURL
+  lessonVideos,   // { lessonId: videoKey } - klucze IndexedDB
   myLessons,      // { EN:[...], FR:[...], IT:[...] }
 
   // TTS
@@ -107,7 +107,7 @@ S = {
 
 ## Struktura danych lekcji
 
-### Format dialogu — WAŻNE
+### Format dialogu - WAŻNE
 Aktualny format używa `s/l/t` (NIE `speaker/line/tr`):
 ```javascript
 dialog: [{ s: "Imię rozmówcy", l: "Tekst w języku obcym", t: "Tłumaczenie PL" }]
@@ -140,19 +140,19 @@ dialog: [{ s: "Imię rozmówcy", l: "Tekst w języku obcym", t: "Tłumaczenie PL
 ## System audio
 
 ### Silnik TTS (`S.ttsEngine`)
-- `"oai"` → `oaiSpeak(text, voiceId)` — OpenAI API
-- `"el"` → `elSpeak(text, lang, voiceId)` — ElevenLabs API
-- `"browser"` → `browserSpeak(text, lang)` — Web Speech API
+- `"oai"` → `oaiSpeak(text, voiceId)` - OpenAI API
+- `"el"` → `elSpeak(text, lang, voiceId)` - ElevenLabs API
+- `"browser"` → `browserSpeak(text, lang)` - Web Speech API
 
 ### Funkcje
-- `speak(text, lang, speakerName)` — wybiera engine + głos automatycznie
-- `playDialog(dialog, lang)` — sekwencyjne, pauza **180ms** między kwestiami
-- `stopDialog()` / `stopAudio()` — zatrzymanie
+- `speak(text, lang, speakerName)` - wybiera engine + głos automatycznie
+- `playDialog(dialog, lang)` - sekwencyjne, pauza **180ms** między kwestiami
+- `stopDialog()` / `stopAudio()` - zatrzymanie
 
 **KRYTYCZNE:** `stopDialog()` i `stopAudio()` muszą być wywołane przy każdej nawigacji. Brak = dialogi z różnych lekcji grają jednocześnie.
 
 ### Nagrania audio per lekcja
-`lingua_audio` w localStorage: `{ lessonId: { full, female, male } }` — base64 dataURL
+`lingua_audio` w localStorage: `{ lessonId: { full, female, male } }` - base64 dataURL
 
 ---
 
@@ -165,7 +165,7 @@ Funkcja `processUpload()`:
 // Zdjęcie
 {type:"image", source:{type:"base64", media_type:file.type, data:b64}}
 
-// PDF — DOCELOWO: użyj pdf.js do lokalnej ekstrakcji tekstu
+// PDF - DOCELOWO: użyj pdf.js do lokalnej ekstrakcji tekstu
 // TERAZ: {type:"document", source:{type:"base64", media_type:"application/pdf", data:b64}}
 // TODO: dodać pdf.js (cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js)
 
@@ -203,10 +203,10 @@ Klucz: `S.rapidKey` / localStorage `lingua_rapid_key`
 
 ```javascript
 { id, title, type, level, platform, desc, scene }
-// youtubeId — do dodania
+// youtubeId - do dodania
 ```
 
-Filmy: EN×5, FR×5, IT×5. Bez konkretnych YouTube ID — do uzupełnienia.
+Filmy: EN×5, FR×5, IT×5. Bez konkretnych YouTube ID - do uzupełnienia.
 
 ---
 
@@ -224,8 +224,8 @@ Filmy: EN×5, FR×5, IT×5. Bez konkretnych YouTube ID — do uzupełnienia.
 ```
 
 ### Fonty (Google Fonts)
-- **Playfair Display** serif — tytuły, fiszki, nagłówki lekcji
-- **Jost** sans-serif — UI, przyciski, tekst
+- **Playfair Display** serif - tytuły, fiszki, nagłówki lekcji
+- **Jost** sans-serif - UI, przyciski, tekst
 
 ### iOS wymagania
 ```css
@@ -252,15 +252,15 @@ html { min-height:100%; min-height:-webkit-fill-available; }
 - Nie wklejaj JS za `</html>`
 
 ### Najczęstsze błędy (historia)
-1. **Brakujący `@` przed `@media`** — psuje WSZYSTKIE style mobilne
-2. **CSS wyciekający jako tekst** — brak `<style>`
-3. **Ścięty `<link>` przy podmianie CSS** — nagłówek urwany
-4. **JS za `</html>`** — przeglądarka ignoruje, wyświetla jako tekst
+1. **Brakujący `@` przed `@media`** - psuje WSZYSTKIE style mobilne
+2. **CSS wyciekający jako tekst** - brak `<style>`
+3. **Ścięty `<link>` przy podmianie CSS** - nagłówek urwany
+4. **JS za `</html>`** - przeglądarka ignoruje, wyświetla jako tekst
 5. **Zdublowany `</head>` lub `</html>`**
-6. **`position:fixed`** — modal znika w Safari
-7. **`oninput` w ćwiczeniach fill** — zamyka klawiaturę iOS → użyj `onchange` + `onkeydown`
-8. **Duplikaty `const`** — SyntaxError
-9. **Stary format dialogu** — nie używaj `speaker/line/tr`, używaj `s/l/t`
+6. **`position:fixed`** - modal znika w Safari
+7. **`oninput` w ćwiczeniach fill** - zamyka klawiaturę iOS → użyj `onchange` + `onkeydown`
+8. **Duplikaty `const`** - SyntaxError
+9. **Stary format dialogu** - nie używaj `speaker/line/tr`, używaj `s/l/t`
 
 ---
 
@@ -268,23 +268,32 @@ html { min-height:100%; min-height:-webkit-fill-available; }
 
 | Funkcja | Priorytet |
 |---------|-----------|
-| **PDF.js** — lokalna ekstrakcja tekstu, nie wysyłaj PDF do API | 🔴 wysoki |
-| **Lepsza analiza PDF** — opus model + wymóg min. 15 słów | 🔴 wysoki |
-| **Własne lekcje z PDF** — dodać przyciski Fiszki/Ćwiczenia | 🔴 wysoki |
-| **YouTube transkrypcja** — RapidAPI z dwoma fallback endpointami | 🔴 wysoki |
-| **Podświetlanie słów** — `.word-active` podczas odtwarzania | 🟡 średni |
-| **Popup tłumaczenia** — klik na słowo → IPA + PL + "Znam/Uczę się" | 🟡 średni |
-| **Zakładki w lekcji** — Dialog / Słówka / Gramatyka | 🟡 średni |
-| **Lista słówek dwujęzyczna** — EN→PL i PL→EN w zakładce Słówka | 🟡 średni |
-| **YouTube ID per klip** — konkretne filmy w Filmotece | 🟢 niski |
-| **Git auto-push** — Claude Code commituje do GitHub | 🟢 niski |
+| **PDF.js** - lokalna ekstrakcja tekstu, nie wysyłaj PDF do API | 🔴 wysoki |
+| **Lepsza analiza PDF** - opus model + wymóg min. 15 słów | 🔴 wysoki |
+| **Własne lekcje z PDF** - dodać przyciski Fiszki/Ćwiczenia | 🔴 wysoki |
+| **YouTube transkrypcja** - RapidAPI z dwoma fallback endpointami | 🔴 wysoki |
+| **Podświetlanie słów** - `.word-active` podczas odtwarzania | 🟡 średni |
+| **Popup tłumaczenia** - klik na słowo → IPA + PL + "Znam/Uczę się" | 🟡 średni |
+| **Zakładki w lekcji** - Dialog / Słówka / Gramatyka | 🟡 średni |
+| **Lista słówek dwujęzyczna** - EN→PL i PL→EN w zakładce Słówka | 🟡 średni |
+| **YouTube ID per klip** - konkretne filmy w Filmotece | 🟢 niski |
+| **Git auto-push** - Claude Code commituje do GitHub | 🟢 niski |
 
 ---
 
 ## Kontekst użytkownika
 
-- **Aleksandra** — uczy się EN/FR/IT, baza PL, osoba nietechniczna
+- **Aleksandra** - uczy się EN/FR/IT, baza PL, osoba nietechniczna
 - Urządzenia: iPhone Safari + Mac Chrome
 - GitHub: `bosari-lab`
 - Klucze: OpenAI ✅, Anthropic ✅, ElevenLabs ✅, RapidAPI ⏳
-- Preferuje elegancki ciemny design — nie zmieniaj wyglądu bez pytania
+- Preferuje elegancki ciemny design - nie zmieniaj wyglądu bez pytania
+
+---
+
+## Protokół Fable 5 (dodane 2026-07-04)
+
+Metodyka wspólna wszystkich agentów Aleksandry: `../.claude/rules/fable5-core.md` (root vaulta) - przeczytaj na starcie sesji. Szczegóły wdrożenia dla tego projektu: `CLAUDE.md` obok (przepisany 2026-07-04 - poprzednia wersja opisywała błędny stack). Kluczowe: plan przed kodem, backup index.html przed edycją, Grep zamiast czytania całego pliku (~240 KB), test w przeglądarce przed <DONE>, składnia API tylko z docs.
+
+**Synchronizacja**: kanoniczne AGENTS.md/CLAUDE.md żyją w repo (`~/lingua-agent/`); kopie w vaulcie aktualizuj po zmianach:
+`cp "/Users/aleksandrabarwasna/Library/Mobile Documents/iCloud~md~obsidian/Documents/Folder ALFA/AGENT LINGUA/"{AGENTS.md,CLAUDE.md} ~/lingua-agent/ && cd ~/lingua-agent && git add AGENTS.md CLAUDE.md && git commit -m "docs: protokol Fable 5" && git push`

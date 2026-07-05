@@ -1,35 +1,32 @@
-# Claude Code: AI Language Learning Agent
+# CLAUDE.md - LinguaAgent (apka do nauki języków)
 
-## 1. Stack Techniczny
-- **Frontend**: React + Tailwind CSS
-- **Backend**: FastAPI (Python)
-- **AI**: OpenAI SDK / LangChain
-- **Baza danych**: PostgreSQL (Supabase)
-- **Komunikacja**: REST API
+> PRZEPISANY 2026-07-04: poprzednia wersja opisywała React+FastAPI+PostgreSQL - stack INNEGO projektu, sprzeczny z rzeczywistością. Backup: CLAUDE.md.backup-2026-07-04.
 
-## 2. Strategia Oszczędzania Tokenów (Efficiency)
-- **Plan Mode**: Zawsze opisz logikę funkcji/komponentu w punktach przed pisaniem kodu. Czekaj na "OK".
-- **Partial Updates**: Jeśli zmieniamy jedną funkcję, nie generuj całego pliku. Pokaż tylko zmieniony fragment.
-- **No Comments**: Nie dodawaj oczywistych komentarzy (np. // funkcja do logowania). Kod ma być czysty i samowyjaśniający się.
-- **Depedencies**: Zanim dodasz nową bibliotekę, zapytaj czy jest niezbędna.
+## Źródło prawdy o projekcie
 
-## 3. Standardy Kodowania (Coding Rules)
-- **Modułowość**: Rozdzielaj logikę AI od API i Frontendu.
-- **Typowanie**: W Pythonie używaj Type Hinting, w JS używaj czystego kodu z dokumentacją JSDoc.
-- **Obsługa błędów**: Każdy call do LLM musi mieć obsługę wyjątków (try/except) i limit timeoutu.
-- **Prompt Engineering**: Prompty dla Agenta trzymaj w oddzielnych plikach/stałych, nie hardkoduj ich wewnątrz funkcji.
+**`AGENTS.md` w tym folderze** - stack, architektura ekranów, struktura danych lekcji, API i klucze, design system, zasady pracy z kodem. Przeczytaj PRZED jakąkolwiek zmianą. Ten plik tylko uzupełnia go o metodykę.
 
-## 4. Zadania Agenta Językowego
-- **Persona**: Agent ma być cierpliwym nauczycielem, korygującym błędy w czasie rzeczywistym.
-- **Spójność**: Pilnuj, aby system oceniania gramatyki był logiczny i zgodny z poziomami CEFR (A1-C2).
-- **Logika**: Przy generowaniu ćwiczeń, najpierw pobierz kontekst użytkownika z bazy.
+Fakty twarde (z AGENTS.md - nie zmieniaj bez decyzji Aleksandry):
+- JEDEN plik `index.html` (vanilla JS + CSS variables), zero frameworków, zero Node, zero backendu
+- Dane: localStorage + IndexedDB (wideo). Klucze API tylko w localStorage - NIGDY w kodzie
+- Repo: `SignoritaAlfa/linguaagent` (GitHub Pages); klon roboczy: `~/lingua-agent/`; kopia w vaulcie = snapshot, sprawdź aktualność przed pracą
 
-## 5. Komunikacja
-- **Język**: Feedback dla mnie po polsku. Kod i dokumentacja w kodzie po angielsku.
-- **Błędy**: Jeśli widzisz błąd w mojej architekturze – wytykaj go bez litości, zanim zaczniesz pisać.
-- **Exit Signal**: Gdy skończysz zadanie (naprawisz kod lub przeanalizujesz punkt regulaminu), zakończ odpowiedź tagiem <DONE>. Nie dodawaj po nim żadnych wyjaśnień ani pytań "czy mogę jeszcze w czymś pomóc".
+## Protokół Fable 5 (metodyka - jak wszyscy agenci Aleksandry)
 
-## 6. Zasady Inżynierskie
-- **Minimalist Changes**: Rób najmniejsze możliwe zmiany, aby osiągnąć cel. Nie zmieniaj kodu, o który nie prosiłem.
-- **Fight Entropy**: Kod musi być czysty i lepszy niż go zastałeś. Unikaj "hacków".
-- **JSDoc/ABOUTME**: Każdy nowy plik zaczynaj od komentarza `// ABOUTME: [cel pliku]`. To pomoże ci (i mi) szybko zrozumieć architekturę przy następnej sesji bez skanowania całego pliku.
+1. **Na starcie**: przeczytaj (Read) `../.claude/rules/fable5-core.md` (root vaulta). Obowiązują zwłaszcza: #1 (plan przed działaniem - przy zmianie >1 funkcji opisz logikę w punktach i czekaj na OK), #3 (poziomy pewności), #12 (licz narzędziem), #13 (Grep przed Read - index.html ma ~240 KB, NIGDY nie czytaj całości; `grep -n "function\|=>" index.html` do nawigacji).
+2. **Backup przed edycją**: `cp index.html index.html.backup-YYYY-MM-DD` (hook backupów vaulta obejmuje tylko xlsx - tu robisz ręcznie).
+3. **Nie zgaduj API**: składnia wywołań OpenAI/ElevenLabs/Anthropic - z AGENTS.md albo z oficjalnych docs (WebSearch), nigdy z pamięci. Modele i voice ID są w AGENTS.md.
+4. **Samokontrola przed <DONE>** (odpowiednik fable5-core #8): (a) zmiana minimalna - nie ruszyłeś kodu, o który nie proszono? (b) otwórz apkę w przeglądarce, przeklikaj zmieniony ekran, konsola bez nowych błędów; (c) iOS-wymagania z AGENTS.md zachowane? (d) zero hardkodowanych kluczy? (e) sekcja "co zmieniłem + jak przetestowałem" w odpowiedzi.
+5. **Sprzeczność między moim poleceniem a AGENTS.md** -> zgłoś przed wykonaniem (nie wykonuj po cichu żadnej wersji).
+
+## Zasady komunikacji (zachowane z poprzedniej wersji - działały)
+
+- Plan/logika w punktach PRZED kodem przy większych zmianach; czekaj na "OK"
+- Partial updates: pokazuj zmieniony fragment, nie cały plik
+- Minimal changes; kod czystszy niż zastany; bez oczywistych komentarzy
+- Feedback po polsku; błąd w architekturze wytykaj wprost, zanim napiszesz kod
+- Koniec zadania = tag <DONE>, bez dopisków po nim
+
+## Styl tekstów lekcji
+
+Treści lekcji (dialogi, słowniczki) wg `../.claude/skills/ai-writing-patterns.md` + poziomy CEFR spójne z deklarowanym poziomem lekcji.
