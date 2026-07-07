@@ -5,7 +5,7 @@
 const VERSION = "v2-2026-07-07";
 const PRECACHE = "lingua-precache-" + VERSION;
 const RUNTIME = "lingua-runtime-" + VERSION;
-const PRECACHE_URLS = ["./", "./index.html", "./transkryptor.html", "./manifest.json", "./icon-192.png", "./icon-512.png", "./icon-180.png"];
+const PRECACHE_URLS = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png", "./icon-180.png"];
 const API_HOSTS = [
   "api.openai.com", "api.elevenlabs.io", "api.anthropic.com",
   "generativelanguage.googleapis.com", "www.googleapis.com",

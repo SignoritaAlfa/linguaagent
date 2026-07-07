@@ -4156,27 +4156,6 @@ function normalizeLessonData(lesson){
   return lesson;
 }
 
-// Dogenerowanie ćwiczeń (fill) z dialogu/tekstu istniejącej lekcji — dla lekcji
-// z transkrypcji/importu, które powstały bez sekcji ćwiczeń.
-async function generateFillFromLesson(lesson, lang){
-  const dialogText = (lesson.dialog||[]).map(d=>d && d.l).filter(Boolean).join("\n");
-  const rawPlain = lesson.rawText ? rawTextToPlain(lesson.rawText) : "";
-  const base = (dialogText + "\n" + rawPlain).trim();
-  if(!base) throw new Error("Lekcja nie ma tekstu, z którego można zrobić ćwiczenia");
-  const langName = ({EN:"angielskim",FR:"francuskim",IT:"włoskim",NO:"norweskim"})[lang]||"obcym";
-  const prompt = `Na podstawie poniższego tekstu w języku ${langName} stwórz DOKŁADNIE 10 ćwiczeń z luką.\nZASADY:\n- Każde ćwiczenie: zdanie Z TEKSTU (lub minimalnie uproszczone) z JEDNĄ luką ___\n- "a" = słowo/zwrot pasujący do luki, "h" = krótka wskazówka po polsku\n- 5 ćwiczeń cat:"text" (słownictwo) i 5 cat:"grammar" (gramatyka: czasy, rodzajniki, przyimki)\nOdpowiedz TYLKO czystym JSON bez markdown:\n{"fill":[{"s":"zdanie z ___ luką","a":"odpowiedź","h":"wskazówka po polsku","cat":"text"}]}\n\nTEKST:\n${base.slice(0,12000)}`;
-  const raw = await callLessonModel(prompt);
-  const parsed = tolerantParseJson(raw);
-  const items = (Array.isArray(parsed.fill) ? parsed.fill : []).filter(e=>e && e.s && e.a);
-  if(!items.length) throw new Error("AI nie zwróciło ćwiczeń — spróbuj jeszcze raz");
-  lesson.fill = items;
-  normalizeLessonData(lesson);
-  const ml = Object.assign({},S.myLessons);
-  const li = (ml[lang]||[]).findIndex(l=>l.id===lesson.id);
-  if(li>=0){ ml[lang][li].fill = lesson.fill; S.myLessons = ml; safeSetItem("lingua_my_lessons",JSON.stringify(ml)); scheduleDriveSync(); }
-  return items.length;
-}
-
 function startPractice(lesson,mode,origin){
   // mode: "flashcard" | "fill" | "writing" | "dictation"
   // origin: "lesson" | "mywords" | "myphrases" — dokąd wracać przy "← Wstecz"
@@ -4184,12 +4163,6 @@ function startPractice(lesson,mode,origin){
   let cards;
   if(mode==="fill") cards = lesson.fill;
   else cards = lesson.vocab; // flashcard, writing, dictation
-  if(!cards || cards.length===0){
-    alert(mode==="fill"
-      ? "Ta lekcja nie ma jeszcze ćwiczeń. Otwórz zakładkę Ćwiczenia — możesz je wygenerować AI albo wgrać własne."
-      : "Ta lekcja nie ma słówek do ćwiczenia.");
-    return;
-  }
   set({screen:"practice",lesson,mode,cards,idx:0,revealed:false,
     dir:"to_pl",dirMode:"to_pl",score:{c:0,t:0},input:"",input2:"",submitted:false,
     attempts:0, lastResult:null,
@@ -6281,29 +6254,9 @@ function renderLesson(){
       fw.appendChild(h("div",{class:"empty",style:"margin-top:20px"},
         h("div",{class:"empty-icon"},"✏️"),
         h("div",{class:"empty-text"},"Brak ćwiczeń"),
-        h("div",{class:"empty-sub"},"Wygeneruj ćwiczenia AI z treści tej lekcji, wgraj własne przyciskiem powyżej, albo użyj zakładki Tekst")
+        h("div",{class:"empty-sub"},"Wgraj własne ćwiczenia przyciskiem powyżej, albo wygeneruj nowe AI z tekstu lekcji (zakładka Tekst)")
       ));
-      // Dogenerowanie ćwiczeń AI z dialogu/tekstu lekcji (dla lekcji z transkrypcji,
-      // które powstały bez sekcji fill)
-      if((S.claudeKey || S.geminiKey) && ((lesson.dialog&&lesson.dialog.length>0) || lesson.rawText)){
-        const genBtn=h("button",{class:"sbtn",style:"margin-top:16px;border-color:var(--gold);color:var(--gold);padding:12px 18px"},
-          "✨ Wygeneruj ćwiczenia AI z tej lekcji");
-        genBtn.onclick=async ()=>{
-          genBtn.disabled=true; genBtn.textContent="⏳ Generuję ćwiczenia...";
-          try{
-            const n=await generateFillFromLesson(lesson, lang);
-            render();
-          }catch(e){
-            genBtn.disabled=false; genBtn.textContent="✨ Wygeneruj ćwiczenia AI z tej lekcji";
-            alert("Nie udało się wygenerować ćwiczeń: "+e.message);
-          }
-        };
-        fw.appendChild(genBtn);
-      }
-      // BUGFIX 2026-07-07: brakowało w.appendChild(main) — return w bez treści
-      // dawał "całkowicie pustą stronę" (tylko górna nawigacja)
       main.appendChild(fw);
-      w.appendChild(main);
       return w;
     }
 
@@ -6656,18 +6609,6 @@ function renderLesson(){
 
 function renderPractice(){
   const{lesson,lang,mode,cards,idx,revealed,dir,score,input,submitted}=S;
-  if(!cards || !cards.length || !cards[idx]){
-    const w=h("div",{});
-    w.appendChild(renderTopNav());
-    const m=h("div",{class:"main"});
-    m.appendChild(h("button",{class:"back-btn",onclick:()=>set({screen: S.lesson ? "lesson" : "lang"})},"← Wróć"));
-    m.appendChild(h("div",{class:"empty",style:"margin-top:20px"},
-      h("div",{class:"empty-icon"},"✏️"),
-      h("div",{class:"empty-text"},"Brak materiału do ćwiczenia"),
-      h("div",{class:"empty-sub"},"Ta sesja nie ma kart — wróć do lekcji i wygeneruj ćwiczenia lub słówka")));
-    w.appendChild(m);
-    return w;
-  }
   const card=cards[idx];
   const w=h("div",{});
   w.appendChild(renderTopNav());

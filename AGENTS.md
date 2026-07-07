@@ -143,6 +143,7 @@ Motywy light/dark + palety (`PALETTES`, klucz `lingua_palette`). Fonty: Cormoran
 8. **SRS v2:** błąd cofa o 2 poziomy (nie zeruje); seria nauki (streak) i badge powtórek na home; karty Powtórek wzbogacane tłumaczeniami z cache (`getEnrichedVocabEntry`).
 9. **Eksport Anki CSV** w Moje słówka / Moje zwroty.
 10. **Preconnect** do api.openai.com i generativelanguage.googleapis.com.
+11. **Bugfix (druga tura):** tab Ćwiczenia przy lekcji bez `fill` renderował pustą stronę (brakowało `w.appendChild(main)` przed wczesnym `return`); `startPractice`/`renderPractice` dostały guard na puste karty (komunikat zamiast crasha); nowy przycisk **„✨ Wygeneruj ćwiczenia AI z tej lekcji"** (`generateFillFromLesson`) w pustym tabie Ćwiczenia — dla lekcji z transkrypcji, które powstały bez ćwiczeń. `sw.js` VERSION → v2.
 
 ## TODO (aktualne)
 
