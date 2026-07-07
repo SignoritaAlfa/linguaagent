@@ -9844,11 +9844,65 @@ function render(){
   if(node)root.appendChild(node);
 }
 
+// ── TRANSKRYPTOR: skrzynka podawcza ──────────────────────────────────────────
+// transkryptor.html (ta sama domena) zapisuje lekcję pod kluczem
+// 'lingua_transcript_inbox' w IndexedDB LinguaAgentKV/kv. Tu ją odbieramy:
+// czytamy BEZPOŚREDNIO z IDB (mapa LS może być nieświeża, gdy karta była otwarta),
+// kasujemy klucz i importujemy istniejącym mechanizmem prepareImportedLesson.
+let _inboxBusy = false;
+function _inboxTake(){
+  return new Promise(res=>{
+    let q; try{ q = indexedDB.open("LinguaAgentKV", 1); }catch(e){ return res(null); }
+    q.onupgradeneeded = ()=>{ try{ if(!q.result.objectStoreNames.contains("kv")) q.result.createObjectStore("kv"); }catch(e){} };
+    q.onerror = ()=>res(null);
+    q.onsuccess = ()=>{
+      const db = q.result;
+      let tx; try{ tx = db.transaction("kv","readwrite"); }catch(e){ db.close(); return res(null); }
+      const st = tx.objectStore("kv");
+      const g = st.get("lingua_transcript_inbox");
+      g.onsuccess = ()=>{ if(g.result) st.delete("lingua_transcript_inbox"); };
+      tx.oncomplete = ()=>{ db.close(); res(g.result || null); };
+      tx.onerror = ()=>{ db.close(); res(null); };
+    };
+  });
+}
+async function checkTranscriptInbox(){
+  if(_inboxBusy) return;
+  _inboxBusy = true;
+  try{
+    const raw = await _inboxTake();
+    LS.removeItem("lingua_transcript_inbox"); // wyczyść też mapę/mirror
+    if(!raw) return;
+    let box = null;
+    try{ box = JSON.parse(raw); }catch(e){}
+    if(!box || !box.lesson || typeof box.lesson !== "object") return;
+    const lang = ["EN","FR","IT","NO"].includes(String(box.lang||"").toUpperCase()) ? String(box.lang).toUpperCase() : "EN";
+    const id = "my_"+Date.now()+"_tr";
+    const res = await prepareImportedLesson(box.lesson, lang, id, false);
+    if(!res.ok){ alert("Import z Transkryptora nie powiódł się: "+res.error); return; }
+    const ml = Object.assign({}, S.myLessons);
+    ml[lang] = (ml[lang]||[]).slice();
+    ml[lang].push(res.json);
+    safeSetItem("lingua_my_lessons", JSON.stringify(ml));
+    S.myLessons = ml;
+    let audioOk = false;
+    if(typeof box.audioDataUrl === "string" && box.audioDataUrl.startsWith("data:")){
+      try{ saveLessonAudio(id, "full", box.audioDataUrl); audioOk = true; }
+      catch(e){ console.warn("[Transkryptor] zapis audio:", e.message); }
+    }
+    scheduleDriveSync();
+    set({myLessons:ml, screen:"lang", lang});
+    setTimeout(()=>alert("📥 Zaimportowano lekcję z Transkryptora: „"+(res.json.title||"?")+"”"+(audioOk?" (nagranie audio w slocie „Pełny dialog”)":"")), 150);
+  } finally { _inboxBusy = false; }
+}
+window.addEventListener("focus", ()=>{ checkTranscriptInbox(); });
+
 window.speechSynthesis.onvoiceschanged=()=>{};
 setTimeout(render,50);
 setTimeout(()=>driveSilentReconnect(0),800);
 // Ostrzeżenie o localStorage quota — odpalamy po renderze, żeby banner się pokazał na żywej stronie
 setTimeout(checkStorageQuota, 1500);
+setTimeout(checkTranscriptInbox, 1200);
 
 // PWA: service worker (offline + instalacja na iPhone przez "Dodaj do ekranu początkowego").
 // Rejestracja po load, żeby nie konkurować o pasmo ze startem apki.

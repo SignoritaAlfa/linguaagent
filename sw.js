@@ -2,10 +2,10 @@
 // index.html: network-first (świeża wersja gdy online, cache gdy offline).
 // CDN/fonty: cache-first z odświeżeniem w tle.
 // API (OpenAI/Gemini/ElevenLabs/Drive/YouTube/worker): NIE dotykamy — zawsze sieć.
-const VERSION = "v1-2026-07-07";
+const VERSION = "v2-2026-07-07";
 const PRECACHE = "lingua-precache-" + VERSION;
 const RUNTIME = "lingua-runtime-" + VERSION;
-const PRECACHE_URLS = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png", "./icon-180.png"];
+const PRECACHE_URLS = ["./", "./index.html", "./transkryptor.html", "./manifest.json", "./icon-192.png", "./icon-512.png", "./icon-180.png"];
 const API_HOSTS = [
   "api.openai.com", "api.elevenlabs.io", "api.anthropic.com",
   "generativelanguage.googleapis.com", "www.googleapis.com",

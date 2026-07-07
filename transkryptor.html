@@ -1,0 +1,1113 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Transkryptor — audio/video → tekst</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --panel: #181b24;
+    --panel2: #1f2330;
+    --border: #2b3040;
+    --text: #e8eaf0;
+    --muted: #9aa1b5;
+    --accent: #6c8cff;
+    --accent2: #4ecb8d;
+    --danger: #ff6b6b;
+    --radius: 12px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px;
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+  }
+  .wrap { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; }
+  h1 span { color: var(--accent); }
+  .sub { color: var(--muted); font-size: .9rem; margin-bottom: 20px; }
+  .panel {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 18px; margin-bottom: 16px;
+  }
+  .panel h2 { font-size: .95rem; margin: 0 0 12px; color: var(--text); }
+  .row { display: flex; gap: 14px; flex-wrap: wrap; }
+  .field { flex: 1; min-width: 160px; }
+  label { display: block; font-size: .8rem; color: var(--muted); margin-bottom: 6px; }
+  select, input[type="text"], input[type="url"] {
+    width: 100%; padding: 9px 10px; border-radius: 8px;
+    background: var(--panel2); color: var(--text); border: 1px solid var(--border);
+    font-size: .9rem;
+  }
+  input:focus, select:focus { outline: none; border-color: var(--accent); }
+  .drop {
+    border: 2px dashed var(--border); border-radius: var(--radius);
+    padding: 28px 18px; text-align: center; cursor: pointer;
+    transition: border-color .2s, background .2s;
+  }
+  .drop:hover, .drop.over { border-color: var(--accent); background: rgba(108,140,255,.06); }
+  .drop .big { font-size: 1.05rem; margin-bottom: 6px; }
+  .drop .hint { color: var(--muted); font-size: .82rem; }
+  .urlrow { display: flex; gap: 8px; margin-top: 12px; }
+  .urlrow input { flex: 1; }
+  .btn {
+    padding: 10px 18px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--panel2); color: var(--text); cursor: pointer; font-size: .85rem;
+    white-space: nowrap;
+  }
+  .btn:hover { border-color: var(--accent); }
+  .btn.rec { border-color: var(--danger); color: var(--danger); animation: pulse 1.2s infinite; }
+  @keyframes pulse { 50% { background: rgba(255,107,107,.12); } }
+  .microw { margin-top: 12px; }
+  .queue { display: none; margin-top: 12px; }
+  .qitem {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
+    margin-bottom: 6px; font-size: .85rem; background: var(--panel2);
+  }
+  .qitem .qname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .qitem .qsize { color: var(--muted); font-size: .78rem; }
+  .qitem .qdel { cursor: pointer; color: var(--muted); border: none; background: none; font-size: 1rem; }
+  .qitem .qdel:hover { color: var(--danger); }
+  .qitem.active { border-color: var(--accent); }
+  button.primary {
+    width: 100%; padding: 13px; margin-top: 14px;
+    background: var(--accent); color: #fff; border: none; border-radius: 10px;
+    font-size: 1rem; font-weight: 600; cursor: pointer;
+  }
+  button.primary:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary:not(:disabled):hover { filter: brightness(1.1); }
+  .status { display: none; }
+  .status.show { display: block; }
+  .statushead { display: flex; align-items: center; gap: 10px; justify-content: space-between; }
+  .bar-outer { height: 10px; background: var(--panel2); border-radius: 5px; overflow: hidden; margin: 10px 0 6px; }
+  .bar-inner {
+    height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent), var(--accent2));
+    border-radius: 5px; transition: width .3s;
+  }
+  .bar-inner.indeterminate { width: 30% !important; animation: slide 1.4s ease-in-out infinite; }
+  @keyframes slide { 0% {margin-left:-30%;} 100% {margin-left:100%;} }
+  .status-text { font-size: .85rem; color: var(--muted); }
+  .status-text b { color: var(--text); }
+  .cancelbtn { border-color: var(--danger); color: var(--danger); display: none; }
+  .player { display: none; }
+  .player.show { display: block; }
+  .player video, .player audio { width: 100%; border-radius: 8px; margin-bottom: 10px; }
+  .synclist { max-height: 260px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; }
+  .syncrow {
+    display: flex; gap: 10px; padding: 7px 12px; cursor: pointer;
+    font-size: .85rem; border-bottom: 1px solid var(--border); line-height: 1.45;
+  }
+  .syncrow:last-child { border-bottom: none; }
+  .syncrow:hover { background: rgba(108,140,255,.08); }
+  .syncrow.now { background: rgba(78,203,141,.12); border-left: 3px solid var(--accent2); padding-left: 9px; }
+  .syncrow .t { color: var(--accent); font-family: Menlo, Consolas, monospace; font-size: .78rem; white-space: nowrap; padding-top: 2px; }
+  .results { display: none; }
+  .results.show { display: block; }
+  .searchrow { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+  .searchrow input { flex: 1; min-width: 160px; }
+  .searchrow .cnt { font-size: .8rem; color: var(--muted); min-width: 70px; text-align: center; }
+  .tabs { display: flex; gap: 6px; margin-bottom: 12px; flex-wrap: wrap; }
+  .tab {
+    padding: 7px 14px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--panel2); color: var(--muted); cursor: pointer; font-size: .85rem;
+  }
+  .tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  textarea {
+    width: 100%; height: 320px; padding: 12px; border-radius: 10px;
+    background: var(--panel2); color: var(--text); border: 1px solid var(--border);
+    font-family: "SF Mono", Menlo, Consolas, monospace; font-size: .85rem;
+    resize: vertical; line-height: 1.5;
+  }
+  .actions { display: flex; gap: 10px; margin-top: 10px; flex-wrap: wrap; }
+  .actions button { padding: 9px 16px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel2); color: var(--text); cursor: pointer; font-size: .85rem; }
+  .actions button:hover { border-color: var(--accent); }
+  .err {
+    display: none; margin-top: 12px; padding: 12px; border-radius: 10px;
+    background: rgba(255,107,107,.1); border: 1px solid var(--danger);
+    color: var(--danger); font-size: .85rem;
+  }
+  .note { font-size: .78rem; color: var(--muted); margin-top: 8px; line-height: 1.5; }
+  .restored { color: var(--accent2); }
+  .history { display: none; }
+  .history.show { display: block; }
+  .hitem {
+    display: flex; align-items: center; gap: 10px; padding: 9px 12px;
+    border: 1px solid var(--border); border-radius: 8px; margin-bottom: 6px;
+    background: var(--panel2); font-size: .85rem;
+  }
+  .hitem .hname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .hitem .hmeta { color: var(--muted); font-size: .76rem; white-space: nowrap; }
+  .hitem button { padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border); background: none; color: var(--text); cursor: pointer; font-size: .78rem; }
+  .hitem button:hover { border-color: var(--accent); }
+  .hitem button.hdel:hover { border-color: var(--danger); color: var(--danger); }
+  .histhead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .histhead h2 { margin: 0; }
+  .histhead button { padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border); background: none; color: var(--muted); cursor: pointer; font-size: .78rem; }
+  .histhead button:hover { border-color: var(--danger); color: var(--danger); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>🎙️ <span>Transkryptor</span></h1>
+  <div class="sub">Transkrypcja audio i wideo — Whisper działa lokalnie w Twojej przeglądarce. Pliki nie opuszczają komputera.</div>
+
+  <div class="panel">
+    <div class="row">
+      <div class="field">
+        <label>Model (jakość vs szybkość)</label>
+        <select id="model">
+          <option value="onnx-community/whisper-tiny">Tiny — najszybszy (~50 MB)</option>
+          <option value="onnx-community/whisper-base" selected>Base — zalecany (~85 MB)</option>
+          <option value="onnx-community/whisper-small">Small — najdokładniejszy (~250 MB)</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Język nagrania</label>
+        <select id="lang">
+          <option value="auto" selected>🌐 Auto-wykrywanie</option>
+          <option value="pl">Polski</option>
+          <option value="en">Angielski</option>
+          <option value="fr">Francuski</option>
+          <option value="it">Włoski</option>
+          <option value="no">Norweski</option>
+          <option value="de">Niemiecki</option>
+          <option value="es">Hiszpański</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Zadanie</label>
+        <select id="task">
+          <option value="transcribe" selected>Transkrypcja (oryginalny język)</option>
+          <option value="translate">Tłumaczenie na angielski</option>
+        </select>
+      </div>
+    </div>
+    <div class="row" style="margin-top:12px;">
+      <div class="field">
+        <label>Zakres od (mm:ss, opcjonalnie)</label>
+        <input type="text" id="tFrom" placeholder="np. 10:00">
+      </div>
+      <div class="field">
+        <label>Zakres do (mm:ss, opcjonalnie)</label>
+        <input type="text" id="tTo" placeholder="np. 25:30">
+      </div>
+      <div class="field"></div>
+    </div>
+    <div class="note">Model pobiera się z internetu tylko przy pierwszym użyciu, potem jest w pamięci podręcznej. Zakres czasu dotyczy wszystkich plików w kolejce.</div>
+  </div>
+
+  <div class="panel">
+    <div class="drop" id="drop">
+      <div class="big">📂 Przeciągnij pliki audio lub wideo (można kilka)</div>
+      <div class="hint">albo kliknij, żeby wybrać — MP3, WAV, M4A, OGG, MP4, MOV, WEBM…</div>
+      <input type="file" id="file" accept="audio/*,video/*,.m4a,.mp4,.mov,.webm,.mkv" multiple hidden>
+    </div>
+    <div class="urlrow">
+      <input type="url" id="url" placeholder="…albo wklej bezpośredni link do pliku audio/wideo (np. https://…/nagranie.mp3)">
+      <button class="btn" id="fetchUrl">Pobierz</button>
+    </div>
+    <div class="microw">
+      <button class="btn" id="mic">🎤 Nagraj z mikrofonu</button>
+    </div>
+    <div class="queue" id="queue"></div>
+    <button class="primary" id="go" disabled>Transkrybuj</button>
+    <div class="err" id="err"></div>
+    <div class="note">Linki do YouTube/Vimeo/Facebooka nie zadziałają — te serwisy blokują pobieranie. Pobierz plik na dysk i wgraj go powyżej.</div>
+  </div>
+
+  <div class="panel status" id="status">
+    <div class="statushead">
+      <div class="status-text" id="stext">Przygotowanie…</div>
+      <button class="btn cancelbtn" id="cancel">✖ Anuluj</button>
+    </div>
+    <div class="bar-outer"><div class="bar-inner" id="bar"></div></div>
+    <div class="status-text" id="stimer"></div>
+  </div>
+
+  <div class="panel player" id="playerPanel">
+    <h2>▶️ Odtwarzacz — kliknij linijkę, żeby przewinąć nagranie</h2>
+    <div id="playerBox"></div>
+    <div class="synclist" id="syncList"></div>
+  </div>
+
+  <div class="panel results" id="results">
+    <div class="note restored" id="restoredNote" style="display:none; margin: 0 0 10px;"></div>
+    <div class="searchrow">
+      <input type="text" id="q" placeholder="🔍 Szukaj w transkrypcie…">
+      <button class="btn" id="qPrev">↑</button>
+      <button class="btn" id="qNext">↓</button>
+      <span class="cnt" id="qCount"></span>
+    </div>
+    <div class="tabs">
+      <div class="tab active" data-k="txt">Czysty tekst</div>
+      <div class="tab" data-k="ts">Z timestampami</div>
+      <div class="tab" data-k="srt">SRT</div>
+      <div class="tab" data-k="vtt">VTT</div>
+    </div>
+    <textarea id="out" spellcheck="false"></textarea>
+    <div class="actions">
+      <button id="copy">📋 Kopiuj</button>
+      <button id="dl">⬇️ Pobierz plik</button>
+      <button id="dlall">⬇️ Wszystkie formaty</button>
+      <button id="docx">📄 Eksport DOCX</button>
+    </div>
+    <div class="actions" style="margin-top:14px; padding-top:14px; border-top:1px solid var(--border); align-items:center;">
+      <span style="font-size:.85rem;">📚 Lekcja w LinguaAgent:</span>
+      <select id="lgLang" style="width:auto; padding:8px 10px;">
+        <option value="EN">🇬🇧 Angielski</option>
+        <option value="FR">🇫🇷 Francuski</option>
+        <option value="IT">🇮🇹 Włoski</option>
+        <option value="NO">🇳🇴 Norweski</option>
+      </select>
+      <button id="lgExport">Utwórz lekcję i otwórz</button>
+    </div>
+    <div class="note">Lekcja powstaje z transkryptu (dialog z timestampami + pełny tekst), a plik audio trafia do 🎧 Nagrań lekcji — wszystko lokalnie, bez AI. Tłumaczenia i słówka możesz dogenerować już w LinguaAgent.</div>
+  </div>
+
+  <div class="panel history" id="historyPanel">
+    <div class="histhead">
+      <h2>🕘 Historia transkrypcji</h2>
+      <button id="clearHist">Wyczyść historię</button>
+    </div>
+    <div id="historyList"></div>
+  </div>
+
+  <div class="note">Wskazówka: przy długich nagraniach (30+ min) wybierz model Tiny lub Base. Transkrypcja liczy się w tle (Web Worker) — strona pozostaje responsywna, ale nie zamykaj karty. Historia trzyma do 15 ostatnich wyników w pamięci przeglądarki.</div>
+</div>
+
+<script type="module">
+const $ = id => document.getElementById(id);
+const drop = $('drop'), fileInput = $('file'), go = $('go');
+const SR = 16000;
+let outputs = { txt: '', ts: '', srt: '', vtt: '' };
+let activeTab = 'txt', baseName = 'transkrypcja';
+let currentEntry = null;
+const esc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+
+// ============================================================
+// WEB WORKER — model i inference poza wątkiem UI
+// (kod bez backticków i ${}, bo jest osadzony w stringu)
+// ============================================================
+const workerCode = [
+"import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.3.1';",
+"env.allowLocalModels = false;",
+"try { if (!('caches' in self)) env.useBrowserCache = false; } catch (e) { env.useBrowserCache = false; }",
+"let transcriber = null, loadedModel = null;",
+"async function loadModel(modelId) {",
+"  if (transcriber && loadedModel === modelId) return transcriber;",
+"  transcriber = null;",
+"  const progress = {};",
+"  const cb = function (p) {",
+"    if (p.status === 'progress' && p.file) {",
+"      progress[p.file] = { loaded: p.loaded || 0, total: p.total || 0 };",
+"      let loaded = 0, total = 0;",
+"      for (const k in progress) { loaded += progress[k].loaded; total += progress[k].total; }",
+"      if (total > 0) self.postMessage({ type: 'download', loaded: loaded, total: total });",
+"    }",
+"  };",
+"  let pipe = null;",
+"  let hasGpu = false;",
+"  try { hasGpu = !!(self.navigator && self.navigator.gpu); } catch (e) {}",
+"  if (hasGpu) {",
+"    try {",
+"      self.postMessage({ type: 'stage', stage: 'load-webgpu' });",
+"      pipe = await pipeline('automatic-speech-recognition', modelId, {",
+"        device: 'webgpu',",
+"        dtype: { encoder_model: 'fp32', decoder_model_merged: 'q4' },",
+"        progress_callback: cb",
+"      });",
+"    } catch (e) { pipe = null; }",
+"  }",
+"  if (!pipe) {",
+"    self.postMessage({ type: 'stage', stage: 'load-wasm' });",
+"    pipe = await pipeline('automatic-speech-recognition', modelId, {",
+"      device: 'wasm', dtype: 'q8', progress_callback: cb",
+"    });",
+"  }",
+"  transcriber = pipe; loadedModel = modelId;",
+"  return pipe;",
+"}",
+"self.onmessage = async function (e) {",
+"  if (e.data.type !== 'run') return;",
+"  const audio = e.data.audio, modelId = e.data.modelId, lang = e.data.lang, segments = e.data.segments;",
+"  const task = e.data.task || 'transcribe';",
+"  const SR = 16000;",
+"  try {",
+"    const pipe = await loadModel(modelId);",
+"    const allChunks = [];",
+"    let fullText = '';",
+"    let doneSamples = 0;",
+"    self.postMessage({ type: 'progress', doneSec: 0, totalSec: audio.length / SR });",
+"    for (const seg of segments) {",
+"      const slice = audio.subarray(seg.start, seg.end);",
+"      const opts = { chunk_length_s: 30, stride_length_s: 5, return_timestamps: true, task: task };",
+"      if (lang !== 'auto') opts.language = lang;",
+"      const res = await pipe(slice, opts);",
+"      const off = seg.start / SR;",
+"      const chunks = res.chunks || [];",
+"      for (const c of chunks) {",
+"        const t0 = (c.timestamp && c.timestamp[0] != null) ? c.timestamp[0] + off : off;",
+"        const t1 = (c.timestamp && c.timestamp[1] != null) ? c.timestamp[1] + off : null;",
+"        allChunks.push({ text: c.text, timestamp: [t0, t1] });",
+"      }",
+"      fullText += (res.text || '').trim() + ' ';",
+"      doneSamples += (seg.end - seg.start);",
+"      self.postMessage({ type: 'progress', doneSec: doneSamples / SR, totalSec: audio.length / SR });",
+"    }",
+"    self.postMessage({ type: 'result', text: fullText.trim(), chunks: allChunks });",
+"  } catch (err) {",
+"    self.postMessage({ type: 'error', message: (err && err.message) ? err.message : String(err) });",
+"  }",
+"};"
+].join('\n');
+
+let worker = null;
+function getWorker() {
+  if (worker) return worker;
+  const blob = new Blob([workerCode], { type: 'text/javascript' });
+  worker = new Worker(URL.createObjectURL(blob), { type: 'module' });
+  return worker;
+}
+
+// ============================================================
+// KOLEJKA PLIKÓW
+// ============================================================
+let queue = [];
+const ICONS = { pending: '⌛', active: '▶️', done: '✅', error: '❌', cancelled: '🚫' };
+function addToQueue(files) {
+  for (const f of files) {
+    queue.push({ id: Math.random().toString(36).slice(2), file: f, status: 'pending' });
+  }
+  renderQueue(); hideErr();
+}
+function renderQueue() {
+  const el = $('queue');
+  if (!queue.length) { el.style.display = 'none'; go.disabled = true; return; }
+  el.style.display = 'block';
+  el.innerHTML = queue.map(i =>
+    '<div class="qitem' + (i.status === 'active' ? ' active' : '') + '">' +
+      '<span>' + ICONS[i.status] + '</span>' +
+      '<span class="qname" title="' + esc(i.file.name) + '">' + esc(i.file.name) + '</span>' +
+      '<span class="qsize">' + (i.file.size / 1048576).toFixed(1) + ' MB</span>' +
+      (i.status === 'pending' ? '<button class="qdel" data-id="' + i.id + '" title="Usuń">✖</button>' : '') +
+    '</div>'
+  ).join('');
+  el.querySelectorAll('.qdel').forEach(b => b.addEventListener('click', () => {
+    queue = queue.filter(x => x.id !== b.dataset.id);
+    renderQueue();
+  }));
+  go.disabled = running || !queue.some(i => i.status === 'pending');
+  const n = queue.filter(i => i.status === 'pending').length;
+  go.textContent = n > 1 ? `Transkrybuj (${n} plików)` : 'Transkrybuj';
+}
+
+drop.addEventListener('click', () => fileInput.click());
+drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('over'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+drop.addEventListener('drop', e => {
+  e.preventDefault(); drop.classList.remove('over');
+  if (e.dataTransfer.files.length) addToQueue([...e.dataTransfer.files]);
+});
+fileInput.addEventListener('change', () => {
+  if (fileInput.files.length) addToQueue([...fileInput.files]);
+  fileInput.value = '';
+});
+
+// ---------- link do pliku ----------
+$('fetchUrl').addEventListener('click', fetchFromUrl);
+$('url').addEventListener('keydown', e => { if (e.key === 'Enter') fetchFromUrl(); });
+async function fetchFromUrl() {
+  const url = $('url').value.trim();
+  if (!url) return;
+  hideErr();
+  if (/(?:youtube\.com|youtu\.be|vimeo\.com|facebook\.com|fb\.watch|tiktok\.com|instagram\.com)/i.test(url)) {
+    showErr('Linki do YouTube/Vimeo/Facebooka/TikToka nie działają — te serwisy blokują pobieranie przez przeglądarkę. Pobierz plik na dysk i wgraj go tutaj.');
+    return;
+  }
+  const btn = $('fetchUrl');
+  btn.disabled = true; btn.textContent = 'Pobieranie…';
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error(`Serwer odpowiedział: ${resp.status}`);
+    const blob = await resp.blob();
+    let name;
+    try { name = decodeURIComponent(new URL(url).pathname.split('/').pop()) || 'nagranie'; }
+    catch { name = 'nagranie'; }
+    addToQueue([new File([blob], name, { type: blob.type })]);
+    $('url').value = '';
+  } catch (e) {
+    console.error(e);
+    showErr('Nie udało się pobrać pliku z tego linku. Najczęstszy powód: serwer nie zezwala na pobieranie z innej strony (CORS) albo link nie prowadzi bezpośrednio do pliku. Pobierz plik na dysk i wgraj go tutaj.');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Pobierz';
+  }
+}
+
+// ---------- mikrofon ----------
+let mediaRec = null, recChunks = [], recInt = null, recT0 = 0;
+$('mic').addEventListener('click', async () => {
+  if (mediaRec) { mediaRec.stop(); return; }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    recChunks = [];
+    mediaRec = new MediaRecorder(stream);
+    mediaRec.ondataavailable = e => { if (e.data.size) recChunks.push(e.data); };
+    mediaRec.onstop = () => {
+      stream.getTracks().forEach(t => t.stop());
+      clearInterval(recInt);
+      const blob = new Blob(recChunks, { type: mediaRec.mimeType || 'audio/webm' });
+      const d = new Date();
+      const pad = n => String(n).padStart(2, '0');
+      const name = `nagranie-${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}-${pad(d.getHours())}${pad(d.getMinutes())}.webm`;
+      addToQueue([new File([blob], name, { type: blob.type })]);
+      mediaRec = null;
+      $('mic').textContent = '🎤 Nagraj z mikrofonu';
+      $('mic').classList.remove('rec');
+    };
+    mediaRec.start(1000);
+    recT0 = Date.now();
+    $('mic').classList.add('rec');
+    $('mic').textContent = '⏹ Zatrzymaj nagrywanie (0:00)';
+    recInt = setInterval(() => {
+      const s = Math.floor((Date.now() - recT0) / 1000);
+      $('mic').textContent = `⏹ Zatrzymaj nagrywanie (${Math.floor(s/60)}:${String(s%60).padStart(2,'0')})`;
+    }, 500);
+  } catch (e) {
+    showErr('Brak dostępu do mikrofonu: ' + (e.message || e));
+  }
+});
+
+// ---------- status ----------
+let timerInt = null, t0 = 0;
+function showStatus(text, pct = null) {
+  $('status').classList.add('show');
+  $('stext').innerHTML = text;
+  const bar = $('bar');
+  if (pct === null) { bar.classList.add('indeterminate'); }
+  else { bar.classList.remove('indeterminate'); bar.style.width = pct + '%'; }
+}
+function startTimer() {
+  t0 = Date.now();
+  timerInt = setInterval(() => {
+    const s = Math.floor((Date.now() - t0) / 1000);
+    $('stimer').textContent = `Czas: ${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;
+  }, 1000);
+}
+function stopTimer() { clearInterval(timerInt); }
+function showErr(msg) { $('err').style.display = 'block'; $('err').textContent = '⚠️ ' + msg; }
+function hideErr() { $('err').style.display = 'none'; }
+
+// ---------- audio: dekodowanie, oszczędnie z pamięcią ----------
+async function decodeToMono16k(file) {
+  let buf = await file.arrayBuffer();
+  const tmpCtx = new (window.AudioContext || window.webkitAudioContext)();
+  let decoded;
+  try {
+    decoded = await tmpCtx.decodeAudioData(buf);
+  } finally {
+    buf = null;
+    tmpCtx.close();
+  }
+  const frames = Math.ceil(decoded.duration * SR);
+  const off = new OfflineAudioContext(1, frames, SR);
+  const src = off.createBufferSource();
+  src.buffer = decoded;
+  src.connect(off.destination);
+  src.start(0);
+  const rendered = await off.startRendering();
+  const duration = decoded.duration;
+  decoded = null;
+  return { data: rendered.getChannelData(0), duration };
+}
+
+// ---------- segmenty (cięcie w najcichszym miejscu) ----------
+function computeSegments(audio) {
+  const SEG = 300 * SR, SEARCH = 5 * SR, WIN = Math.floor(0.02 * SR);
+  const total = audio.length;
+  if (total <= SEG + SEARCH) return [{ start: 0, end: total }];
+  const segs = [];
+  let start = 0;
+  while (total - start > SEG + SEARCH) {
+    const target = start + SEG;
+    let best = target, bestE = Infinity;
+    for (let p = target - SEARCH; p < target + SEARCH - WIN; p += WIN) {
+      let e = 0;
+      for (let i = p; i < p + WIN; i++) { const v = audio[i]; e += v * v; }
+      if (e < bestE) { bestE = e; best = p; }
+    }
+    segs.push({ start, end: best });
+    start = best;
+  }
+  segs.push({ start, end: total });
+  return segs;
+}
+
+// ---------- zakres czasu ----------
+function parseTimeStr(s) {
+  s = (s || '').trim();
+  if (!s) return null;
+  const p = s.split(':').map(Number);
+  if (p.some(isNaN)) return NaN;
+  if (p.length === 1) return p[0] * 60;      // samo "12" = 12 minut
+  if (p.length === 2) return p[0] * 60 + p[1];
+  if (p.length === 3) return p[0] * 3600 + p[1] * 60 + p[2];
+  return NaN;
+}
+
+// ---------- formatowanie ----------
+function fmtTime(sec, comma) {
+  if (sec == null || isNaN(sec)) sec = 0;
+  const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = Math.floor(sec % 60);
+  const ms = Math.round((sec - Math.floor(sec)) * 1000);
+  const core = `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
+  return core + (comma ? ',' : '.') + String(ms).padStart(3,'0');
+}
+function fmtShort(sec) {
+  if (sec == null || isNaN(sec)) sec = 0;
+  const m = Math.floor(sec / 60), s = Math.floor(sec % 60);
+  return `[${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}]`;
+}
+function buildOutputs(result, duration) {
+  const chunks = (result.chunks || []).filter(c => c.text && c.text.trim());
+  const txt = result.text ? result.text.trim() : chunks.map(c => c.text.trim()).join(' ');
+  let ts = '', srt = '', vtt = 'WEBVTT\n\n';
+  chunks.forEach((c, i) => {
+    const start = c.timestamp?.[0] ?? 0;
+    let end = c.timestamp?.[1];
+    if (end == null || isNaN(end)) end = Math.min(start + 5, duration || start + 5);
+    const text = c.text.trim();
+    ts += `${fmtShort(start)} ${text}\n`;
+    srt += `${i+1}\n${fmtTime(start, true)} --> ${fmtTime(end, true)}\n${text}\n\n`;
+    vtt += `${fmtTime(start, false)} --> ${fmtTime(end, false)}\n${text}\n\n`;
+  });
+  if (!chunks.length) { ts = txt; srt = ''; }
+  return { txt, ts, srt: srt.trim(), vtt: vtt.trim() };
+}
+
+// ============================================================
+// HISTORIA (localStorage, do 15 wpisów)
+// ============================================================
+const LS_KEY = 'transkryptor_history';
+function loadHistory() {
+  try { return JSON.parse(localStorage.getItem(LS_KEY)) || []; } catch { return []; }
+}
+function saveHistoryEntry(entry) {
+  let arr = loadHistory();
+  arr.unshift(entry);
+  arr = arr.slice(0, 15);
+  while (arr.length) {
+    try { localStorage.setItem(LS_KEY, JSON.stringify(arr)); return; }
+    catch { arr.pop(); } // przekroczony limit — usuwaj najstarsze
+  }
+}
+function renderHistory() {
+  const arr = loadHistory();
+  const panel = $('historyPanel');
+  if (!arr.length) { panel.classList.remove('show'); return; }
+  panel.classList.add('show');
+  $('historyList').innerHTML = arr.map(e => {
+    const d = new Date(e.when);
+    const dur = e.durationSec ? `${Math.round(e.durationSec / 60)} min` : '';
+    const task = e.task === 'translate' ? ' → EN' : '';
+    return '<div class="hitem">' +
+      '<span class="hname" title="' + esc(e.file) + '">' + esc(e.file) + task + '</span>' +
+      '<span class="hmeta">' + dur + ' • ' + d.toLocaleDateString('pl-PL') + ' ' +
+        d.toLocaleTimeString('pl-PL', {hour:'2-digit', minute:'2-digit'}) + '</span>' +
+      '<button class="hload" data-id="' + e.id + '">Wczytaj</button>' +
+      '<button class="hdel" data-id="' + e.id + '">✖</button>' +
+    '</div>';
+  }).join('');
+  $('historyList').querySelectorAll('.hload').forEach(b => b.addEventListener('click', () => {
+    const e = loadHistory().find(x => String(x.id) === b.dataset.id);
+    if (e) displayEntry(e, null, true);
+  }));
+  $('historyList').querySelectorAll('.hdel').forEach(b => b.addEventListener('click', () => {
+    const arr2 = loadHistory().filter(x => String(x.id) !== b.dataset.id);
+    try { localStorage.setItem(LS_KEY, JSON.stringify(arr2)); } catch {}
+    renderHistory();
+  }));
+}
+$('clearHist').addEventListener('click', () => {
+  try { localStorage.removeItem(LS_KEY); } catch {}
+  renderHistory();
+});
+
+// ============================================================
+// ODTWARZACZ ZSYNCHRONIZOWANY
+// ============================================================
+let playerUrl = null, mediaEl = null, syncChunks = [];
+function setupPlayer(file, chunks) {
+  const panel = $('playerPanel');
+  if (playerUrl) { URL.revokeObjectURL(playerUrl); playerUrl = null; }
+  $('playerBox').innerHTML = '';
+  $('syncList').innerHTML = '';
+  mediaEl = null; syncChunks = [];
+  if (!file || !chunks || !chunks.length) { panel.classList.remove('show'); return; }
+
+  const isVideo = /^video\//.test(file.type) || /\.(mp4|mov|webm|mkv|avi)$/i.test(file.name);
+  playerUrl = URL.createObjectURL(file);
+  mediaEl = document.createElement(isVideo ? 'video' : 'audio');
+  mediaEl.controls = true;
+  mediaEl.src = playerUrl;
+  mediaEl.preload = 'metadata';
+  $('playerBox').appendChild(mediaEl);
+
+  syncChunks = chunks.filter(c => c.text && c.text.trim());
+  $('syncList').innerHTML = syncChunks.map((c, i) =>
+    '<div class="syncrow" data-i="' + i + '">' +
+      '<span class="t">' + fmtShort(c.timestamp?.[0] ?? 0) + '</span>' +
+      '<span>' + esc(c.text.trim()) + '</span>' +
+    '</div>'
+  ).join('');
+  $('syncList').querySelectorAll('.syncrow').forEach(row => row.addEventListener('click', () => {
+    const c = syncChunks[+row.dataset.i];
+    if (mediaEl && c) { mediaEl.currentTime = c.timestamp?.[0] ?? 0; mediaEl.play(); }
+  }));
+  let lastActive = -1;
+  mediaEl.addEventListener('timeupdate', () => {
+    const t = mediaEl.currentTime;
+    let idx = -1;
+    for (let i = 0; i < syncChunks.length; i++) {
+      const t0 = syncChunks[i].timestamp?.[0] ?? 0;
+      if (t0 <= t) idx = i; else break;
+    }
+    if (idx !== lastActive) {
+      const rows = $('syncList').querySelectorAll('.syncrow');
+      if (lastActive >= 0) rows[lastActive]?.classList.remove('now');
+      if (idx >= 0) {
+        rows[idx]?.classList.add('now');
+        rows[idx]?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+      }
+      lastActive = idx;
+    }
+  });
+  panel.classList.add('show');
+}
+
+// ============================================================
+// TRANSKRYPCJA — worker z anulowaniem + fallback
+// ============================================================
+const modelLabel = id => id.split('/')[1];
+let running = false, cancelled = false, currentReject = null;
+
+function runInWorker(data, duration, modelId, lang, task, segments, prefix) {
+  return new Promise((resolve, reject) => {
+    let w;
+    try { w = getWorker(); }
+    catch (e) { reject(Object.assign(e, { workerFailed: true })); return; }
+
+    currentReject = reject;
+    const durMin = (duration / 60).toFixed(1);
+    const cleanup = () => { w.onmessage = null; w.onerror = null; currentReject = null; };
+    w.onerror = e => {
+      cleanup();
+      worker = null;
+      reject(Object.assign(new Error(e.message || 'Worker error'), { workerFailed: true }));
+    };
+    w.onmessage = e => {
+      const msg = e.data;
+      if (msg.type === 'stage') {
+        showStatus(prefix + (msg.stage === 'load-webgpu' ? 'Ładowanie modelu (WebGPU)…' : 'Ładowanie modelu (WASM)…'));
+      } else if (msg.type === 'download') {
+        showStatus(prefix + `Pobieranie modelu <b>${modelLabel(modelId)}</b>… ${(msg.loaded/1048576).toFixed(0)} / ${(msg.total/1048576).toFixed(0)} MB`,
+          Math.round(msg.loaded / msg.total * 100));
+      } else if (msg.type === 'progress') {
+        const pct = msg.totalSec ? Math.round(msg.doneSec / msg.totalSec * 100) : 0;
+        showStatus(prefix + `Transkrypcja… <b>${(msg.doneSec/60).toFixed(1)} / ${durMin} min</b> (${pct}%). Nie zamykaj karty.`, pct);
+      } else if (msg.type === 'result') {
+        cleanup(); resolve(msg);
+      } else if (msg.type === 'error') {
+        cleanup(); reject(new Error(msg.message));
+      }
+    };
+    w.postMessage({ type: 'run', audio: data, modelId, lang, task, segments }, [data.buffer]);
+  });
+}
+
+// Fallback: główny wątek (gdy Worker niedostępny) — bez możliwości anulowania
+let mainPipe = null, mainPipeModel = null;
+async function runOnMainThread(data, duration, modelId, lang, task, prefix) {
+  const { pipeline, env } = await import('https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.3.1');
+  env.allowLocalModels = false;
+  try { if (!('caches' in self)) env.useBrowserCache = false; } catch { env.useBrowserCache = false; }
+  if (!mainPipe || mainPipeModel !== modelId) {
+    mainPipe = null;
+    const progress = {};
+    const cb = p => {
+      if (p.status === 'progress' && p.file) {
+        progress[p.file] = { loaded: p.loaded || 0, total: p.total || 0 };
+        let loaded = 0, total = 0;
+        for (const k in progress) { loaded += progress[k].loaded; total += progress[k].total; }
+        if (total > 0) showStatus(prefix + `Pobieranie modelu… ${(loaded/1048576).toFixed(0)} / ${(total/1048576).toFixed(0)} MB`, Math.round(loaded/total*100));
+      }
+    };
+    if (navigator.gpu) {
+      try {
+        showStatus(prefix + 'Ładowanie modelu (WebGPU)…');
+        mainPipe = await pipeline('automatic-speech-recognition', modelId, {
+          device: 'webgpu',
+          dtype: { encoder_model: 'fp32', decoder_model_merged: 'q4' },
+          progress_callback: cb,
+        });
+      } catch (e) { mainPipe = null; }
+    }
+    if (!mainPipe) {
+      showStatus(prefix + 'Ładowanie modelu (WASM)…');
+      mainPipe = await pipeline('automatic-speech-recognition', modelId, { device: 'wasm', dtype: 'q8', progress_callback: cb });
+    }
+    mainPipeModel = modelId;
+  }
+  showStatus(prefix + `Transkrypcja… <b>${(duration/60).toFixed(1)} min</b>. Tryb awaryjny bez Workera — strona może chwilowo nie odpowiadać.`);
+  const opts = { chunk_length_s: 30, stride_length_s: 5, return_timestamps: true, task };
+  if (lang !== 'auto') opts.language = lang;
+  return await mainPipe(data, opts);
+}
+
+$('cancel').addEventListener('click', () => {
+  cancelled = true;
+  if (worker) { worker.terminate(); worker = null; }
+  if (currentReject) {
+    const e = new Error('Anulowano');
+    e.cancelled = true;
+    currentReject(e);
+    currentReject = null;
+  }
+  showStatus('Anulowano.');
+});
+
+go.addEventListener('click', processQueue);
+async function processQueue() {
+  if (running) return;
+  running = true; cancelled = false;
+  go.disabled = true;
+  hideErr();
+  $('cancel').style.display = 'inline-block';
+  startTimer();
+
+  const from = parseTimeStr($('tFrom').value);
+  const to = parseTimeStr($('tTo').value);
+  if (Number.isNaN(from) || Number.isNaN(to)) {
+    showErr('Nieprawidłowy format zakresu czasu — użyj mm:ss, np. 10:00.');
+    finishRun(); return;
+  }
+  if (from != null && to != null && to <= from) {
+    showErr('Zakres „do" musi być późniejszy niż „od".');
+    finishRun(); return;
+  }
+
+  const pend = queue.filter(i => i.status === 'pending');
+  const lang = $('lang').value, task = $('task').value, modelId = $('model').value;
+  let idx = 0;
+
+  for (const item of pend) {
+    if (cancelled) { item.status = 'cancelled'; renderQueue(); continue; }
+    idx++;
+    item.status = 'active'; renderQueue();
+    const prefix = pend.length > 1 ? `Plik ${idx}/${pend.length}: <b>${esc(item.file.name)}</b><br>` : '';
+    try {
+      showStatus(prefix + 'Dekodowanie audio…');
+      let { data, duration } = await decodeToMono16k(item.file);
+
+      let offset = 0;
+      if (from != null || to != null) {
+        const s0 = Math.max(0, Math.floor((from || 0) * SR));
+        const s1 = to != null ? Math.min(data.length, Math.floor(to * SR)) : data.length;
+        if (s0 >= data.length) throw new Error('Zakres „od" wykracza poza długość nagrania.');
+        data = data.slice(s0, s1);
+        offset = s0 / SR;
+        duration = data.length / SR;
+      }
+
+      const segments = computeSegments(data);
+      let result;
+      try {
+        result = await runInWorker(data, duration, modelId, lang, task, segments, prefix);
+      } catch (e) {
+        if (e.cancelled) throw e;
+        if (!e.workerFailed) throw e;
+        console.warn('Worker niedostępny, przechodzę na główny wątek:', e);
+        ({ data, duration } = await decodeToMono16k(item.file));
+        result = await runOnMainThread(data, duration, modelId, lang, task, prefix);
+      }
+      data = null;
+
+      if (offset > 0 && result.chunks) {
+        result.chunks.forEach(c => {
+          if (c.timestamp) {
+            c.timestamp[0] = (c.timestamp[0] ?? 0) + offset;
+            if (c.timestamp[1] != null) c.timestamp[1] += offset;
+          }
+        });
+      }
+
+      const outs = buildOutputs(result, duration + offset);
+      const entry = {
+        id: Date.now() + Math.random(),
+        file: item.file.name,
+        baseName: item.file.name.replace(/\.[^.]+$/, ''),
+        when: Date.now(),
+        durationSec: duration,
+        lang, task,
+        outputs: outs,
+        chunks: result.chunks || [],
+      };
+      saveHistoryEntry(entry);
+      displayEntry(entry, item.file, false);
+      item.status = 'done';
+    } catch (e) {
+      if (e.cancelled || cancelled) { item.status = 'cancelled'; renderQueue(); break; }
+      console.error(e);
+      item.status = 'error';
+      let msg = e.message || String(e);
+      if (/decode/i.test(msg)) msg = 'Nie udało się odczytać ścieżki audio z pliku „' + item.file.name + '". Spróbuj przekonwertować go do MP3/WAV/MP4.';
+      showErr(msg);
+    }
+    renderQueue();
+  }
+
+  renderHistory();
+  finishRun();
+}
+function finishRun() {
+  stopTimer();
+  $('status').classList.remove('show');
+  $('cancel').style.display = 'none';
+  running = false;
+  renderQueue();
+}
+
+// ---------- wyświetlanie wyniku ----------
+let currentMediaFile = null;
+function displayEntry(entry, mediaFile, restored) {
+  currentEntry = entry;
+  currentMediaFile = mediaFile || null;
+  outputs = entry.outputs;
+  baseName = entry.baseName || 'transkrypcja';
+  const note = $('restoredNote');
+  if (restored) {
+    const d = new Date(entry.when);
+    note.style.display = 'block';
+    note.textContent = `↩️ Wczytano z historii: ${entry.file} (${d.toLocaleDateString('pl-PL')} ${d.toLocaleTimeString('pl-PL', {hour:'2-digit', minute:'2-digit'})})`;
+  } else {
+    note.style.display = 'none';
+  }
+  setTab(activeTab);
+  $('results').classList.add('show');
+  setupPlayer(mediaFile, entry.chunks);
+  doSearch();
+}
+
+// ---------- wyszukiwarka ----------
+let matches = [], mi = -1;
+$('q').addEventListener('input', doSearch);
+$('q').addEventListener('keydown', e => { if (e.key === 'Enter') jump(e.shiftKey ? -1 : 1); });
+$('qNext').addEventListener('click', () => jump(1));
+$('qPrev').addEventListener('click', () => jump(-1));
+function doSearch() {
+  const q = $('q').value.toLowerCase();
+  matches = []; mi = -1;
+  if (q.length >= 2) {
+    const text = $('out').value.toLowerCase();
+    let i = 0;
+    while ((i = text.indexOf(q, i)) !== -1) { matches.push(i); i += q.length; }
+  }
+  $('qCount').textContent = q.length >= 2 ? `${matches.length} trafień` : '';
+}
+function jump(d) {
+  if (!matches.length) return;
+  mi = mi < 0 ? 0 : (mi + d + matches.length) % matches.length;
+  const pos = matches[mi];
+  const out = $('out');
+  out.focus();
+  out.setSelectionRange(pos, pos + $('q').value.length);
+  const line = out.value.slice(0, pos).split('\n').length;
+  const totalLines = out.value.split('\n').length || 1;
+  out.scrollTop = Math.max(0, (line - 3) / totalLines * out.scrollHeight);
+  $('qCount').textContent = `${mi + 1}/${matches.length}`;
+}
+
+// ---------- zakładki i eksport ----------
+document.querySelectorAll('.tab').forEach(t => t.addEventListener('click', () => setTab(t.dataset.k)));
+function setTab(k) {
+  activeTab = k;
+  document.querySelectorAll('.tab').forEach(t => t.classList.toggle('active', t.dataset.k === k));
+  $('out').value = outputs[k] || '(brak danych — dla tego formatu potrzebne są timestampy)';
+  doSearch();
+}
+$('copy').addEventListener('click', async () => {
+  await navigator.clipboard.writeText($('out').value);
+  $('copy').textContent = '✅ Skopiowano';
+  setTimeout(() => $('copy').textContent = '📋 Kopiuj', 1500);
+});
+const EXT = { txt: '.txt', ts: '.timestamps.txt', srt: '.srt', vtt: '.vtt' };
+function download(name, content, mime) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([content], { type: mime || 'text/plain;charset=utf-8' }));
+  a.download = name;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+$('dl').addEventListener('click', () => download(baseName + EXT[activeTab], outputs[activeTab] || ''));
+$('dlall').addEventListener('click', async () => {
+  for (const k of ['txt', 'ts', 'srt', 'vtt']) {
+    if (outputs[k]) {
+      download(baseName + EXT[k], outputs[k]);
+      await new Promise(r => setTimeout(r, 400));
+    }
+  }
+});
+
+// ---------- eksport DOCX (ręcznie budowany OOXML + JSZip) ----------
+function ensureJSZip() {
+  if (window.JSZip) return Promise.resolve(window.JSZip);
+  return new Promise((res, rej) => {
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
+    s.onload = () => res(window.JSZip);
+    s.onerror = () => rej(new Error('Nie udało się załadować biblioteki JSZip (sprawdź internet).'));
+    document.head.appendChild(s);
+  });
+}
+const xesc = s => String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+function wPara(text, opts = {}) {
+  const props = (opts.bold ? '<w:b/>' : '') + (opts.size ? `<w:sz w:val="${opts.size}"/>` : '') + (opts.color ? `<w:color w:val="${opts.color}"/>` : '');
+  const rPr = props ? `<w:rPr>${props}</w:rPr>` : '';
+  return `<w:p><w:pPr><w:spacing w:after="120"/></w:pPr><w:r>${rPr}<w:t xml:space="preserve">${xesc(text)}</w:t></w:r></w:p>`;
+}
+$('docx').addEventListener('click', async () => {
+  if (!currentEntry) return;
+  const btn = $('docx');
+  btn.disabled = true; btn.textContent = '⏳ Generowanie…';
+  try {
+    const JSZip = await ensureJSZip();
+    const e = currentEntry;
+    const d = new Date(e.when);
+    const durMin = e.durationSec ? (e.durationSec / 60).toFixed(1) + ' min' : '—';
+    const taskName = e.task === 'translate' ? 'tłumaczenie na angielski' : 'transkrypcja';
+
+    let body = wPara('Transkrypcja: ' + e.baseName, { bold: true, size: '32' });
+    body += wPara(`Plik źródłowy: ${e.file}  •  Długość: ${durMin}  •  Data: ${d.toLocaleDateString('pl-PL')} ${d.toLocaleTimeString('pl-PL', {hour:'2-digit', minute:'2-digit'})}  •  Tryb: ${taskName}`, { color: '888888', size: '18' });
+    body += wPara('');
+    const chunks = (e.chunks || []).filter(c => c.text && c.text.trim());
+    if (chunks.length) {
+      for (const c of chunks) body += wPara(fmtShort(c.timestamp?.[0] ?? 0) + ' ' + c.text.trim());
+    } else {
+      body += wPara(e.outputs.txt || '');
+    }
+
+    const documentXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>' +
+      body +
+      '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1417" w:right="1417" w:bottom="1417" w:left="1417"/></w:sectPr>' +
+      '</w:body></w:document>';
+    const contentTypes = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+      '<Default Extension="xml" ContentType="application/xml"/>' +
+      '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
+      '</Types>';
+    const rels = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/>' +
+      '</Relationships>';
+
+    const zip = new JSZip();
+    zip.file('[Content_Types].xml', contentTypes);
+    zip.folder('_rels').file('.rels', rels);
+    zip.folder('word').file('document.xml', documentXml);
+    const blob = await zip.generateAsync({ type: 'blob', mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' });
+    download(baseName + '.docx', blob, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+  } catch (err) {
+    console.error(err);
+    showErr('Eksport DOCX nie powiódł się: ' + (err.message || err));
+  } finally {
+    btn.disabled = false; btn.textContent = '📄 Eksport DOCX';
+  }
+});
+
+// ---------- eksport do LinguaAgent (ta sama domena — wspólna IndexedDB) ----------
+// Zapisuje lekcję do 'skrzynki podawczej' w IndexedDB LinguaAgentKV/kv,
+// którą index.html odbiera przy starcie/powrocie do karty (checkTranscriptInbox).
+const LG_APP_URL = 'index.html';
+const LG_MAX_AUDIO = 20 * 1048576; // 20 MB — limit wbudowania audio w lekcję
+function idbPutInbox(str) {
+  return new Promise((res, rej) => {
+    let q;
+    try { q = indexedDB.open('LinguaAgentKV', 1); }
+    catch (e) { return rej(e); }
+    q.onupgradeneeded = () => { try { if (!q.result.objectStoreNames.contains('kv')) q.result.createObjectStore('kv'); } catch (e) {} };
+    q.onerror = () => rej(q.error || new Error('IndexedDB niedostępne'));
+    q.onsuccess = () => {
+      const db = q.result;
+      let tx;
+      try { tx = db.transaction('kv', 'readwrite'); }
+      catch (e) { db.close(); return rej(e); }
+      tx.objectStore('kv').put(str, 'lingua_transcript_inbox');
+      tx.oncomplete = () => { db.close(); res(); };
+      tx.onerror = () => { db.close(); rej(tx.error || new Error('Zapis do skrzynki nie powiódł się')); };
+    };
+  });
+}
+$('lgExport').addEventListener('click', async () => {
+  if (!currentEntry) return;
+  const btn = $('lgExport');
+  btn.disabled = true; btn.textContent = '⏳ Wysyłanie…';
+  hideErr();
+  try {
+    const chunks = (currentEntry.chunks || []).filter(c => c.text && c.text.trim());
+    if (!chunks.length && !(currentEntry.outputs.txt || '').trim()) throw new Error('Brak treści transkrypcji.');
+    const dialog = chunks.length
+      ? chunks.map(c => ({
+          s: 'Lektor',
+          l: c.text.trim(),
+          t: '',
+          start: Math.round((c.timestamp?.[0] ?? 0) * 10) / 10,
+          end: c.timestamp?.[1] != null ? Math.round(c.timestamp[1] * 10) / 10 : undefined,
+        }))
+      : [{ s: 'Lektor', l: currentEntry.outputs.txt.trim(), t: '' }];
+    const lesson = {
+      title: '🎙️ ' + currentEntry.baseName,
+      topic: 'Transkrypcja audio',
+      folder: '🎙️ Transkrypcje',
+      dialog,
+      vocab: [],
+      rawText: currentEntry.outputs.txt || '',
+    };
+    let audioDataUrl = null;
+    if (currentMediaFile) {
+      if (currentMediaFile.size <= LG_MAX_AUDIO) {
+        audioDataUrl = await new Promise((res, rej) => {
+          const r = new FileReader();
+          r.onload = () => res(r.result);
+          r.onerror = () => rej(r.error || new Error('Odczyt pliku audio nie powiódł się'));
+          r.readAsDataURL(currentMediaFile);
+        });
+      } else {
+        showErr('Plik audio przekracza 20 MB — lekcja zostanie utworzona bez nagrania (transkrypt w komplecie).');
+      }
+    }
+    await idbPutInbox(JSON.stringify({ v: 1, lang: $('lgLang').value, lesson, audioDataUrl, when: Date.now() }));
+    window.open(LG_APP_URL, '_blank');
+    btn.textContent = '✅ Wysłano';
+  } catch (e) {
+    console.error(e);
+    showErr('Eksport do LinguaAgent nie powiódł się: ' + (e.message || e));
+    btn.textContent = 'Utwórz lekcję i otwórz';
+  } finally {
+    btn.disabled = false;
+    setTimeout(() => { btn.textContent = 'Utwórz lekcję i otwórz'; }, 2500);
+  }
+});
+
+// ---------- start: pokaż historię i ostatni wynik ----------
+renderHistory();
+{
+  const arr = loadHistory();
+  if (arr.length) displayEntry(arr[0], null, true);
+}
+</script>
+</body>
+</html>
