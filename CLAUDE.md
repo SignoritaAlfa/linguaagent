@@ -7,13 +7,13 @@
 **`AGENTS.md` w tym folderze** - stack, architektura ekranów, struktura danych lekcji, API i klucze, design system, zasady pracy z kodem. Przeczytaj PRZED jakąkolwiek zmianą. Ten plik tylko uzupełnia go o metodykę.
 
 Fakty twarde (z AGENTS.md - nie zmieniaj bez decyzji Aleksandry):
-- JEDEN plik `index.html` (vanilla JS + CSS variables), zero frameworków, zero Node, zero backendu
+- JEDEN plik `index.html` (vanilla JS + CSS variables), zero frameworków, zero Node, zero backendu. Wyjątek PWA (2026-07-07): `manifest.json`, `sw.js`, ikony - bez logiki aplikacji; po zmianach index.html wymagających czystki cache podbij `VERSION` w `sw.js`
 - Dane: localStorage + IndexedDB (wideo). Klucze API tylko w localStorage - NIGDY w kodzie
 - Repo: `SignoritaAlfa/linguaagent` (GitHub Pages); klon roboczy: `~/lingua-agent/`; kopia w vaulcie = snapshot, sprawdź aktualność przed pracą
 
 ## Protokół Fable 5 (metodyka - jak wszyscy agenci Aleksandry)
 
-1. **Na starcie**: przeczytaj (Read) `../.claude/rules/fable5-core.md` (root vaulta). Obowiązują zwłaszcza: #1 (plan przed działaniem - przy zmianie >1 funkcji opisz logikę w punktach i czekaj na OK), #3 (poziomy pewności), #12 (licz narzędziem), #13 (Grep przed Read - index.html ma ~240 KB, NIGDY nie czytaj całości; `grep -n "function\|=>" index.html` do nawigacji).
+1. **Na starcie**: przeczytaj (Read) `../.claude/rules/fable5-core.md` (root vaulta). Obowiązują zwłaszcza: #1 (plan przed działaniem - przy zmianie >1 funkcji opisz logikę w punktach i czekaj na OK), #3 (poziomy pewności), #12 (licz narzędziem), #13 (Grep przed Read - index.html ma ~575 KB / ~9700 linii, NIGDY nie czytaj całości; `grep -n "function\|=>" index.html` do nawigacji).
 2. **Backup przed edycją**: `cp index.html index.html.backup-YYYY-MM-DD` (hook backupów vaulta obejmuje tylko xlsx - tu robisz ręcznie).
 3. **Nie zgaduj API**: składnia wywołań OpenAI/ElevenLabs/Anthropic - z AGENTS.md albo z oficjalnych docs (WebSearch), nigdy z pamięci. Modele i voice ID są w AGENTS.md.
 4. **Samokontrola przed <DONE>** (odpowiednik fable5-core #8): (a) zmiana minimalna - nie ruszyłeś kodu, o który nie proszono? (b) otwórz apkę w przeglądarce, przeklikaj zmieniony ekran, konsola bez nowych błędów; (c) iOS-wymagania z AGENTS.md zachowane? (d) zero hardkodowanych kluczy? (e) sekcja "co zmieniłem + jak przetestowałem" w odpowiedzi.

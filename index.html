@@ -8,7 +8,16 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>LinguaAgent</title>
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Lingua">
 <link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preconnect" href="https://api.openai.com">
+<link rel="preconnect" href="https://generativelanguage.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,300;0,400;0,500;1,300;1,400&family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js"></script>
@@ -580,7 +589,7 @@ body{
 const LS=(()=>{const DB='LinguaAgentKV',S='kv',R=window['local'+'Storage'];const m=new Map();try{for(let i=0;i<R.length;i++){const k=R.key(i);m.set(k,R.getItem(k));}}catch(e){}let db=null;const open=()=>new Promise(res=>{let q;try{q=indexedDB.open(DB,1);}catch(e){return res(null);}q.onupgradeneeded=()=>{if(!q.result.objectStoreNames.contains(S))q.result.createObjectStore(S);};q.onsuccess=()=>res(q.result);q.onerror=()=>res(null);});const put=(k,v)=>{if(!db)return;try{db.transaction(S,'readwrite').objectStore(S).put(v,k);}catch(e){}};const del=k=>{if(!db)return;try{db.transaction(S,'readwrite').objectStore(S).delete(k);}catch(e){}};const ready=(async()=>{db=await open();if(!db)return;await new Promise(r=>{let q;try{q=db.transaction(S,'readonly').objectStore(S).openCursor();}catch(e){return r();}const ik=new Set();q.onsuccess=e=>{const c=e.target.result;if(c){m.set(c.key,c.value);ik.add(c.key);c.continue();}else{for(const[k,v]of m)if(!ik.has(k))put(k,v);r();}};q.onerror=()=>r();});})();return{ready,get length(){return m.size;},key(i){const a=Array.from(m.keys());return i<a.length?a[i]:null;},getItem(k){return m.has(k)?m.get(k):null;},setItem(k,v){v=String(v);m.set(k,v);put(k,v);try{R.setItem(k,v);}catch(e){}},removeItem(k){m.delete(k);del(k);try{R.removeItem(k);}catch(e){}},clear(){m.clear();if(db){try{db.transaction(S,'readwrite').objectStore(S).clear();}catch(e){}}try{R.clear();}catch(e){}},keys(){return Array.from(m.keys());}};})();
 
 // ── INDEXEDDB FOR VIDEO FILES ─────────────────────────────────────────────────
-const DB_NAME="lingua_db", DB_VER=2, STORE="videos", STORE_SRC="sourceFiles";
+const DB_NAME="lingua_db", DB_VER=3, STORE="videos", STORE_SRC="sourceFiles", STORE_TTS="ttsCache";
 function openDB(){
   return new Promise((res,rej)=>{
     const r=indexedDB.open(DB_NAME,DB_VER);
@@ -588,6 +597,10 @@ function openDB(){
       const db = e.target.result;
       if(!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
       if(!db.objectStoreNames.contains(STORE_SRC)) db.createObjectStore(STORE_SRC);
+      if(!db.objectStoreNames.contains(STORE_TTS)){
+        const s = db.createObjectStore(STORE_TTS);
+        s.createIndex("t","t"); // do przycinania najstarszych wpisów
+      }
     };
     r.onsuccess=e=>res(e.target.result);
     r.onerror=e=>rej(e.target.error);
@@ -629,6 +642,35 @@ async function loadVideo(key){
     r.onsuccess=e=>res(e.target.result);
     r.onerror=e=>rej(e.target.error);
   });
+}
+
+// ── TRWAŁY CACHE TTS (IndexedDB) ─────────────────────────────────────────────
+// Audio z OpenAI/ElevenLabs zapisujemy lokalnie: ta sama kwestia nigdy nie jest
+// generowana (i płacona) drugi raz — także po przeładowaniu strony. Best-effort:
+// każdy błąd cache = po prostu fetch z API jak dotychczas.
+const TTS_CACHE_MAX = 600; // wpisów (~5–30 KB każdy)
+async function ttsCacheGet(key){
+  try{
+    const db = await openDB();
+    return await new Promise(res=>{
+      const r = db.transaction(STORE_TTS,"readonly").objectStore(STORE_TTS).get(key);
+      r.onsuccess = e=>res(e.target.result ? e.target.result.blob : null);
+      r.onerror = ()=>res(null);
+    });
+  }catch(e){ return null; }
+}
+function ttsCachePut(key, blob){
+  openDB().then(db=>{
+    const store = db.transaction(STORE_TTS,"readwrite").objectStore(STORE_TTS);
+    store.put({blob, t:Date.now()}, key);
+    const cr = store.count();
+    cr.onsuccess = ()=>{
+      if(cr.result <= TTS_CACHE_MAX) return;
+      let toDrop = cr.result - TTS_CACHE_MAX;
+      const cur = store.index("t").openCursor(); // od najstarszych
+      cur.onsuccess = e=>{ const c=e.target.result; if(c && toDrop-- > 0){ c.delete(); c.continue(); } };
+    };
+  }).catch(()=>{});
 }
 
 const LANGS={EN:{name:"English",flag:"🇬🇧"},FR:{name:"Français",flag:"🇫🇷"},IT:{name:"Italiano",flag:"🇮🇹"},NO:{name:"Norsk",flag:"🇳🇴"}};
@@ -1853,7 +1895,7 @@ let S={
   // Alice/Thomas/itd. z autentycznym akcentem rodzimym). Domyślnie ON.
   preferNativeVoiceForeign:(LS.getItem("lingua_native_voice_foreign")||"1")==="1",
   // Per-lesson audio: { lessonId: { full: dataUrl, female: dataUrl, male: dataUrl } }
-  lessonAudio:(()=>{try{return JSON.parse(LS.getItem("lingua_audio")||"{}")}catch{return {}}})(),
+  lessonAudio:safeParseLS("lingua_audio", {}),
   audioPlaying:false, audioObj:null, audioMgrLesson:null,
   vocabPlaying:false, vocabPlayingIdx:-1, vocabPlayingList:null, vocabAbort:null,
   showFilmoteka:false, filmUploadStep:0, filmFile:null, filmProcessing:false, filmError:"", filmLang:"FR",
@@ -1866,9 +1908,9 @@ let S={
   geminiKey:LS.getItem("lingua_gemini_key")||"",
   claudeKey:LS.getItem("lingua_claude_key")||"",
   rapidKey:LS.getItem("lingua_rapid_key")||"",
-  myLessons:(()=>{try{return JSON.parse(LS.getItem("lingua_my_lessons")||"{}")}catch{return {}}})(),
-  lessonFolders:(()=>{try{return JSON.parse(LS.getItem("lingua_lesson_folders")||"{}")}catch{return {}}})(),
-  foldersCollapsed:(()=>{try{return JSON.parse(LS.getItem("lingua_folders_collapsed")||"{}")}catch{return {}}})(),
+  myLessons:safeParseLS("lingua_my_lessons", {}),
+  lessonFolders:safeParseLS("lingua_lesson_folders", {}),
+  foldersCollapsed:safeParseLS("lingua_folders_collapsed", {}),
   // Google Drive sync
   driveClientId:(()=>{
     // Allow setup via URL parameter (?driveClientId=...&driveLoginHint=...) for easy mobile setup
@@ -1897,6 +1939,9 @@ let S={
   driveFileId:LS.getItem("lingua_drive_file_id")||null,
   driveError:"",
   driveAutoSync:LS.getItem("lingua_drive_auto_sync")!=="0",
+  // Czy klucze API mają wchodzić do payloadu Drive (appDataFolder). Domyślnie tak —
+  // wygoda iPhone<->Mac; można wyłączyć w Ustawieniach (sekcja Drive).
+  syncApiKeys:LS.getItem("lingua_sync_api_keys")!=="0",
   driveUserEmail:LS.getItem("lingua_drive_user_email")||"",
   driveLoginHint:(()=>{
     try{
@@ -1911,10 +1956,10 @@ let S={
   })(),
   lessonModel:LS.getItem("lingua_lesson_model")||"gemini",
   localLastModified:parseInt(LS.getItem("lingua_local_last_modified")||"0",10),
-  myFilms:(()=>{try{return JSON.parse(LS.getItem("lingua_my_films")||"{}")}catch{return {}}})(),
-  mySongs:(()=>{try{return JSON.parse(LS.getItem("lingua_my_songs")||"{}")}catch{return {}}})(),
+  myFilms:safeParseLS("lingua_my_films", {}),
+  mySongs:safeParseLS("lingua_my_songs", {}),
   songLang:LS.getItem("lingua_song_lang")||"EN",
-  filmClipUrls:(()=>{try{return JSON.parse(LS.getItem("lingua_film_clip_urls")||"{}")}catch{return {}}})(),
+  filmClipUrls:safeParseLS("lingua_film_clip_urls", {}),
   workerUrl:LS.getItem("lingua_worker_url")||"",
   showAddFilm:false,addFilmTitle:"",addFilmType:"serial",addFilmLevel:"A2",
   showAddClip:false,addClipTitle:"",addClipEpisode:"",addClipDesc:"",addClipTopic:"",addClipUrl:"",addClipAutoFilling:false,
@@ -1927,7 +1972,7 @@ let S={
   voiceRate:parseFloat(LS.getItem("lingua_rate")||"1.0"),
   lessonTab:"dialog",
   vocabDir:"lang→pl",
-  srs:(()=>{try{return JSON.parse(LS.getItem("lingua_srs")||"{}")}catch{return {}}})(),
+  srs:safeParseLS("lingua_srs", {}),
   theme:LS.getItem("lingua_theme")||"light",
   palette:LS.getItem("lingua_palette")||"green",
   translateInput:"", translateResult:null, translateProcessing:false, translateError:"", translateAddTargetLesson:"", translateRecording:false
@@ -1981,12 +2026,15 @@ function buildSyncPayload(){
     srs: S.srs,
     wordStatus: safeParseLS("lingua_word_status", {}),
     phraseStatus: safeParseLS("lingua_phrase_status", {}),
-    claudeKey: S.claudeKey || "",
-    geminiKey: S.geminiKey || "",
-    rapidKey: S.rapidKey || "",
-    oaiKey: S.oaiKey || "",
-    elKey: S.elKey || "",
-    lessonAudio: S.lessonAudio,
+    ...(S.syncApiKeys ? {
+      claudeKey: S.claudeKey || "",
+      geminiKey: S.geminiKey || "",
+      rapidKey: S.rapidKey || "",
+      oaiKey: S.oaiKey || "",
+      elKey: S.elKey || ""
+    } : {}),
+    // lessonAudio celowo NIE w głównym payloadzie — nagrania (base64, potrafią mieć MB)
+    // idą osobnym plikiem Drive i tylko gdy się zmienią (pushAudioToDrive)
     lessonVideos: S.lessonVideos,
     palette: S.palette || "green",
     theme: S.theme || "light"
@@ -2005,13 +2053,16 @@ function applyDriveData(remote){
   if(remote.srs){ S.srs=remote.srs; LS.setItem("lingua_srs", JSON.stringify(S.srs)); }
   if(remote.wordStatus) LS.setItem("lingua_word_status", JSON.stringify(remote.wordStatus));
   if(remote.phraseStatus) LS.setItem("lingua_phrase_status", JSON.stringify(remote.phraseStatus));
+  // legacy: stare payloady miały audio w środku; nowe trzymają je w osobnym pliku Drive
   if(remote.lessonAudio){ S.lessonAudio=remote.lessonAudio; safeSetItem("lingua_audio", JSON.stringify(S.lessonAudio)); }
   if(remote.lessonVideos){ S.lessonVideos=remote.lessonVideos; safeSetItem("lingua_lesson_videos", JSON.stringify(S.lessonVideos)); }
-  if(remote.claudeKey){ S.claudeKey=remote.claudeKey; LS.setItem("lingua_claude_key", remote.claudeKey); }
-  if(remote.geminiKey){ S.geminiKey=remote.geminiKey; LS.setItem("lingua_gemini_key", remote.geminiKey); }
-  if(remote.rapidKey){ S.rapidKey=remote.rapidKey; LS.setItem("lingua_rapid_key", remote.rapidKey); }
-  if(remote.oaiKey){ S.oaiKey=remote.oaiKey; LS.setItem("lingua_oai_key", remote.oaiKey); }
-  if(remote.elKey){ S.elKey=remote.elKey; LS.setItem("lingua_el_key", remote.elKey); }
+  if(S.syncApiKeys){
+    if(remote.claudeKey){ S.claudeKey=remote.claudeKey; LS.setItem("lingua_claude_key", remote.claudeKey); }
+    if(remote.geminiKey){ S.geminiKey=remote.geminiKey; LS.setItem("lingua_gemini_key", remote.geminiKey); }
+    if(remote.rapidKey){ S.rapidKey=remote.rapidKey; LS.setItem("lingua_rapid_key", remote.rapidKey); }
+    if(remote.oaiKey){ S.oaiKey=remote.oaiKey; LS.setItem("lingua_oai_key", remote.oaiKey); }
+    if(remote.elKey){ S.elKey=remote.elKey; LS.setItem("lingua_el_key", remote.elKey); }
+  }
   if(remote.palette && PALETTES[remote.palette]){ S.palette=remote.palette; LS.setItem("lingua_palette", remote.palette); applyTheme(S.theme); }
   if(remote.theme && (remote.theme==="dark"||remote.theme==="light")){ S.theme=remote.theme; LS.setItem("lingua_theme", remote.theme); applyTheme(remote.theme); }
 }
@@ -2019,9 +2070,9 @@ function applyDriveData(remote){
 async function driveFindFile(){
   if(!S.driveToken) return;
   try{
-    const res = await fetch(
+    const res = await fetchWithRetry(
       `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&fields=files(id,name,modifiedTime)&q=name='${DRIVE_FILENAME}'`,
-      {headers:{Authorization:`Bearer ${S.driveToken}`}}
+      {headers:{Authorization:`Bearer ${S.driveToken}`}}, 1
     );
     if(!res.ok) throw new Error("Drive find HTTP "+res.status);
     const data = await res.json();
@@ -2051,9 +2102,9 @@ async function pushToDrive(){
         JSON.stringify({mimeType:"application/json"})+`\r\n`+
         `--${boundary}\r\nContent-Type: application/json\r\n\r\n`+
         body+`\r\n--${boundary}--`;
-      res = await fetch(
+      res = await fetchWithRetry(
         `https://www.googleapis.com/upload/drive/v3/files/${S.driveFileId}?uploadType=multipart&fields=id,modifiedTime`,
-        {method:"PATCH", headers:{Authorization:`Bearer ${S.driveToken}`, "Content-Type":`multipart/related; boundary=${boundary}`}, body:mp}
+        {method:"PATCH", headers:{Authorization:`Bearer ${S.driveToken}`, "Content-Type":`multipart/related; boundary=${boundary}`}, body:mp}, 1
       );
     } else {
       const meta = {name: DRIVE_FILENAME, mimeType:"application/json", parents:["appDataFolder"]};
@@ -2062,9 +2113,9 @@ async function pushToDrive(){
         JSON.stringify(meta)+`\r\n`+
         `--${boundary}\r\nContent-Type: application/json\r\n\r\n`+
         body+`\r\n--${boundary}--`;
-      res = await fetch(
+      res = await fetchWithRetry(
         `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,modifiedTime`,
-        {method:"POST", headers:{Authorization:`Bearer ${S.driveToken}`, "Content-Type":`multipart/related; boundary=${boundary}`}, body:mp}
+        {method:"POST", headers:{Authorization:`Bearer ${S.driveToken}`, "Content-Type":`multipart/related; boundary=${boundary}`}, body:mp}, 1
       );
     }
     if(!res.ok){
@@ -2088,6 +2139,8 @@ async function pushToDrive(){
     S.driveStatus = "connected";
     S.driveError = "";
     renderIfStatusVisible();
+    // Audio osobnym plikiem, w tle — błąd nie psuje głównego syncu
+    pushAudioToDrive().catch(e=>console.warn("[Drive] audio push:", e.message));
     return true;
   }catch(e){
     S.driveStatus="error"; S.driveError=e.message; renderIfStatusVisible();
@@ -2103,9 +2156,9 @@ async function pullFromDrive(){
     if(!S.driveFileId) return null;
   }
   try{
-    const res = await fetch(
+    const res = await fetchWithRetry(
       `https://www.googleapis.com/drive/v3/files/${S.driveFileId}?alt=media`,
-      {headers:{Authorization:`Bearer ${S.driveToken}`}}
+      {headers:{Authorization:`Bearer ${S.driveToken}`}}, 1
     );
     if(!res.ok){
       const errText = await res.text().catch(()=>"");
@@ -2126,6 +2179,64 @@ async function pullFromDrive(){
   }
 }
 
+// ── OSOBNY PLIK DRIVE NA NAGRANIA AUDIO ──────────────────────────────────────
+// Nagrania (base64) potrafią mieć megabajty — trzymamy je POZA głównym payloadem
+// i wysyłamy tylko gdy faktycznie się zmienią (porównanie odcisku), a nie przy
+// każdej zmianie fiszki. Główny sync robi się przez to mały i szybki.
+const DRIVE_AUDIO_FILENAME = "lingua_audio.json";
+function _audioFingerprint(str){
+  let hash = 0;
+  for(let i=0; i<str.length; i+=997){ hash = ((hash<<5)-hash+str.charCodeAt(i))|0; }
+  return str.length+":"+hash;
+}
+async function driveFindAudioFile(){
+  const res = await fetchWithRetry(
+    `https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&fields=files(id,name)&q=name='${DRIVE_AUDIO_FILENAME}'`,
+    {headers:{Authorization:`Bearer ${S.driveToken}`}}, 1
+  );
+  if(!res.ok) throw new Error("Drive audio find HTTP "+res.status);
+  const data = await res.json();
+  return (data.files && data.files[0]) ? data.files[0].id : null;
+}
+async function pushAudioToDrive(){
+  if(!S.driveToken) return;
+  const body = JSON.stringify({lessonAudio: S.lessonAudio || {}});
+  const fp = _audioFingerprint(body);
+  if(LS.getItem("lingua_audio_sync_fp") === fp) return; // nic się nie zmieniło — nie wysyłaj
+  const fileId = await driveFindAudioFile();
+  const boundary = "lingua-audio-"+Date.now();
+  const meta = fileId ? {mimeType:"application/json"} : {name: DRIVE_AUDIO_FILENAME, mimeType:"application/json", parents:["appDataFolder"]};
+  const mp =
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n`+
+    JSON.stringify(meta)+`\r\n`+
+    `--${boundary}\r\nContent-Type: application/json\r\n\r\n`+
+    body+`\r\n--${boundary}--`;
+  const url = fileId
+    ? `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=multipart&fields=id`
+    : `https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id`;
+  const res = await fetchWithRetry(url,
+    {method: fileId ? "PATCH" : "POST", headers:{Authorization:`Bearer ${S.driveToken}`, "Content-Type":`multipart/related; boundary=${boundary}`}, body:mp}, 1
+  );
+  if(!res.ok) throw new Error("Drive audio push HTTP "+res.status);
+  LS.setItem("lingua_audio_sync_fp", fp);
+}
+async function pullAudioFromDrive(){
+  if(!S.driveToken) return;
+  const fileId = await driveFindAudioFile();
+  if(!fileId) return;
+  const res = await fetchWithRetry(
+    `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+    {headers:{Authorization:`Bearer ${S.driveToken}`}}, 1
+  );
+  if(!res.ok) throw new Error("Drive audio pull HTTP "+res.status);
+  const remote = await res.json();
+  if(remote && remote.lessonAudio && Object.keys(remote.lessonAudio).length){
+    S.lessonAudio = remote.lessonAudio;
+    safeSetItem("lingua_audio", JSON.stringify(S.lessonAudio));
+    LS.setItem("lingua_audio_sync_fp", _audioFingerprint(JSON.stringify({lessonAudio:S.lessonAudio})));
+  }
+}
+
 async function driveSync(_preferRemote){
   S.driveStatus="syncing"; renderIfStatusVisible();
   const remote = await pullFromDrive();
@@ -2141,6 +2252,7 @@ async function driveSync(_preferRemote){
     // Remote is newer (or same) → apply remote
     console.log("[Drive] Remote newer or equal ("+remoteLast+" vs local "+localLast+") — pulling remote");
     applyDriveData(remote);
+    pullAudioFromDrive().then(()=>renderIfStatusVisible()).catch(e=>console.warn("[Drive] audio pull:", e.message));
     S.driveLastSync = remoteLast;
     S.localLastModified = remoteLast;
     LS.setItem("lingua_drive_last_sync", String(S.driveLastSync));
@@ -2281,14 +2393,21 @@ async function elSpeak(text,lang,voiceId){
   const cacheKey = "el|"+lang+"|"+vid+"|"+text;
   const cached = _audioCache.get(cacheKey);
   if(cached) return _audioCachePlay(cached);
-  const r=await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${vid}`,{
+  const idbBlob = await ttsCacheGet(cacheKey);
+  if(idbBlob){
+    const u = URL.createObjectURL(idbBlob);
+    _audioCacheStore(cacheKey, u);
+    return _audioCachePlay(u);
+  }
+  const r=await fetchWithRetry(`https://api.elevenlabs.io/v1/text-to-speech/${vid}`,{
     method:"POST",
     headers:{"xi-api-key":S.elKey,"Content-Type":"application/json"},
     body:JSON.stringify({text,model_id:"eleven_multilingual_v2",
       voice_settings:{stability:0.35,similarity_boost:0.75,style:0.45,use_speaker_boost:true}})
-  });
+  }, 1);
   if(!r.ok)throw new Error("EL "+r.status);
   const blob=await r.blob();
+  ttsCachePut(cacheKey, blob);
   const url=URL.createObjectURL(blob);
   _audioCacheStore(cacheKey, url);
   return _audioCachePlay(url);
@@ -2298,13 +2417,20 @@ async function oaiSpeak(text, voiceId){
   const cacheKey = "oai|"+voiceId+"|"+S.voiceRate+"|"+text;
   let url = _audioCache.get(cacheKey);
   if(!url){
-    const r = await fetch("https://api.openai.com/v1/audio/speech",{
+    const idbBlob = await ttsCacheGet(cacheKey);
+    if(idbBlob){ url = URL.createObjectURL(idbBlob); _audioCacheStore(cacheKey, url); }
+  }
+  if(!url){
+    const r = await fetchWithRetry("https://api.openai.com/v1/audio/speech",{
       method:"POST",
       headers:{"Content-Type":"application/json","Authorization":"Bearer "+S.oaiKey},
-      body:JSON.stringify({model:"tts-1", input:text, voice:voiceId, speed:S.voiceRate})
-    });
+      // tts-1-hd: lepsza wymowa (ważne przy nauce); koszt 2x, ale trwały cache
+      // w IndexedDB sprawia, że każdą kwestię płacimy tylko raz
+      body:JSON.stringify({model:"tts-1-hd", input:text, voice:voiceId, speed:S.voiceRate})
+    }, 1);
     if(!r.ok) throw new Error("OAI TTS "+r.status);
     const blob = await r.blob();
+    ttsCachePut(cacheKey, blob);
     url = URL.createObjectURL(blob);
     _audioCacheStore(cacheKey, url);
   }
@@ -2910,7 +3036,7 @@ async function fetchClipMetadataSuggestion(url, seriesTitle, langCode){
   if(_cfg.provider === "anthropic" && !S.claudeKey) throw new Error("Brak klucza Claude w Ustawieniach");
   let ytTitle = "", ytAuthor = "";
   try{
-    const oeRes = await fetch("https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v="+videoId+"&format=json");
+    const oeRes = await fetchWithRetry("https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v="+videoId+"&format=json", null, 1);
     if(oeRes.ok){ const oe = await oeRes.json(); ytTitle = oe.title||""; ytAuthor = oe.author_name||""; }
   }catch(e){}
   let transcriptPreview = "";
@@ -3306,9 +3432,9 @@ function renderAIGenerateButton(lesson, lang, type){
         const cb = document.createElement("input"); cb.type="checkbox"; cb.style.cssText="width:16px;height:16px;accent-color:var(--gold);cursor:pointer;margin-top:4px";
         cb.onchange = ()=>{ if(cb.checked) selected.add(i); else selected.delete(i); };
         const left = document.createElement("div");
-        left.innerHTML = `<div style="font-weight:500;font-size:14px">${item.w||""}</div><div style="font-family:monospace;font-size:11px;color:var(--text3)">${item.ipa||""}</div>`;
+        left.innerHTML = `<div style="font-weight:500;font-size:14px">${esc(item.w)}</div><div style="font-family:monospace;font-size:11px;color:var(--text3)">${esc(item.ipa)}</div>`;
         const right = document.createElement("div");
-        right.innerHTML = `<div style="color:var(--gold);font-size:13px">${item.tr||""}</div><div style="font-size:11px;color:var(--text3);font-style:italic">${item.ex||""}</div>`;
+        right.innerHTML = `<div style="color:var(--gold);font-size:13px">${esc(item.tr)}</div><div style="font-size:11px;color:var(--text3);font-style:italic">${esc(item.ex)}</div>`;
         const addOne = document.createElement("button");
         addOne.textContent = "+";
         addOne.style.cssText = "background:none;border:1px solid var(--gold);color:var(--gold);border-radius:4px;width:30px;height:28px;cursor:pointer;font-size:14px";
@@ -4104,7 +4230,7 @@ function getEnrichedVocabEntry(word, lang){
   if(!wordLower) return null;
   // 1. Cache z popup tłumaczeń (jeśli user kliknęła w dialogu wcześniej)
   try{
-    const cache = JSON.parse(LS.getItem("lingua_word_translations")||"{}");
+    const cache = safeParseLS("lingua_word_translations", {});
     const entry = cache[wordLower+"_"+lang];
     if(entry && entry.d && entry.d.pl){
       return {
@@ -4241,6 +4367,26 @@ async function testElKey(){
 }
 
 // ── DOM HELPER ───────────────────────────────────────────────────────────────
+// Escapowanie treści z zewnątrz (odpowiedzi AI, import JSON) przed innerHTML.
+// Render idzie w większości przez h() (textContent, bezpieczne) — esc() jest dla
+// nielicznych miejsc budujących HTML template stringiem.
+function esc(s){
+  return String(s==null?"":s).replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+// Sanityzacja HTML z contenteditable/importu lekcji: usuwa script/style/iframe,
+// atrybuty on* i javascript: URL-e. Zachowuje zwykłe formatowanie (div/br/b/i).
+function sanitizeHtml(html){
+  const tpl = document.createElement("template");
+  tpl.innerHTML = String(html==null?"":html);
+  tpl.content.querySelectorAll("script,style,iframe,object,embed,link,meta").forEach(el=>el.remove());
+  tpl.content.querySelectorAll("*").forEach(el=>{
+    for(const a of Array.from(el.attributes)){
+      if(/^on/i.test(a.name) || /javascript:/i.test(a.value)) el.removeAttribute(a.name);
+    }
+  });
+  return tpl.innerHTML;
+}
+
 function h(tag,props,...ch){
   const el=document.createElement(tag);
   for(const[k,v]of Object.entries(props||{})){
@@ -4307,11 +4453,17 @@ function renderHome(){
   const main=h("div",{class:"main"});
   main.appendChild(h("div",{class:"page-title"},"Witaj w LinguaAgent"));
   main.appendChild(h("div",{class:"page-sub"},"Wybierz język aby rozpocząć naukę"));
+  const _streak = getStreak();
+  if(_streak > 0){
+    main.appendChild(h("div",{style:"font-size:12px;color:var(--gold);margin:-16px 0 24px"},
+      "🔥 Seria nauki: "+_streak+(_streak===1?" dzień":" dni")));
+  }
   const grid=h("div",{style:"display:grid;grid-template-columns:repeat(4,1fr);gap:14px;max-width:740px"});
   for(const[code,l]of Object.entries(LANGS)){
     const builtin = (COURSE[code]||[]).length;
     const own = (S.myLessons[code]||[]).length;
     const total = builtin + own;
+    const dueN = getDueWords(code).length;
     const subLabel = own > 0
       ? total+" lekcji (w tym "+own+" moich)"
       : total+" lekcji";
@@ -4320,7 +4472,8 @@ function renderHome(){
       onclick:()=>set({screen:"lang",lang:code})},
       h("div",{style:"font-size:28px;margin-bottom:10px"},l.flag),
       h("div",{style:"font-size:14px;font-weight:600;color:var(--text);margin-bottom:3px"},l.name),
-      h("div",{style:"font-size:11px;color:var(--text3)"},subLabel)
+      h("div",{style:"font-size:11px;color:var(--text3)"},subLabel),
+      dueN>0 ? h("div",{style:"font-size:10px;color:var(--gold);margin-top:5px"},"🔄 "+dueN+" do powtórki") : null
     );
     btn.onmouseover=()=>{btn.style.borderColor="var(--border2)";btn.style.background="var(--accent-bg)";};
     btn.onmouseout=()=>{btn.style.borderColor="var(--border)";btn.style.background="var(--surface)";};
@@ -4381,8 +4534,8 @@ function renderLang(){
   // ── Narzędzia nauki ──
   const toolsWrap=h("div",{style:"display:flex;gap:1px;background:var(--border);border:1px solid var(--border);margin-bottom:36px"});
   const dueCount=getDueWords(lang).length;
-  const ws=JSON.parse(LS.getItem("lingua_word_status")||"{}");
-  const ps=JSON.parse(LS.getItem("lingua_phrase_status")||"{}");
+  const ws=safeParseLS("lingua_word_status", {});
+  const ps=safeParseLS("lingua_phrase_status", {});
   const learningCount=Object.entries(ws).filter(([k,v])=>k.endsWith("_"+lang)&&v==="learning").length;
   const knownCount=Object.entries(ws).filter(([k,v])=>k.endsWith("_"+lang)&&v==="known").length;
   const phraseLearningCount=Object.entries(ps).filter(([k,v])=>k.endsWith("_"+lang)&&v==="learning").length;
@@ -4392,7 +4545,8 @@ function renderLang(){
    [" Powtórki","🔄",dueCount>0?dueCount+" do powtórki":"wszystko powtórzone",()=>{
      const due=getDueWords(lang);
      if(due.length===0){alert("Brak słówek do powtórki!");return;}
-     const cards=due.map(e=>({w:e.word,tr:"",ipa:"",pl:"",ex:"",exT:""}));
+     // wzbogać karty o tłumaczenia z cache — fiszka z samym słowem bez tłumaczenia była bezużyteczna
+     const cards=due.map(e=>getEnrichedVocabEntry(e.word,lang)||{w:e.word,tr:"",ipa:"",pl:"",ex:"",exT:""});
      set({screen:"practice",lesson:{title:"Powtórki SRS",vocab:cards,dialog:[],fill:[],grammar:[]},mode:"flashcard",cards,idx:0,revealed:false,dir:"to_pl",score:{c:0,t:0}});
    }]
   ].forEach(([label,icon,desc,onclick])=>{
@@ -4581,6 +4735,54 @@ function renderLang(){
 
 
 // ── WORD POPUP ────────────────────────────────────────────────────────────────
+// Paczkowe tłumaczenie: zbiera nieprzetłumaczone słowa z wyświetlonego dialogu
+// i tłumaczy JEDNYM zapytaniem Gemini (zamiast słowo-po-słowie). Wpisy lądują
+// w tym samym cache co popup (lingua_word_translations) — kolejne kliknięcia
+// są natychmiastowe i darmowe. Zastępuje dawny patch z końca pliku, który miał
+// zahardkodowany prompt włosko-polski dla wszystkich języków.
+let _batchTranslateBusy = false;
+async function batchTranslateDialog(lang){
+  if(_batchTranslateBusy || !S.geminiKey) return;
+  const CKEY = "lingua_word_translations";
+  const cache = safeParseLS(CKEY, {});
+  const WORD_RE = /^[a-z\u00c0-\u00f6\u00f8-\u00ff\u0153']+$/i; // litery łacińskie + diakrytyki EN/FR/IT/NO
+  let words = Array.from(document.querySelectorAll("[data-wordclean]"))
+    .map(el=>(el.getAttribute("data-wordclean")||"").trim().toLowerCase())
+    .filter(w=>w && WORD_RE.test(w));
+  words = [...new Set(words)];
+  const missing = words.filter(w=>{ const e=cache[w+"_"+lang]; return !(e && e.d); });
+  if(!missing.length) return;
+  _batchTranslateBusy = true;
+  try{
+    const langAdj = ({EN:"angielsko",FR:"francusko",IT:"włosko",NO:"norwesko"})[lang]||"obco";
+    const prompt = "Jesteś dwujęzycznym słownikiem "+langAdj+"-polskim. Dla KAŻDEGO podanego słowa zwróć obiekt "+
+      '{"word":"słowo w oryginale","ipa":"/transkrypcja IPA/","pl":"polskie tłumaczenie","example":"krótkie zdanie po '+(LANG_ACC[lang]||"angielsku")+'"}. '+
+      "Zwróć WYŁĄCZNIE tablicę JSON, bez komentarzy. Słowa: "+JSON.stringify(missing);
+    const r = await fetchWithRetry("https://generativelanguage.googleapis.com/v1beta/models/"+GEMINI_MODEL+":generateContent",{
+      method:"POST",
+      headers:{"Content-Type":"application/json","x-goog-api-key":S.geminiKey},
+      body:JSON.stringify({
+        contents:[{parts:[{text:prompt}]}],
+        generationConfig:{responseMimeType:"application/json",temperature:0.2,thinkingConfig:{thinkingBudget:0}}
+      })
+    }, 1);
+    if(!r.ok) return;
+    const j = await r.json();
+    const txt = j?.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
+    let arr; try{ arr = JSON.parse(txt); }catch(e){ const m = txt.match(/\[[\s\S]*\]/); arr = m ? JSON.parse(m[0]) : []; }
+    if(!Array.isArray(arr)) return;
+    const c = safeParseLS(CKEY, {});
+    const now = Date.now();
+    arr.forEach(o=>{
+      const w = ((o && o.word)||"").trim(); if(!w) return;
+      c[w.toLowerCase()+"_"+lang] = {d:{word:w, ipa:String(o.ipa||""), pl:String(o.pl||""), example:String(o.example||"")}, t:now};
+    });
+    safeSetItem(CKEY, JSON.stringify(c));
+  } finally {
+    _batchTranslateBusy = false;
+  }
+}
+
 function showWordPopup(wordRaw, wordClean, lang, anchorEl){
   document.getElementById("word-popup")?.remove();
   document.removeEventListener("mousedown", showWordPopup._outside);
@@ -4599,7 +4801,7 @@ function showWordPopup(wordRaw, wordClean, lang, anchorEl){
   popup.innerHTML = '<div style="color:var(--text3);font-size:13px">Ładowanie...</div>';
   document.body.appendChild(popup);
 
-  const wordStatus = JSON.parse(LS.getItem("lingua_word_status")||"{}");
+  const wordStatus = safeParseLS("lingua_word_status", {});
   const key = wordClean + "_" + lang;
 
   async function fillPopup(data){
@@ -4634,7 +4836,7 @@ function showWordPopup(wordRaw, wordClean, lang, anchorEl){
     // (Gemini free tier: ~10-20 zapytań/min)
     const POPUP_CACHE_KEY = "lingua_word_translations";
     const POPUP_CACHE_MAX = 2000; // ~500KB at ~250 bytes per entry
-    const loadCache = ()=>{ try{ return JSON.parse(LS.getItem(POPUP_CACHE_KEY)||"{}"); }catch{ return {}; } };
+    const loadCache = ()=>{ try{ return safeParseLS(POPUP_CACHE_KEY, {}); }catch{ return {}; } };
     const saveCache = (c)=>{ try{ LS.setItem(POPUP_CACHE_KEY, JSON.stringify(c)); }catch(e){
       // LRU evict if quota exceeded — drop ~25% oldest by access timestamp
       const entries = Object.entries(c).sort((a,b)=>(a[1].t||0)-(b[1].t||0));
@@ -4649,13 +4851,13 @@ function showWordPopup(wordRaw, wordClean, lang, anchorEl){
       cache[cacheKey].t = Date.now();
       saveCache(cache);
       fillPopup(cache[cacheKey].d);
-    } else if(false){ // legacy branch placeholder for diff readability
     } else {
+      const fetchSingleWord = ()=>{
       const prompt = `Przetłumacz słowo z języka ${lang} na polski. Słowo: "${wordRaw}". Odpowiedz TYLKO czystym JSON bez markdown:\n{"word":"słowo w oryginale","ipa":"/wymowa IPA/","pl":"tłumaczenie polskie (możesz dać kilka znaczeń po przecinku)","example":"krótkie przykładowe zdanie w ${lang}"}`;
       // fetchWithRetry: timeout 120s + backoff na 429/503 (Gemini free tier bywa przeciążony).
       // maxRetries=2 — popup jest mało krytyczny, user może kliknąć słowo ponownie.
-      fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${S.geminiKey}`,{
-        method:"POST", headers:{"Content-Type":"application/json"},
+      fetchWithRetry(`https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,{
+        method:"POST", headers:{"Content-Type":"application/json","x-goog-api-key":S.geminiKey},
         body:JSON.stringify({
           contents:[{parts:[{text:prompt}]}],
           generationConfig:{
@@ -4710,6 +4912,15 @@ function showWordPopup(wordRaw, wordClean, lang, anchorEl){
         console.error("[Lingua] popup translate failed for", wordRaw, ":", err.message);
         fillPopup({word:wordRaw, pl:"(błąd: "+err.message+")", ipa:"", example:""});
       });
+      };
+      // Najpierw batch: przetłumacz wszystkie brakujące słowa dialogu jednym
+      // zapytaniem. Jeśli batch nie pokryje klikniętego słowa — pojedyncze zapytanie.
+      (async ()=>{
+        try{ await batchTranslateDialog(lang); }catch(e){ console.warn("[Lingua] batch translate:", e && e.message); }
+        const c2 = loadCache();
+        if(c2[cacheKey] && c2[cacheKey].d){ c2[cacheKey].t = Date.now(); saveCache(c2); fillPopup(c2[cacheKey].d); return; }
+        fetchSingleWord();
+      })();
     }
   } else {
     fillPopup({word:wordRaw, pl:"(brak klucza Gemini w Ustawieniach)", ipa:"", example:""});
@@ -4720,7 +4931,7 @@ function showWordPopup(wordRaw, wordClean, lang, anchorEl){
 }
 
 function markWord(key, status, wordClean, lang){
-  const ws = JSON.parse(LS.getItem("lingua_word_status")||"{}");
+  const ws = safeParseLS("lingua_word_status", {});
   ws[key] = status;
   LS.setItem("lingua_word_status", JSON.stringify(ws));
   // Update all spans for this word
@@ -4750,7 +4961,7 @@ function renderVocabList(vocab, lang, onDelete, listType, onEdit, onMove){
   wrap.appendChild(dirRow);
 
   // Snapshot once for the whole list — per-row reads would be wasteful
-  const wordStatusForList = JSON.parse(LS.getItem("lingua_word_status")||"{}");
+  const wordStatusForList = safeParseLS("lingua_word_status", {});
 
   vocab.forEach((v, i)=>{
     const row = document.createElement("div");
@@ -4828,7 +5039,7 @@ function renderVocabList(vocab, lang, onDelete, listType, onEdit, onMove){
       const isPhraseBtn = listType === "phrases";
       const storageKey = isPhraseBtn ? "lingua_phrase_status" : "lingua_word_status";
       const targetLabel = isPhraseBtn ? "Moje zwroty" : "Moje słówka";
-      const liveStatus = JSON.parse(LS.getItem(storageKey)||"{}");
+      const liveStatus = safeParseLS(storageKey, {});
       const wsKey = (v.w||"").toLowerCase() + "_" + lang;
       const isLearning = liveStatus[wsKey] === "learning";
       const isKnown = liveStatus[wsKey] === "known";
@@ -4840,7 +5051,7 @@ function renderVocabList(vocab, lang, onDelete, listType, onEdit, onMove){
       learnBtn.style.cssText = isLearning ? activeStyle : (baseStyle + ";background:none;color:var(--text3)");
       learnBtn.onclick = (e)=>{
         e.stopPropagation();
-        const ws = JSON.parse(LS.getItem(storageKey)||"{}");
+        const ws = safeParseLS(storageKey, {});
         if(ws[wsKey] === "learning"){
           delete ws[wsKey];
           learnBtn.textContent = "📖";
@@ -5666,7 +5877,7 @@ function renderLesson(){
       // Linia dialogu — każde słowo klikalne (popup z tłumaczeniem + Uczę się)
       const lineDiv = document.createElement("div");
       lineDiv.className = "film-cue-l";
-      const wsKaraoke = JSON.parse(LS.getItem("lingua_word_status")||"{}");
+      const wsKaraoke = safeParseLS("lingua_word_status", {});
       line.l.split(/(\s+)/).forEach(token=>{
         if(/^\s+$/.test(token)){
           lineDiv.appendChild(document.createTextNode(token));
@@ -5715,7 +5926,7 @@ function renderLesson(){
     dc.appendChild(btnGroup);
     dw.appendChild(dc);
 
-    const wordStatus = JSON.parse(LS.getItem("lingua_word_status")||"{}");
+    const wordStatus = safeParseLS("lingua_word_status", {});
     // Renderer pojedynczej kwestii dialogu (zachowuje globalny lineIdx dla highlightu/seek)
     const renderDialogLine = (line, lineIdx)=>{
       const row=h("div",{class:"dline"+(playingLine===lineIdx?" active":""),id:"dline-"+lineIdx});
@@ -6173,7 +6384,7 @@ function renderLesson(){
       spellcheck:"false",
       style:"font-size:15px;line-height:1.9;color:var(--text);white-space:pre-wrap;font-family:'DM Sans',sans-serif;border:1px solid var(--border);border-radius:8px;padding:20px;margin-bottom:16px;min-height:240px;outline:none;transition:border-color .15s"
     });
-    disp.innerHTML = lesson.rawText;
+    disp.innerHTML = sanitizeHtml(lesson.rawText);
     disp.onfocus=()=>{disp.style.borderColor="var(--gold)";};
     let saveTimer=null;
     const saveNow=()=>{
@@ -6265,9 +6476,9 @@ function renderLesson(){
             };
             cbCol.appendChild(checkbox);
             const left=document.createElement("div");
-            left.innerHTML=`<div style="font-weight:500;color:var(--text);font-size:14px">${item.w||""}</div><div style="font-family:monospace;font-size:11px;color:var(--text3)">${item.ipa||""}</div><div style="font-size:11px;color:var(--text3)">${item.pl||""}</div>`;
+            left.innerHTML=`<div style="font-weight:500;color:var(--text);font-size:14px">${esc(item.w)}</div><div style="font-family:monospace;font-size:11px;color:var(--text3)">${esc(item.ipa)}</div><div style="font-size:11px;color:var(--text3)">${esc(item.pl)}</div>`;
             const right=document.createElement("div");
-            right.innerHTML=`<div style="color:var(--gold);font-size:13px">${item.tr||""}</div><div style="font-size:12px;color:var(--text3);font-style:italic;margin-top:2px">${item.ex||""}</div>`;
+            right.innerHTML=`<div style="color:var(--gold);font-size:13px">${esc(item.tr)}</div><div style="font-size:12px;color:var(--text3);font-style:italic;margin-top:2px">${esc(item.ex)}</div>`;
             const addBtn=document.createElement("button");
             addBtn.textContent="+";
             addBtn.title = type==="phrases" ? "Dodaj do zwrotów lekcji" : "Dodaj do fiszek lekcji";
@@ -7259,6 +7470,16 @@ function renderSettings(){
     asRow.appendChild(cb);
     asRow.appendChild(document.createTextNode("Synchronizuj automatycznie po każdej zmianie (3s opóźnienia)"));
     sw.appendChild(asRow);
+    const keysRow=h("label",{style:"display:flex;align-items:center;gap:10px;margin-top:8px;cursor:pointer;font-size:12px;color:var(--text2)"});
+    const keysCb=h("input",{type:"checkbox"});
+    keysCb.checked = S.syncApiKeys;
+    keysCb.onchange = (e)=>{
+      S.syncApiKeys = e.target.checked;
+      LS.setItem("lingua_sync_api_keys", e.target.checked?"1":"0");
+    };
+    keysRow.appendChild(keysCb);
+    keysRow.appendChild(document.createTextNode("Synchronizuj też klucze API (wygodne na 2 urządzeniach; wyłącz, jeśli wolisz trzymać klucze tylko lokalnie)"));
+    sw.appendChild(keysRow);
 
     // Share-to-mobile: generate a magic link that auto-configures Client ID on the other device
     const mobileWrap = h("div",{style:"margin-top:18px;padding:14px;border:1px dashed var(--border);border-radius:6px;background:var(--surface)"});
@@ -7331,7 +7552,7 @@ function renderSettings(){
   // ── Cache lekcji ──
   sw.appendChild(h("hr",{class:"settings-divider"}));
   sw.appendChild(h("div",{style:"font-size:14px;font-weight:500;color:var(--text);margin-bottom:6px"},"💾 Cache lekcji"));
-  let cacheCount = 0; try{ cacheCount = Object.keys(JSON.parse(LS.getItem(LESSON_CACHE_KEY)||"{}")).length; }catch(e){}
+  let cacheCount = 0; try{ cacheCount = Object.keys(safeParseLS(LESSON_CACHE_KEY, {})).length; }catch(e){}
   sw.appendChild(h("div",{style:"font-size:12px;color:var(--text3);margin-bottom:12px;line-height:1.6"},
     "Cache zapamiętuje wyniki Claude'a dla każdego transkryptu. Drugie kliknięcie „Wygeneruj z zapisanego tekstu\" dla tej samej lekcji = ",
     h("strong",{},"$0 kosztu"),
@@ -7665,10 +7886,10 @@ async function callLessonModel(input){
     }
     parts.push({text:promptText});
     const res = await fetchWithRetry(
-      `https://generativelanguage.googleapis.com/v1beta/models/${cfg.name}:generateContent?key=${encodeURIComponent(S.geminiKey)}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/${cfg.name}:generateContent`,
       {
         method:"POST",
-        headers:{"Content-Type":"application/json"},
+        headers:{"Content-Type":"application/json","x-goog-api-key":S.geminiKey},
         body:JSON.stringify({
           contents:[{parts}],
           // thinkingBudget:0 — KRYTYCZNE: bez tego Gemini 2.5 Flash zużywa output tokens
@@ -7730,7 +7951,7 @@ function lessonCacheKey(transcript, lang){
 
 function getCachedLesson(transcript, lang){
   try{
-    const cache = JSON.parse(LS.getItem(LESSON_CACHE_KEY)||"{}");
+    const cache = safeParseLS(LESSON_CACHE_KEY, {});
     const k = lessonCacheKey(transcript, lang);
     const entry = cache[k];
     if(!entry) return null;
@@ -7743,7 +7964,7 @@ function getCachedLesson(transcript, lang){
 
 function setCachedLesson(transcript, lang, lesson){
   try{
-    let cache = JSON.parse(LS.getItem(LESSON_CACHE_KEY)||"{}");
+    let cache = safeParseLS(LESSON_CACHE_KEY, {});
     const k = lessonCacheKey(transcript, lang);
     // LRU eviction if over capacity
     const entries = Object.entries(cache);
@@ -8138,10 +8359,10 @@ ${lessonJsonSchema({timestamps:true, titleHint:"tytuł po "+targetLangLabel, top
   // Wymuszamy Gemini niezależnie od wybranego modelu (tylko Gemini obsługuje YT URL).
   // fetchWithRetry — timeout 120s + retry na 503/429 (bez tego wisiało w nieskończoność).
   const res = await fetchWithRetry(
-    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(S.geminiKey)}`,
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent`,
     {
       method:"POST",
-      headers:{"Content-Type":"application/json"},
+      headers:{"Content-Type":"application/json","x-goog-api-key":S.geminiKey},
       body:JSON.stringify({
         contents:[{parts:[
           { fileData: { fileUri: youtubeUrl, mimeType: "video/*" } },
@@ -9074,18 +9295,33 @@ function updateSrs(word,lang,correct){
   const srs=Object.assign({},S.srs);
   const k=getSrsKey(word,lang);
   const entry=srs[k]||{level:0,next:new Date().toISOString().slice(0,10)};
-  if(correct){entry.level=Math.min(entry.level+1,SRS_INTERVALS.length-1);}else{entry.level=0;}
+  // v2: pomyłka cofa o 2 poziomy zamiast zerować — jedno potknięcie przy niemal
+  // opanowanym słowie nie wyrzuca go na sam początek kolejki powtórek
+  if(correct){entry.level=Math.min(entry.level+1,SRS_INTERVALS.length-1);}else{entry.level=Math.max(0,entry.level-2);}
   const days=SRS_INTERVALS[entry.level];
   const d=new Date();d.setDate(d.getDate()+days);
   entry.next=d.toISOString().slice(0,10);
   entry.word=word;entry.lang=lang;
   srs[k]=entry;
+  // dziennik aktywności → seria nauki (🔥) na stronie głównej
+  const _day=new Date().toISOString().slice(0,10);
+  const _act=safeParseLS("lingua_activity",{});
+  _act[_day]=(_act[_day]||0)+1;
+  safeSetItem("lingua_activity",JSON.stringify(_act));
   LS.setItem("lingua_srs",JSON.stringify(srs));
   set({srs});
 }
 function getDueWords(lang){
   const today=new Date().toISOString().slice(0,10);
   return Object.values(S.srs).filter(e=>e.lang===lang&&e.next<=today);
+}
+function getStreak(){
+  const act=safeParseLS("lingua_activity",{});
+  let streak=0;
+  const d=new Date();
+  if(!act[d.toISOString().slice(0,10)]) d.setDate(d.getDate()-1); // dziś jeszcze nic — licz od wczoraj
+  while(act[d.toISOString().slice(0,10)]){ streak++; d.setDate(d.getDate()-1); }
+  return streak;
 }
 
 // ── B4: QUIZ ────────────────────────────────────────────────────────────────
@@ -9346,7 +9582,7 @@ function renderTranslate(){
 // cfg = {type:"words"|"phrases", storageKey, title, sub, addPlaceholder, origin, emptyHint}
 function renderMyVocab(cfg){
   const{lang}=S;
-  const ws=JSON.parse(LS.getItem(cfg.storageKey)||"{}");
+  const ws=safeParseLS(cfg.storageKey, {});
   const learning=[];const known=[];
   Object.entries(ws).forEach(([k,v])=>{
     if(!k.endsWith("_"+lang))return;
@@ -9373,6 +9609,22 @@ function renderMyVocab(cfg){
       h("div",{style:"font-size:28px;font-family:'Cormorant Garamond',serif;color:var(--ok-text)"},""+known.length),
       h("div",{style:"font-size:11px;color:var(--text3);letter-spacing:.1em;text-transform:uppercase;margin-top:4px"},"Znam"))
   ));
+
+  // ── Eksport do Anki (CSV: przód, tył, IPA, przykład) ──
+  const _allExport=[...learning,...known];
+  if(_allExport.length){
+    main.appendChild(h("button",{class:"sbtn",style:"margin-bottom:28px",onclick:()=>{
+      const q=s=>'"'+String(s||"").replace(/"/g,'""')+'"';
+      const rows=_allExport.map(word=>{
+        const e=getEnrichedVocabEntry(word,lang)||{w:word,tr:"",ipa:"",ex:""};
+        return [q(e.w||word),q(e.tr),q(e.ipa),q(e.ex)].join(",");
+      });
+      const blob=new Blob(["\uFEFF"+rows.join("\n")],{type:"text/csv;charset=utf-8"});
+      const url=URL.createObjectURL(blob);
+      const a=document.createElement("a");a.href=url;a.download="lingua_"+cfg.type+"_"+lang+"_anki.csv";a.click();
+      URL.revokeObjectURL(url);
+    }},"⬇ Eksport do Anki (CSV)"));
+  }
 
   // ── Sesje nauki (Fiszki / Pisanie / Dyktando) ──
   const enriched = learning.map(w => getEnrichedVocabEntry(w, lang) || {w, tr:"", ipa:"", pl:"", ex:"", exT:""});
@@ -9410,7 +9662,7 @@ function renderMyVocab(cfg){
   const submit = ()=>{
     const word = (addInp.value||"").trim().toLowerCase();
     if(!word) return;
-    const ws2 = JSON.parse(LS.getItem(cfg.storageKey)||"{}");
+    const ws2 = safeParseLS(cfg.storageKey, {});
     if(ws2[word+"_"+lang] === "learning"){ alert("\""+word+"\" już jest na liście Uczę się"); return; }
     ws2[word+"_"+lang] = "learning";
     LS.setItem(cfg.storageKey, JSON.stringify(ws2));
@@ -9483,7 +9735,7 @@ function renderMyPhrases(){
 
 // ── B7: EKSPORT/IMPORT ─────────────────────────────────────────────────────
 function exportAllData(){
-  const data={myLessons:S.myLessons,lessonFolders:S.lessonFolders,myFilms:S.myFilms,wordStatus:JSON.parse(LS.getItem("lingua_word_status")||"{}"),srs:S.srs};
+  const data={myLessons:S.myLessons,lessonFolders:S.lessonFolders,myFilms:S.myFilms,wordStatus:safeParseLS("lingua_word_status", {}),srs:S.srs};
   const blob=new Blob([JSON.stringify(data,null,2)],{type:"application/json"});
   const url=URL.createObjectURL(blob);
   const a=document.createElement("a");a.href=url;a.download="lingua_backup_"+new Date().toISOString().slice(0,10)+".json";a.click();
@@ -9497,7 +9749,7 @@ function importData(file){
       if(data.myLessons){const ml=Object.assign({},S.myLessons);Object.entries(data.myLessons).forEach(([lang,lessons])=>{if(!ml[lang])ml[lang]=[];ml[lang].push(...lessons);});safeSetItem("lingua_my_lessons",JSON.stringify(ml));S.myLessons=ml;}
       if(data.lessonFolders){const lf=Object.assign({},S.lessonFolders);Object.entries(data.lessonFolders).forEach(([lang,folders])=>{if(!lf[lang])lf[lang]=[];folders.forEach(f=>{if(!lf[lang].includes(f))lf[lang].push(f);});});LS.setItem("lingua_lesson_folders",JSON.stringify(lf));S.lessonFolders=lf;}
       if(data.myFilms){const mf=Object.assign({},S.myFilms);Object.entries(data.myFilms).forEach(([lang,films])=>{if(!mf[lang])mf[lang]=[];mf[lang].push(...films);});safeSetItem("lingua_my_films",JSON.stringify(mf));S.myFilms=mf;}
-      if(data.wordStatus){const ws=JSON.parse(LS.getItem("lingua_word_status")||"{}");Object.assign(ws,data.wordStatus);LS.setItem("lingua_word_status",JSON.stringify(ws));}
+      if(data.wordStatus){const ws=safeParseLS("lingua_word_status", {});Object.assign(ws,data.wordStatus);LS.setItem("lingua_word_status",JSON.stringify(ws));}
       if(data.srs){const srs=Object.assign({},S.srs,data.srs);LS.setItem("lingua_srs",JSON.stringify(srs));S.srs=srs;}
       alert("Import zakończony! Zaimportowano dane.");render();
     }catch(e){alert("Błąd importu: "+e.message);}
@@ -9580,7 +9832,7 @@ function render(){
       '<div style="font-size:18px;font-weight:600;margin-bottom:8px">Coś poszło nie tak przy renderowaniu ekranu „'+screen+'"</div>'+
       '<div style="font-size:13px;color:#888;margin-bottom:16px">Dane lekcji/ekranu mogą być niekompletne. To nie kasuje Twoich zapisanych danych.</div>'+
       '<pre style="font-size:11px;background:#1a1a1a;color:#ff9;padding:12px;border-radius:6px;overflow:auto;white-space:pre-wrap">'+
-        ((e&&e.message)||String(e))+'\n\n'+((e&&e.stack)||"").split("\n").slice(0,6).join("\n")+'</pre>';
+        esc((e&&e.message)||String(e))+'\n\n'+esc(((e&&e.stack)||"").split("\n").slice(0,6).join("\n"))+'</pre>';
     const back=document.createElement("button");
     back.textContent="← Wróć do strony głównej";
     back.style.cssText="margin-top:16px;padding:10px 18px;cursor:pointer;border:1px solid #888;background:none;color:inherit;border-radius:4px";
@@ -9598,6 +9850,14 @@ setTimeout(()=>driveSilentReconnect(0),800);
 // Ostrzeżenie o localStorage quota — odpalamy po renderze, żeby banner się pokazał na żywej stronie
 setTimeout(checkStorageQuota, 1500);
 
+// PWA: service worker (offline + instalacja na iPhone przez "Dodaj do ekranu początkowego").
+// Rejestracja po load, żeby nie konkurować o pasmo ze startem apki.
+if("serviceWorker" in navigator && (location.protocol==="https:" || location.hostname==="localhost")){
+  window.addEventListener("load", ()=>{
+    navigator.serviceWorker.register("./sw.js").catch(e=>console.warn("[SW] rejestracja:", e.message));
+  });
+}
+
 // Siatka na "ciche" błędy w tle: odrzucone Promisy z handlerów AI bez .catch (oraz inne
 // globalne wyjątki async). Nie blokuje — loguje i, jeśli to nie zwykłe przerwanie (Abort),
 // pokazuje krótki baner zamiast po cichu nic nie zrobić.
@@ -9614,46 +9874,5 @@ window.addEventListener("unhandledrejection", (ev)=>{
 
 </script>
 
-<script>
-/* === Paczkowe tłumaczenie dialogu + mocniejszy cache (1 zapytanie/dialog, wpisy nie wygasają) === */
-(function(){
-  var FAR=4102444800000, CKEY='lingua_word_translations';
-  function store(){ return (typeof LS!=='undefined'&&LS&&LS.getItem)?LS:localStorage; }
-  function modelName(){ try{ var c=getLessonModelConfig(); if(c&&c.name) return c.name; }catch(e){} return 'gemini-2.5-flash'; }
-  async function batchTranslateDialog(lang){
-    var S=store(), cache; try{ cache=JSON.parse(S.getItem(CKEY)||'{}'); }catch(e){ cache={}; }
-    var words=[].slice.call(document.querySelectorAll('[data-wordclean]')).map(function(e){return (e.getAttribute('data-wordclean')||'').trim();}).filter(function(w){return w&&/^[a-zàèéìòùç']+$/i.test(w);});
-    words=words.filter(function(w,i){return words.indexOf(w)===i;});
-    var missing=words.filter(function(w){var e=cache[w.toLowerCase()+'_'+lang]; return !(e&&e.d);});
-    if(!missing.length) return;
-    var key=S.getItem('lingua_gemini_key'); if(!key) return;
-    var prompt='Jestes dwujezycznym slownikiem wlosko-polskim. Dla KAZDEGO podanego wloskiego slowa zwroc obiekt {"word":slowo,"ipa":transkrypcja IPA,"pl":polskie tlumaczenie,"example":krotkie zdanie po wlosku}. Zwroc WYLACZNIE tablice JSON, bez komentarzy. Slowa: '+JSON.stringify(missing);
-    var url='https://generativelanguage.googleapis.com/v1beta/models/'+modelName()+':generateContent?key='+key;
-    var body={contents:[{parts:[{text:prompt}]}],generationConfig:{responseMimeType:'application/json',temperature:0.2}};
-    var r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    if(!r.ok) return;
-    var j=await r.json();
-    var txt=(((((j||{}).candidates||[])[0]||{}).content||{}).parts||[{}])[0].text||'[]';
-    var arr; try{ arr=JSON.parse(txt); }catch(e){ var m=txt.match(/\[[\s\S]*\]/); arr=m?JSON.parse(m[0]):[]; }
-    arr.forEach(function(o){ var w=((o&&o.word)||'').trim(); if(!w) return; cache[w.toLowerCase()+'_'+lang]={d:{word:w,ipa:(o.ipa||''),pl:(o.pl||''),example:(o.example||'')},t:FAR}; });
-    S.setItem(CKEY, JSON.stringify(cache));
-  }
-  window.batchTranslateDialog=batchTranslateDialog;
-  var batching=false;
-  function installWrap(){
-    if(typeof showWordPopup!=='function') return setTimeout(installWrap,200);
-    if(window.__swpBatchWrapped) return;
-    var orig=showWordPopup;
-    showWordPopup=async function(wordRaw,wordClean,lang,anchorEl){
-      try{ var S=store(), cache=JSON.parse(S.getItem(CKEY)||'{}'); var k=((wordClean||'').toLowerCase())+'_'+lang;
-        if(wordClean && !(cache[k]&&cache[k].d) && !batching){ batching=true; try{ await batchTranslateDialog(lang); }catch(e){} batching=false; }
-      }catch(e){}
-      return orig.call(this,wordRaw,wordClean,lang,anchorEl);
-    };
-    window.__swpBatchWrapped=true;
-  }
-  installWrap();
-})();
-</script>
 </body>
 </html>
