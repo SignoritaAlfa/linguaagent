@@ -249,11 +249,13 @@
     </div>
     <textarea id="out" spellcheck="false"></textarea>
     <div class="actions">
+      <button id="saveEdits">💾 Zapisz poprawki</button>
       <button id="copy">📋 Kopiuj</button>
       <button id="dl">⬇️ Pobierz plik</button>
       <button id="dlall">⬇️ Wszystkie formaty</button>
       <button id="docx">📄 Eksport DOCX</button>
     </div>
+    <div class="note">Poprawiłaś tekst w polu powyżej? Kliknij <b>💾 Zapisz poprawki</b> — zaktualizuje to odtwarzacz, wszystkie formaty, historię i lekcję do LinguaAgent. Najlepiej edytuj w zakładce „Z timestampami" (zachowaj format [mm:ss] na początku linii).</div>
     <div class="actions" style="margin-top:14px; padding-top:14px; border-top:1px solid var(--border); align-items:center;">
       <span style="font-size:.85rem;">📚 Lekcja w LinguaAgent:</span>
       <select id="lgLang" style="width:auto; padding:8px 10px;">
@@ -1033,6 +1035,80 @@ $('docx').addEventListener('click', async () => {
   } finally {
     btn.disabled = false; btn.textContent = '📄 Eksport DOCX';
   }
+});
+
+// ---------- zapis ręcznych poprawek z pola tekstowego ----------
+function updateHistoryEntry(entry) {
+  let arr = loadHistory();
+  const i = arr.findIndex(x => String(x.id) === String(entry.id));
+  if (i < 0) return;
+  arr[i] = entry;
+  while (arr.length) {
+    try { localStorage.setItem(LS_KEY, JSON.stringify(arr)); return; }
+    catch { arr.pop(); }
+  }
+}
+function parseTsText(text) {
+  const chunks = [];
+  for (const line of text.split('\n')) {
+    const m = line.match(/^\s*\[(\d+):(\d{1,2})\]\s*(.*\S)\s*$/);
+    if (m) chunks.push({ text: ' ' + m[3], timestamp: [(+m[1]) * 60 + (+m[2]), null] });
+    else if (line.trim() && chunks.length) chunks[chunks.length - 1].text += ' ' + line.trim();
+  }
+  return chunks;
+}
+function parseSrtVtt(text) {
+  const chunks = [];
+  const re = /(\d{2}):(\d{2}):(\d{2})[,.](\d{3})\s*-->\s*(\d{2}):(\d{2}):(\d{2})[,.](\d{3})\s*\n([\s\S]*?)(?=\n\s*\n|\s*$)/g;
+  let m;
+  while ((m = re.exec(text))) {
+    const s = +m[1] * 3600 + +m[2] * 60 + +m[3] + +m[4] / 1000;
+    const e = +m[5] * 3600 + +m[6] * 60 + +m[7] + +m[8] / 1000;
+    const t = m[9].trim().replace(/^\d+\s*$/gm, '').replace(/\n+/g, ' ').trim();
+    if (t) chunks.push({ text: ' ' + t, timestamp: [s, e] });
+  }
+  return chunks;
+}
+$('saveEdits').addEventListener('click', () => {
+  if (!currentEntry) return;
+  const btn = $('saveEdits');
+  hideErr();
+  const text = $('out').value;
+  try {
+    if (activeTab === 'txt') {
+      // sam tekst — bez timestampów; dialog/odtwarzacz zostają, aktualizuje się czysty tekst i rawText
+      currentEntry.outputs = Object.assign({}, currentEntry.outputs, { txt: text.trim() });
+      outputs = currentEntry.outputs;
+      updateHistoryEntry(currentEntry);
+      btn.textContent = '✅ Zapisano (tylko czysty tekst)';
+    } else {
+      const chunks = activeTab === 'ts' ? parseTsText(text) : parseSrtVtt(text);
+      if (!chunks.length) throw new Error('Nie rozpoznałam formatu — zachowaj [mm:ss] na początku każdej linii (zakładka „Z timestampami") albo strukturę SRT/VTT.');
+      // uzupełnij brakujące końce: koniec = początek następnej linijki
+      for (let i = 0; i < chunks.length; i++) {
+        if (chunks[i].timestamp[1] == null) {
+          chunks[i].timestamp[1] = i + 1 < chunks.length
+            ? chunks[i + 1].timestamp[0]
+            : Math.max(chunks[i].timestamp[0] + 3, currentEntry.durationSec || 0);
+        }
+      }
+      currentEntry.chunks = chunks;
+      currentEntry.outputs = buildOutputs(
+        { text: chunks.map(c => c.text.trim()).join(' '), chunks },
+        currentEntry.durationSec || chunks[chunks.length - 1].timestamp[1]
+      );
+      outputs = currentEntry.outputs;
+      updateHistoryEntry(currentEntry);
+      setupPlayer(currentMediaFile, chunks);
+      btn.textContent = '✅ Zapisano';
+    }
+    setTab(activeTab);
+  } catch (e) {
+    showErr(e.message || String(e));
+    btn.textContent = '💾 Zapisz poprawki';
+    return;
+  }
+  setTimeout(() => { btn.textContent = '💾 Zapisz poprawki'; }, 2000);
 });
 
 // ---------- eksport do LinguaAgent (ta sama domena — wspólna IndexedDB) ----------
