@@ -295,7 +295,7 @@ const workerCode = [
 "import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.3.1';",
 "env.allowLocalModels = false;",
 "try { if (!('caches' in self)) env.useBrowserCache = false; } catch (e) { env.useBrowserCache = false; }",
-"let transcriber = null, loadedModel = null;",
+"let transcriber = null, loadedModel = null, loadedBackend = '';",
 "async function loadModel(modelId) {",
 "  if (transcriber && loadedModel === modelId) return transcriber;",
 "  transcriber = null;",
@@ -320,12 +320,14 @@ const workerCode = [
 "        progress_callback: cb",
 "      });",
 "    } catch (e) { pipe = null; }",
+"    if (pipe) loadedBackend = 'webgpu';",
 "  }",
 "  if (!pipe) {",
 "    self.postMessage({ type: 'stage', stage: 'load-wasm' });",
 "    pipe = await pipeline('automatic-speech-recognition', modelId, {",
 "      device: 'wasm', dtype: 'q8', progress_callback: cb",
 "    });",
+"    loadedBackend = 'wasm';",
 "  }",
 "  transcriber = pipe; loadedModel = modelId;",
 "  return pipe;",
@@ -337,6 +339,7 @@ const workerCode = [
 "  const SR = 16000;",
 "  try {",
 "    const pipe = await loadModel(modelId);",
+"    self.postMessage({ type: 'backend', backend: loadedBackend });",
 "    const allChunks = [];",
 "    let fullText = '';",
 "    let doneSamples = 0;",
@@ -525,7 +528,8 @@ async function decodeToMono16k(file) {
 
 // ---------- segmenty (cięcie w najcichszym miejscu) ----------
 function computeSegments(audio) {
-  const SEG = 300 * SR, SEARCH = 5 * SR, WIN = Math.floor(0.02 * SR);
+  // segment ~1 min: postęp aktualizuje się co chwilę (cięcie w najcichszym miejscu ±5 s)
+  const SEG = 60 * SR, SEARCH = 5 * SR, WIN = Math.floor(0.02 * SR);
   const total = audio.length;
   if (total <= SEG + SEARCH) return [{ start: 0, end: total }];
   const segs = [];
@@ -701,6 +705,7 @@ function runInWorker(data, duration, modelId, lang, task, segments, prefix) {
 
     currentReject = reject;
     const durMin = (duration / 60).toFixed(1);
+    let backendLabel = '';
     const cleanup = () => { w.onmessage = null; w.onerror = null; currentReject = null; };
     w.onerror = e => {
       cleanup();
@@ -714,9 +719,11 @@ function runInWorker(data, duration, modelId, lang, task, segments, prefix) {
       } else if (msg.type === 'download') {
         showStatus(prefix + `Pobieranie modelu <b>${modelLabel(modelId)}</b>… ${(msg.loaded/1048576).toFixed(0)} / ${(msg.total/1048576).toFixed(0)} MB`,
           Math.round(msg.loaded / msg.total * 100));
+      } else if (msg.type === 'backend') {
+        backendLabel = msg.backend === 'webgpu' ? 'WebGPU — szybki' : 'WASM — wolniejszy';
       } else if (msg.type === 'progress') {
         const pct = msg.totalSec ? Math.round(msg.doneSec / msg.totalSec * 100) : 0;
-        showStatus(prefix + `Transkrypcja… <b>${(msg.doneSec/60).toFixed(1)} / ${durMin} min</b> (${pct}%). Nie zamykaj karty.`, pct);
+        showStatus(prefix + `Transkrypcja${backendLabel ? ' (' + backendLabel + ')' : ''}… <b>${(msg.doneSec/60).toFixed(1)} / ${durMin} min</b> (${pct}%). Nie zamykaj karty.`, pct);
       } else if (msg.type === 'result') {
         cleanup(); resolve(msg);
       } else if (msg.type === 'error') {
