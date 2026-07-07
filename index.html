@@ -4570,6 +4570,8 @@ function renderLang(){
   myBtns.appendChild(h("button",{class:"add-btn",
     onclick:()=>set({screen:"songs",songLang:lang,filmSeries:null,filmClipId:null})},"🎵 Piosenki"));
   myBtns.appendChild(h("button",{class:"add-btn",
+    onclick:()=>window.open("transkryptor.html","_blank")},"🎙️ Transkryptor"));
+  myBtns.appendChild(h("button",{class:"add-btn",
     onclick:()=>set({showUpload:true,uploadLang:lang,uploadStep:0,uploadFile:null,uploadPreview:null,uploadError:"",uploadProcessing:false})},"+ Wgraj tekst"));
   myBtns.appendChild(h("button",{class:"add-btn",
     onclick:()=>set({screen:"importlesson",importLang:lang,importText:"",importError:"",importFile:null})},"📥 Importuj JSON"));
