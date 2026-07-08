@@ -592,7 +592,16 @@ const LS=(()=>{const DB='LinguaAgentKV',S='kv',R=window['local'+'Storage'];const
 const DB_NAME="lingua_db", DB_VER=3, STORE="videos", STORE_SRC="sourceFiles", STORE_TTS="ttsCache";
 function openDB(){
   return new Promise((res,rej)=>{
-    const r=indexedDB.open(DB_NAME,DB_VER);
+    let settled=false;
+    const done=fn=>(...a)=>{ if(settled) return; settled=true; fn(...a); };
+    const ok=done(res), fail=done(rej);
+    // Timeout: jeśli upgrade wersji jest zablokowany przez inną kartę (patrz onblocked),
+    // open nie odpala ani onsuccess ani onerror i wisiałby w nieskończoność. Zamiast tego
+    // odrzucamy po 8 s — wołający (best-effort cache/source-file) łapie błąd i idzie dalej.
+    const timer=setTimeout(()=>fail(new Error("openDB timeout — baza zablokowana przez inną kartę LinguaAgent")), 8000);
+    let r;
+    try{ r=indexedDB.open(DB_NAME,DB_VER); }
+    catch(e){ clearTimeout(timer); return fail(e); }
     r.onupgradeneeded=e=>{
       const db = e.target.result;
       if(!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
@@ -602,8 +611,16 @@ function openDB(){
         s.createIndex("t","t"); // do przycinania najstarszych wpisów
       }
     };
-    r.onsuccess=e=>res(e.target.result);
-    r.onerror=e=>rej(e.target.error);
+    // Ta karta trzyma starą wersję, a inna chce podbić wersję — zamknij połączenie,
+    // żeby jej nie blokować (inaczej tamta karta wisi na onblocked).
+    r.onblocked=()=>{ clearTimeout(timer); fail(new Error("openDB blocked — zamknij pozostałe karty LinguaAgent")); };
+    r.onsuccess=e=>{
+      clearTimeout(timer);
+      const db=e.target.result;
+      db.onversionchange=()=>{ try{db.close();}catch(_){}}; // pozwól innym kartom na upgrade
+      ok(db);
+    };
+    r.onerror=e=>{ clearTimeout(timer); fail(e.target.error); };
   });
 }
 // Source files (oryginalne PDF/zdjęcia z których wygenerowano lekcję) — w IDB, nie LS
@@ -2649,14 +2666,19 @@ function seekYtTo(seconds){
 // Browsers cap localStorage at ~5 MB per origin. Lekcje + audio cache + popup
 // translations potrafią to zjeść. Te 3 funkcje: monitoring + ostrzeżenie + safe wrap.
 function getLocalStorageUsageKB(){
+  // Mierzymy REALNY localStorage (limit ~5 MB), a nie mapę w pamięci nakładki LS.
+  // Nakładka LS trzyma w pamięci też duże wpisy zrzucone do IndexedDB (audio, lekcje),
+  // więc liczenie po LS.length dawało zawyżony wynik (np. 41 MB) i fałszywy alarm.
+  const R = window['local'+'Storage'];
   let total = 0;
-  for(let i=0; i<LS.length; i++){
-    const k = LS.key(i);
-    if(!k) continue;
-    const v = LS.getItem(k) || "";
-    // JS strings są UTF-16, ale localStorage liczy bajty w UTF-16 (2 bajty/znak)
-    total += (k.length + v.length) * 2;
-  }
+  try{
+    for(let i=0; i<R.length; i++){
+      const k = R.key(i);
+      if(!k) continue;
+      const v = R.getItem(k) || "";
+      total += (k.length + v.length) * 2; // UTF-16: 2 bajty/znak
+    }
+  }catch(e){ return 0; }
   return Math.round(total/1024);
 }
 
@@ -9906,6 +9928,18 @@ function render(){
 window.speechSynthesis.onvoiceschanged=()=>{};
 setTimeout(render,50);
 setTimeout(()=>driveSilentReconnect(0),800);
+// Jednorazowe sprzątanie: osierocone klucze `lingua_lessonN_backup_*` po starej wersji.
+// Obecny kod ich nie tworzy ani nie czyta — zajmowały tylko miejsce w localStorage.
+// LS.removeItem czyści mapę w pamięci, IndexedDB i realny localStorage naraz.
+(function cleanupOrphanBackups(){
+  try{
+    const rx=/^lingua_lesson\d+_backup_/;
+    const dead=(typeof LS.keys==="function"?LS.keys():[]).filter(k=>rx.test(k));
+    dead.forEach(k=>LS.removeItem(k));
+    if(dead.length) console.log("[LinguaAgent] usunięto "+dead.length+" osieroconych kluczy *_backup_*");
+  }catch(e){ console.warn("[LinguaAgent] cleanup backups pominięty:", e); }
+})();
+
 // Ostrzeżenie o localStorage quota — odpalamy po renderze, żeby banner się pokazał na żywej stronie
 setTimeout(checkStorageQuota, 1500);
 
