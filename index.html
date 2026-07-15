@@ -3442,17 +3442,37 @@ function renderAIGenerateButton(lesson, lang, type){
       // Render results
       resultDiv.innerHTML = "";
       resultDiv.style.display = "block";
+      const headerRow = document.createElement("div");
+      headerRow.style.cssText = "display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px";
       const header = document.createElement("div");
-      header.style.cssText = "font-size:11px;color:var(--text3);letter-spacing:.1em;text-transform:uppercase;margin-bottom:10px";
+      header.style.cssText = "font-size:11px;color:var(--text3);letter-spacing:.1em;text-transform:uppercase";
       header.textContent = (type==="vocab"?"Słówka":"Zwroty")+" znalezione ("+items.length+")";
-      resultDiv.appendChild(header);
+      headerRow.appendChild(header);
       const selected = new Set();
       const added = new Set();
+      const cbRefs = [];
+      // Zaznacz/odznacz wszystkie jednym kliknięciem (przy 100+ pozycjach ręczne
+      // klikanie każdego checkboxa było bezużyteczne)
+      const toggleAll = document.createElement("button");
+      toggleAll.style.cssText = "background:none;border:1px solid var(--border);color:var(--text2);border-radius:4px;padding:4px 10px;cursor:pointer;font-size:11px;font-family:inherit";
+      const updateToggleLabel = ()=>{
+        const selectable = cbRefs.filter(([ix])=>!added.has(ix)).length;
+        toggleAll.textContent = (selectable>0 && selected.size===selectable) ? "☐ Odznacz wszystkie" : "☑ Zaznacz wszystkie";
+      };
+      toggleAll.onclick = ()=>{
+        const enabled = cbRefs.filter(([ix])=>!added.has(ix));
+        const allSel = enabled.length>0 && selected.size===enabled.length;
+        enabled.forEach(([ix,cbEl])=>{ cbEl.checked=!allSel; if(allSel) selected.delete(ix); else selected.add(ix); });
+        updateToggleLabel();
+      };
+      headerRow.appendChild(toggleAll);
+      resultDiv.appendChild(headerRow);
       items.forEach((item,i)=>{
         const row = document.createElement("div");
         row.style.cssText = "display:grid;grid-template-columns:24px 1fr 1fr 40px;gap:8px 14px;padding:8px 0;border-bottom:1px solid var(--border);align-items:start";
         const cb = document.createElement("input"); cb.type="checkbox"; cb.style.cssText="width:16px;height:16px;accent-color:var(--gold);cursor:pointer;margin-top:4px";
-        cb.onchange = ()=>{ if(cb.checked) selected.add(i); else selected.delete(i); };
+        cb.onchange = ()=>{ if(cb.checked) selected.add(i); else selected.delete(i); updateToggleLabel(); };
+        cbRefs.push([i,cb]);
         const left = document.createElement("div");
         left.innerHTML = `<div style="font-weight:500;font-size:14px">${esc(item.w)}</div><div style="font-family:monospace;font-size:11px;color:var(--text3)">${esc(item.ipa)}</div>`;
         const right = document.createElement("div");
@@ -3472,6 +3492,7 @@ function renderAIGenerateButton(lesson, lang, type){
           addOne.textContent="✓"; addOne.style.color="var(--ok-text)"; addOne.disabled=true;
           cb.checked=false; cb.disabled=true;
           selected.delete(i); added.add(i);
+          updateToggleLabel();
         };
         row.appendChild(cb); row.appendChild(left); row.appendChild(right); row.appendChild(addOne);
         resultDiv.appendChild(row);
@@ -3500,6 +3521,29 @@ function renderAIGenerateButton(lesson, lang, type){
         setTimeout(()=>render(), 800);
       };
       bulkRow.appendChild(bulkBtn);
+      // "Dodaj wszystkie" — bez zaznaczania: wrzuca cały wynik generowania do lekcji
+      const allBtn = document.createElement("button");
+      allBtn.textContent = "⚡ Dodaj wszystkie ("+items.length+")";
+      allBtn.style.cssText = "flex:1;min-width:200px;padding:10px 18px;background:none;color:var(--gold);border:1px solid var(--gold);border-radius:4px;cursor:pointer;font-family:inherit;font-size:12px";
+      allBtn.onclick = ()=>{
+        const arr = type==="phrases" ? "phrases" : "vocab";
+        if(!lesson[arr]) lesson[arr] = [];
+        let count = 0;
+        items.forEach((item,ix)=>{
+          if(added.has(ix)) return;
+          if(!lesson[arr].some(v=>v.w===item.w)){
+            lesson[arr].push({w:item.w,tr:item.tr,ipa:item.ipa||"",pl:item.pl||"",ex:item.ex||"",exT:item.exT||""});
+            count++;
+          }
+        });
+        const ml = Object.assign({},S.myLessons);
+        const li = (ml[S.lang]||[]).findIndex(l=>l.id===lesson.id);
+        if(li>=0){ml[S.lang][li][arr]=lesson[arr]; S.myLessons=ml; safeSetItem("lingua_my_lessons",JSON.stringify(ml)); scheduleDriveSync();}
+        allBtn.textContent = "✓ Dodano "+count;
+        setTimeout(()=>render(), 800);
+      };
+      bulkRow.appendChild(allBtn);
+      updateToggleLabel();
       resultDiv.appendChild(bulkRow);
     }catch(e){
       alert("Błąd: "+e.message);

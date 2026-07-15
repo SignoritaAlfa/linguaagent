@@ -2,7 +2,7 @@
 // index.html: network-first (świeża wersja gdy online, cache gdy offline).
 // CDN/fonty: cache-first z odświeżeniem w tle.
 // API (OpenAI/Gemini/ElevenLabs/Drive/YouTube/worker): NIE dotykamy — zawsze sieć.
-const VERSION = "v3-2026-07-08";
+const VERSION = "v4-2026-07-08";
 const PRECACHE = "lingua-precache-" + VERSION;
 const RUNTIME = "lingua-runtime-" + VERSION;
 const PRECACHE_URLS = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png", "./icon-180.png"];
