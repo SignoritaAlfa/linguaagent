@@ -2797,6 +2797,39 @@ async function doImportLesson(){
   const lang = S.importLang || S.lang;
   const text = (S.importText || "").trim();
   if(!text){ set({importError:"Wklej JSON lekcji do pola powyżej."}); return; }
+  // DOŁĄCZANIE słówek do istniejącej lekcji (gdy wybrano cel w selekcie).
+  // Z wklejonego JSON (obiekt LUB tablica) bierze tylko vocab i dopisuje do lekcji docelowej
+  // z deduplikacją po polu "w" (bez rozróżniania wielkości liter). Dialog/reszta bez zmian.
+  if(S.importTarget){
+    const ml = Object.assign({}, S.myLessons);
+    const list = (ml[lang] || []).slice();
+    const idx = list.findIndex(l => l.id === S.importTarget);
+    if(idx < 0){ set({importError:"Nie znaleziono wybranej lekcji docelowej."}); return; }
+    let incoming = [];
+    try{
+      const p = JSON.parse(text);
+      (Array.isArray(p) ? p : [p]).forEach(o => { if(o && Array.isArray(o.vocab)) incoming = incoming.concat(o.vocab); });
+    }catch(_){
+      try{ const o = parseLessonJson(text); if(o && Array.isArray(o.vocab)) incoming = o.vocab; }
+      catch(e){ set({importError:"Nie udało się odczytać JSON: "+((e&&e.message)||e)}); return; }
+    }
+    incoming = incoming.filter(v => v && v.w).map(v => ({
+      w:String(v.w), tr:String(v.tr||""), ipa:String(v.ipa||""), pl:String(v.pl||""), ex:String(v.ex||""), exT:String(v.exT||"")
+    }));
+    if(!incoming.length){ set({importError:"We wklejonym JSON nie ma słówek (pole vocab)."}); return; }
+    const target = Object.assign({}, list[idx]);
+    const merged = Array.isArray(target.vocab) ? target.vocab.slice() : [];
+    const seen = new Set(merged.map(v => String(v.w||"").trim().toLowerCase()));
+    let added = 0;
+    for(const v of incoming){ const k = v.w.trim().toLowerCase(); if(k && !seen.has(k)){ merged.push(v); seen.add(k); added++; } }
+    target.vocab = merged;
+    list[idx] = target; ml[lang] = list;
+    safeSetItem("lingua_my_lessons", JSON.stringify(ml));
+    set({myLessons:ml, screen:"lang", lang, importText:"", importError:"", importFile:null, importTarget:""});
+    scheduleDriveSync();
+    setTimeout(()=>alert("Dodano "+added+" słówek do lekcji „"+(target.title||"")+"”"+(incoming.length-added>0?(" · pominięto "+(incoming.length-added)+" duplikatów"):"")), 50);
+    return;
+  }
   // Import ZBIORCZY — wykryj tablicę: [ {...}, {...} ]. Najpierw czysty JSON.parse.
   let arr = null;
   try{ const p = JSON.parse(text); if(Array.isArray(p)) arr = p; }catch(_){}
@@ -2836,6 +2869,24 @@ function renderImportLesson(){
   wrap.appendChild(h("button",{class:"add-btn",style:"margin-bottom:16px",onclick:()=>set({screen:"lang",lang})},"← Wróć"));
   wrap.appendChild(h("div",{class:"page-title"},"Importuj lekcję ("+(LANGS[lang]?LANGS[lang].name:lang)+")"));
   wrap.appendChild(h("div",{class:"page-sub"},"Wklej gotowy JSON lekcji — pojedynczą { … } albo wiele naraz jako tablicę [ { … }, { … } ]. Bez zapytań do AI."));
+  // Cel importu: nowa lekcja albo dołączenie słówek do istniejącej
+  const targetRow = h("div",{style:"margin-top:14px;display:flex;flex-direction:column;gap:6px"});
+  targetRow.appendChild(h("div",{style:"font-size:12px;color:var(--text3)"},"Cel importu"));
+  const targetSel = h("select",{
+    style:"padding:8px 10px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-size:13px;border-radius:6px;font-family:inherit",
+    onchange:(e)=>{ S.importTarget = e.target.value; }
+  });
+  const optNew = h("option",{value:""},"— Utwórz nową lekcję —");
+  if(!S.importTarget) optNew.selected = true;
+  targetSel.appendChild(optNew);
+  (S.myLessons[lang]||[]).forEach(l=>{
+    const o = h("option",{value:l.id}, (l.title||"Bez tytułu")+" ("+((l.vocab||[]).length)+" słówek)");
+    if(S.importTarget===l.id) o.selected = true;
+    targetSel.appendChild(o);
+  });
+  targetRow.appendChild(targetSel);
+  targetRow.appendChild(h("div",{style:"font-size:11px;color:var(--text3)"},"Wybranie lekcji dołączy TYLKO słówka (vocab) do niej — dialog i reszta zostają."));
+  wrap.appendChild(targetRow);
   const ta = h("textarea",{
     style:"width:100%;min-height:320px;margin-top:14px;padding:14px;border:1px solid var(--border);background:var(--surface);color:var(--text);font-family:ui-monospace,Menlo,Consolas,monospace;font-size:12px;line-height:1.5;border-radius:6px;resize:vertical",
     placeholder:'{"title":"...","level":"A2","topic":"...","dialog":[...],"vocab":[...],"phrases":[...],"fill":[...],"grammar":[...]}',
@@ -4665,7 +4716,7 @@ function renderLang(){
   myBtns.appendChild(h("button",{class:"add-btn",
     onclick:()=>set({showUpload:true,uploadLang:lang,uploadStep:0,uploadFile:null,uploadPreview:null,uploadError:"",uploadProcessing:false})},"+ Wgraj tekst"));
   myBtns.appendChild(h("button",{class:"add-btn",
-    onclick:()=>set({screen:"importlesson",importLang:lang,importText:"",importError:"",importFile:null})},"📥 Importuj JSON"));
+    onclick:()=>set({screen:"importlesson",importLang:lang,importText:"",importError:"",importFile:null,importTarget:""})},"📥 Importuj JSON"));
   myBtns.appendChild(h("button",{class:"add-btn",
     onclick:()=>createFolder(lang)},"+ Folder"));
   myHead.appendChild(myBtns);
